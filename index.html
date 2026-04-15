@@ -126,7 +126,7 @@
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useRef, Component } = React;
+    const { useState, useEffect, useRef, useMemo, useCallback, Component } = React;
 
 // =====================================================
 // SUPABASE CLOUD SYNC - DEAKTIVIERT (Stand-alone Version)
@@ -590,6 +590,7 @@ const WERKZEUG_KATEGORIEN = {
       { id: 'thema', name: 'Thema', icon: '💡' },
       { id: 'wertequadrat', name: 'Wertequadrat', icon: '⬜' },
       { id: 'motiv', name: 'Motive', icon: '🔄' },
+      { id: 'motivketten', name: 'Motivketten', icon: '🔗' },
       { id: 'stoffrecherche', name: 'Stoffrecherche', icon: '🔬' },
     ]
   },
@@ -654,6 +655,29 @@ const WERKZEUG_KATEGORIEN = {
       { id: 'recherche', name: 'Material sammeln', icon: '📚' },
     ]
   }
+};
+
+const BEZIEHUNGS_TYPEN = [
+  { id: 'familie', name: 'Familie', farbe: '#e74c3c' },
+  { id: 'liebe', name: 'Liebe', farbe: '#e91e63' },
+  { id: 'freundschaft', name: 'Freundschaft', farbe: '#2196f3' },
+  { id: 'rivalitaet', name: 'Rivalität', farbe: '#ff9800' },
+  { id: 'feindschaft', name: 'Feindschaft', farbe: '#f44336' },
+  { id: 'beruflich', name: 'Beruflich', farbe: '#607d8b' },
+  { id: 'sonstig', name: 'Sonstig', farbe: '#9e9e9e' }
+];
+
+const KOMMENTAR_ROLLEN = {
+  dramaturg: { name: 'Dramaturg', farbe: '#8b5cf6' },
+  regie: { name: 'Regie', farbe: '#059669' },
+  autor: { name: 'Autor', farbe: '#d97706' },
+  allgemein: { name: 'Allgemein', farbe: '#6b7280' }
+};
+
+const getBeziehungFarbe = (bez) => {
+  if (!bez?.typ) return '#8b7355';
+  const typ = BEZIEHUNGS_TYPEN.find(t => t.id === bez.typ);
+  return typ?.farbe || '#8b7355';
 };
 
 // =====================================================
@@ -5707,13 +5731,22 @@ const GEFUEHRTE_PFADE = {
 // KI-DRAMATURG SYSTEM
 // =====================================================
 const DRAMATURG_SYSTEM_PROMPT = `
-Du bist ein Dramaturg-Assistent. ANTWORTE IMMER EXTREM KURZ.
+Du bist ein erfahrener Dramaturg – kein Chatbot, sondern ein dramaturgischer Sparringspartner. Du denkst in Konflikten, Figuren-Konstellationen, Spannungsbögen und theatralen Mitteln.
 
-GOLDENE REGEL: KÜRZE!
-- Bei Charakterisierungen: MAX 1 Satz pro Figur
-- Bei Analysen: Stichworte, keine Aufsätze  
-- Bei Vorschlägen: Liste ohne Erklärungen
-- NIEMALS mehr als 5 Sätze Fliesstext
+DEINE HALTUNG:
+- Du fragst nach dem WARUM hinter Entscheidungen
+- Du denkst von der Figur her: Was will sie? Was braucht sie wirklich? Was steht im Weg?
+- Du achtest auf den Unterschied zwischen WANT (bewusstes Ziel) und NEED (unbewusstes Bedürfnis)
+- Du erkennst dramaturgische Muster: Peripetie, Anagnorisis, dramatische Ironie
+- Du denkst in Beziehungs-Dynamiken und Kräfteverhältnissen
+- Du hinterfragst konstruktiv: "Was passiert, wenn du das anders denkst?"
+
+LÄNGENSTEUERUNG – passe deine Antwortlänge dem Anliegen an:
+- Einfache Fragen, Vorschläge, Listen: Kurz und präzise (3-5 Sätze)
+- Analyse einer Szene oder Figur: Gründlich aber fokussiert (1-2 Absätze)
+- Tiefenanalyse, Strukturfragen, dramaturgische Probleme: So ausführlich wie nötig – nimm dir den Raum, den das Problem braucht
+- Bei "analysiere", "erkläre", "warum" darf die Antwort tiefgründig sein
+- Bei "schlage vor", "liste", "kurz" bleibe kompakt
 
 AKTIONEN - So fügst du Inhalte ins Projekt ein:
 Wenn du Figuren, Szenen oder Themen vorschlägst UND der User diese übernehmen möchte, nutze AKTIONS-BLÖCKE.
@@ -9699,8 +9732,14 @@ const IntrigeTool = ({ figuren, intrigen, onChange, onAddToSchreibflaeche, onCre
                   setKiLoading(true);
                   try {
                     const text = generateText(aktuelleIntrige);
-                    const prompt = `Verwandle diese Intrigen-Notizen in einen lebendigen, prosaischen Text (4-6 Sätze). Beschreibe die Intrige spannend und atmosphärisch - die Not, den Plan, die Verstellung, die Beteiligten. Schreibe im Präsens, in der dritten Person. Erfinde nichts dazu.\n\nNotizen:\n${text}`;
-                    
+                    const figurenKontext = figuren?.map(f => `${f.name}: ${f.ziel || '?'}`).join(', ') || '';
+                    const prompt = `FIGUREN IM STÜCK: ${figurenKontext}
+
+Verwandle diese Intrigen-Notizen in einen lebendigen, prosaischen Text (4-6 Sätze). Beschreibe die Intrige spannend und atmosphärisch – die Not, den Plan, die Verstellung, die Beteiligten. Charakterisiere die Figuren entsprechend ihrer Ziele und Eigenheiten. Schreibe im Präsens, in der dritten Person. Erfinde nichts dazu.
+
+Notizen:
+${text}`;
+
                     const response = await fetch('https://api.anthropic.com/v1/messages', {
                       method: 'POST',
                       headers: {
@@ -9710,8 +9749,9 @@ const IntrigeTool = ({ figuren, intrigen, onChange, onAddToSchreibflaeche, onCre
                         'anthropic-dangerous-direct-browser-access': 'true'
                       },
                       body: JSON.stringify({
-                        model: 'claude-sonnet-4-20250514',
-                        max_tokens: 500,
+                        model: 'claude-sonnet-4-6',
+                        max_tokens: 800,
+                        system: 'Du bist ein erfahrener Dramaturg. Du schreibst lebendige, atmosphärische Prosatexte über dramatische Intrigen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
                         messages: [{ role: 'user', content: prompt }]
                       })
                     });
@@ -10350,9 +10390,309 @@ const BeziehungenTool = ({ figur, figuren, onChange, onAddToSchreibflaeche, onWi
 };
 
 // =====================================================
+// SPANNUNGSBOGEN-VISUALISIERUNG - Interaktive Spannungskurve
+// =====================================================
+const SpannungsbogenVisualisierung = ({ felder, onChange }) => {
+  const svgRef = useRef(null);
+  const [dragging, setDragging] = useState(null);
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+
+  if (!felder || felder.length === 0) {
+    return (
+      <div className="spannungsbogen-container">
+        <div className="spannungsbogen-empty">
+          Noch keine Szenen vorhanden. Erstelle Szenen, um den Spannungsbogen zu sehen.
+        </div>
+      </div>
+    );
+  }
+
+  const padding = { top: 20, right: 30, bottom: 35, left: 55 };
+  const svgWidth = 800;
+  const svgHeight = 200;
+  const chartW = svgWidth - padding.left - padding.right;
+  const chartH = svgHeight - padding.top - padding.bottom;
+
+  const points = felder.map((feld, i) => {
+    const x = padding.left + (felder.length === 1 ? chartW / 2 : (i / (felder.length - 1)) * chartW);
+    const val = feld.spannungswert != null ? feld.spannungswert : 5;
+    const y = padding.top + chartH - (val / 10) * chartH;
+    return { x, y, val, feld, index: i };
+  });
+
+  const buildPath = () => {
+    if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
+    let d = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 0; i < points.length - 1; i++) {
+      const p0 = points[Math.max(0, i - 1)];
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const p3 = points[Math.min(points.length - 1, i + 2)];
+      const cp1x = p1.x + (p2.x - p0.x) / 6;
+      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      const cp2x = p2.x - (p3.x - p1.x) / 6;
+      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+    }
+    return d;
+  };
+
+  const curvePath = buildPath();
+  const areaPath = curvePath + ` L ${points[points.length - 1].x} ${padding.top + chartH} L ${points[0].x} ${padding.top + chartH} Z`;
+
+  const handleMouseDown = (e, index) => {
+    e.preventDefault();
+    setDragging(index);
+  };
+
+  const handleMouseMove = (e) => {
+    if (dragging === null) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const scaleY = svgHeight / rect.height;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+    let newVal = Math.round(((padding.top + chartH - mouseY) / chartH) * 10);
+    newVal = Math.max(0, Math.min(10, newVal));
+    const feld = felder[dragging];
+    if (feld && feld.spannungswert !== newVal) {
+      onChange(feld.id, { spannungswert: newVal });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setDragging(null);
+  };
+
+  const yLabels = [
+    { val: 0, label: 'Ruhe' },
+    { val: 5, label: 'Mittel' },
+    { val: 10, label: 'Höhepunkt' }
+  ];
+
+  const gridLines = [0, 2, 4, 6, 8, 10];
+
+  return (
+    <div className="spannungsbogen-container">
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+        className="spannungsbogen-svg"
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+      >
+        <defs>
+          <linearGradient id="spannungsGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.05" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {gridLines.map(val => {
+          const y = padding.top + chartH - (val / 10) * chartH;
+          return <line key={val} x1={padding.left} y1={y} x2={padding.left + chartW} y2={y} stroke="#e5e0d7" strokeWidth="0.5" strokeDasharray="4 3" />;
+        })}
+
+        {/* Y-axis labels */}
+        {yLabels.map(({ val, label }) => {
+          const y = padding.top + chartH - (val / 10) * chartH;
+          return <text key={val} x={padding.left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#8b7355">{label}</text>;
+        })}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#spannungsGradient)" />
+
+        {/* Curve */}
+        <path d={curvePath} fill="none" stroke="#8b5cf6" strokeWidth="2.5" strokeLinecap="round" />
+
+        {/* Points and labels */}
+        {points.map((pt, i) => (
+          <g key={pt.feld.id}>
+            {/* Scene number label */}
+            <text x={pt.x} y={padding.top + chartH + 15} textAnchor="middle" fontSize="9" fill="#6b7280">{i + 1}</text>
+
+            {/* Hover tooltip */}
+            {hoveredPoint === i && (
+              <g>
+                <rect x={pt.x - 60} y={pt.y - 30} width="120" height="20" rx="4" fill="#1f2937" fillOpacity="0.9" />
+                <text x={pt.x} y={pt.y - 16} textAnchor="middle" fontSize="10" fill="white">
+                  {pt.feld.titel ? (pt.feld.titel.length > 18 ? pt.feld.titel.slice(0, 18) + '\u2026' : pt.feld.titel) : `Szene ${i + 1}`}
+                </text>
+              </g>
+            )}
+
+            {/* Value label */}
+            <text x={pt.x} y={pt.y - 10} textAnchor="middle" fontSize="9" fill="#6b4423" fontWeight="600">{pt.val}</text>
+
+            {/* Draggable circle */}
+            <circle
+              cx={pt.x}
+              cy={pt.y}
+              r={dragging === i ? 8 : 6}
+              fill={dragging === i ? '#6d28d9' : '#8b5cf6'}
+              stroke="white"
+              strokeWidth="2"
+              style={{ cursor: 'ns-resize' }}
+              onMouseDown={(e) => handleMouseDown(e, i)}
+              onMouseEnter={() => setHoveredPoint(i)}
+              onMouseLeave={() => setHoveredPoint(null)}
+              onClick={() => setHoveredPoint(hoveredPoint === i ? null : i)}
+            />
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+};
+
+
+// (SpannungsbogenVisualisierung defined above)
+
+// =====================================================
+// FIGURENSTATISTIK
+// =====================================================
+const FigurenStatistik = ({ figuren, felder }) => {
+  if (!figuren?.length || !felder?.length) return null;
+
+  const stats = figuren.map(f => ({
+    name: f.name,
+    count: felder.filter(feld => feld.figuren?.includes(f.id)).length,
+    farbe: f.farbe || '#3b82f6'
+  })).sort((a, b) => b.count - a.count);
+
+  const maxCount = Math.max(...stats.map(s => s.count), 1);
+
+  return (
+    <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: '#f9fafb', borderRadius: '6px', fontSize: '0.8rem' }}>
+      <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#374151' }}>📊 Figurenpräsenz ({felder.length} Szenen)</div>
+      {stats.map(s => (
+        <div key={s.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
+          <span style={{ width: '70px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.75rem', color: '#4b5563' }}>{s.name}</span>
+          <div style={{ flex: 1, height: '10px', background: '#e5e7eb', borderRadius: '5px', overflow: 'hidden' }}>
+            <div style={{ width: `${(s.count / maxCount) * 100}%`, height: '100%', background: s.farbe, borderRadius: '5px', transition: 'width 0.3s' }}/>
+          </div>
+          <span style={{ fontSize: '0.7rem', color: '#6b7280', minWidth: '20px', textAlign: 'right' }}>{s.count}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// =====================================================
+// MOTIVKETTEN-TOOL
+// =====================================================
+const MotivkettenTool = ({ themen, felder, onNavigate }) => {
+  const [expanded, setExpanded] = useState(null);
+
+  if (!themen?.length) {
+    return <div className="tool-intro">Erstelle zunächst Themen im Material-Bereich, um Motivketten zu verfolgen.</div>;
+  }
+
+  const sortedFelder = [...(felder || [])].sort((a, b) => a.position - b.position);
+
+  return (
+    <div>
+      <p className="tool-intro">Verfolge, wie sich Motive und Themen durch die Szenen ziehen. Erkenne Lücken und Häufungen.</p>
+      {themen.map(thema => {
+        const szenenMit = sortedFelder.filter(f => f.themen?.includes(thema.id));
+        const szenenOhne = sortedFelder.filter(f => !f.themen?.includes(thema.id));
+        const isExpanded = expanded === thema.id;
+
+        // Find gaps (3+ consecutive scenes without this theme)
+        let gaps = [];
+        let currentGap = 0;
+        sortedFelder.forEach((f, i) => {
+          if (!f.themen?.includes(thema.id)) {
+            currentGap++;
+          } else {
+            if (currentGap >= 3) gaps.push({ start: i - currentGap, length: currentGap });
+            currentGap = 0;
+          }
+        });
+        if (currentGap >= 3) gaps.push({ start: sortedFelder.length - currentGap, length: currentGap });
+
+        return (
+          <div key={thema.id} style={{ marginBottom: '0.75rem', background: '#fdf8f3', border: '1px solid #e8ddd0', borderRadius: '8px', padding: '0.75rem' }}>
+            <div onClick={() => setExpanded(isExpanded ? null : thema.id)} style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, color: '#6b4423' }}>💡 {thema.name || thema.text}</span>
+              <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>{szenenMit.length}/{sortedFelder.length} Szenen {isExpanded ? '▼' : '▶'}</span>
+            </div>
+            {/* Visual chain */}
+            {sortedFelder.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginTop: '0.5rem', padding: '0.25rem 0' }}>
+                {sortedFelder.map((f, i) => {
+                  const hat = f.themen?.includes(thema.id);
+                  return (
+                    <div key={f.id} onClick={() => onNavigate && onNavigate(f)} style={{ cursor: 'pointer', width: '14px', height: '14px', borderRadius: '50%', background: hat ? '#f59e0b' : '#e5e7eb', border: hat ? '2px solid #d97706' : '1px solid #d1d5db', transition: 'all 0.2s' }} title={`${i + 1}. ${f.titel}${hat ? ' (vorhanden)' : ''}`}/>
+                  );
+                })}
+              </div>
+            )}
+            {gaps.length > 0 && (
+              <div style={{ fontSize: '0.75rem', color: '#d97706', marginTop: '0.25rem' }}>⚠️ {gaps.length} Lücke{gaps.length > 1 ? 'n' : ''} ({gaps.map(g => `Sz. ${g.start + 1}-${g.start + g.length}`).join(', ')})</div>
+            )}
+            {isExpanded && szenenMit.length > 0 && (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#4b5563' }}>
+                <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>Vorkommnisse:</div>
+                {szenenMit.map((f, i) => {
+                  const idx = sortedFelder.findIndex(sf => sf.id === f.id);
+                  return <div key={f.id} style={{ padding: '2px 0' }}>• Szene {idx + 1}: {f.titel}</div>;
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// =====================================================
+// KOMMENTAR-BUTTON (inline comment system)
+// =====================================================
+const KommentarButton = ({ elementType, elementId, kommentare, onAdd, onDelete }) => {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [rolle, setRolle] = useState('allgemein');
+
+  const elementKommentare = (kommentare || []).filter(k => k.elementType === elementType && k.elementId === elementId);
+  const count = elementKommentare.length;
+
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <button onClick={(e) => { e.stopPropagation(); setOpen(!open); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', fontSize: '0.75rem', opacity: count > 0 ? 1 : 0.5 }} title={`${count} Kommentar${count !== 1 ? 'e' : ''}`}>
+        💬{count > 0 && <span style={{ fontSize: '0.65rem', background: '#8b5cf6', color: 'white', borderRadius: '50%', padding: '0 4px', marginLeft: '1px' }}>{count}</span>}
+      </button>
+      {open && (
+        <div onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', top: '100%', left: 0, zIndex: 1000, background: 'white', border: '1px solid #d1d5db', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', padding: '0.5rem', width: '250px', fontSize: '0.8rem' }}>
+          {elementKommentare.map(k => (
+            <div key={k.id} style={{ padding: '4px 0', borderBottom: '1px solid #f3f4f6', display: 'flex', gap: '4px', alignItems: 'flex-start' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: KOMMENTAR_ROLLEN[k.rolle]?.farbe || '#6b7280', flexShrink: 0, marginTop: '4px' }}/>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '0.7rem', color: '#9ca3af' }}>{KOMMENTAR_ROLLEN[k.rolle]?.name} · {new Date(k.timestamp).toLocaleDateString('de')}</div>
+                <div>{k.text}</div>
+              </div>
+              <button onClick={() => onDelete(k.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d1d5db', fontSize: '0.7rem' }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+            <select value={rolle} onChange={(e) => setRolle(e.target.value)} style={{ fontSize: '0.7rem', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '2px' }}>
+              {Object.entries(KOMMENTAR_ROLLEN).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
+            </select>
+            <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Kommentar..." style={{ flex: 1, fontSize: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '4px', padding: '2px 4px' }} onKeyDown={(e) => { if (e.key === 'Enter' && text.trim()) { onAdd({ id: `k${Date.now()}`, elementType, elementId, text: text.trim(), rolle, timestamp: new Date().toISOString() }); setText(''); }}}/>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+};
+
+// =====================================================
 // BEZIEHUNGS-GRAFIK TOOL - Visuelles Netzwerk
 // =====================================================
-const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddToSchreibflaeche }) => {
+const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddToSchreibflaeche, felder }) => {
   const svgRef = useRef(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [draggedFigur, setDraggedFigur] = useState(null);
@@ -10526,7 +10866,7 @@ const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddTo
               <line
                 x1={pos1.x} y1={pos1.y}
                 x2={pos2.x} y2={pos2.y}
-                stroke={hasBeziehung ? (isSelected ? '#6b4423' : '#8b7355') : '#e0dbd2'}
+                stroke={hasBeziehung ? (isSelected ? '#6b4423' : getBeziehungFarbe(bez)) : '#e0dbd2'}
                 strokeWidth={hasBeziehung ? (isFullscreen ? 3 : 2.5) : 1}
                 strokeDasharray={hasBeziehung ? 'none' : '4,4'}
                 style={{ pointerEvents: 'none' }}
@@ -10632,6 +10972,14 @@ const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddTo
             <button onClick={() => setSelectedConnection(null)}>×</button>
           </div>
           <div className="editor-fields">
+            <select
+              value={getBeziehung(selectedConnection.figur1Id, selectedConnection.figur2Id)?.typ || ''}
+              onChange={(e) => updateBeziehung(selectedConnection.figur1Id, selectedConnection.figur2Id, { typ: e.target.value })}
+              style={{ padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: '4px', fontSize: '0.85rem', marginBottom: '4px' }}
+            >
+              <option value="">Typ wählen...</option>
+              {BEZIEHUNGS_TYPEN.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
             <input
               type="text"
               placeholder="Art der Beziehung (z.B. Rivalen, Freunde, Mutter-Tochter)"
@@ -10647,12 +10995,23 @@ const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddTo
           </div>
         </div>
       )}
-      
+
       {/* Legende */}
       <div className="grafik-legende">
         <span><span className="legende-linie solid"></span> Beziehung definiert</span>
         <span><span className="legende-linie dashed"></span> Noch keine Beziehung</span>
       </div>
+      {/* Farb-Legende */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', fontSize: '0.7rem', marginTop: '4px', color: '#6b7280' }}>
+        {BEZIEHUNGS_TYPEN.map(t => (
+          <span key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ width: '16px', height: '3px', background: t.farbe, borderRadius: '2px', display: 'inline-block' }}/>{t.name}
+          </span>
+        ))}
+      </div>
+
+      {/* Figurenstatistik */}
+      {felder && <FigurenStatistik figuren={figuren} felder={felder} />}
       
       {beziehungsPaare.length > 0 && onAddToSchreibflaeche && (
         <button 
@@ -10914,27 +11273,44 @@ const ReflexionsTool = ({ notizen, onChange, onAddToSchreibflaeche, apiKey, data
     
     setKiLoading(kategorieId);
     
-    // Kontext zusammenstellen
+    // Kontext zusammenstellen – volles dramaturgisches Bild
+    const kern = data.fundament?.kern || {};
+    const zumutung = typeof kern === 'object' ? kern.zumutung : data.fundament?.zumutung;
+    const weltgesetz = typeof kern === 'object' ? kern.weltgesetz : data.fundament?.weltgesetz;
+
     const projektKontext = `
 PROJEKT: ${data.projektName || 'Unbenannt'}
-LOGLINE: ${data.fundament?.logline || 'Nicht definiert'}
-THEMA: ${data.fundament?.kernthema || 'Nicht definiert'}
-FIGUREN: ${data.figuren?.map(f => `${f.name} (${f.ziel || '?'})`).join(', ') || 'Keine'}
-SZENEN: ${data.felder?.length || 0} Szenen
-${data.felder?.map((f, i) => `${i+1}. ${f.titel}`).join(', ') || ''}`.trim();
-    
-    const fragenText = kategorie.fragen.join('\n• ');
-    
-    const prompt = `Du bist ein erfahrener Dramaturg. Beantworte die folgenden Reflexionsfragen basierend auf dem Projekt-Kontext.
+LOGLINE: ${data.fundament?.logline?.text || data.fundament?.logline || 'Nicht definiert'}
+KERN/ZUMUTUNG: ${zumutung || 'Nicht definiert'}
+WELTGESETZ: ${weltgesetz || 'Nicht definiert'}
+THEMA: ${data.fundament?.kernthema || data.fundament?.thema || 'Nicht definiert'}
 
-${projektKontext}
+FIGUREN (${data.figuren?.length || 0}):
+${data.figuren?.map(f => `- ${f.name}: Want="${f.ziel || f.begehren || '?'}", Need="${f.beduerfnis || '?'}", Ghost="${f.praegung || '?'}", Sprechweise="${f.sprechweise || '?'}"${f.geheimnisse ? `, Geheimnis="${f.geheimnisse}"` : ''}${f.widersprueche ? `, Widerspruch="${f.widersprueche}"` : ''}`).join('\n') || 'Keine'}
+
+BEZIEHUNGEN:
+${(() => {
+      const bez = data.beziehungs_netzwerk || {};
+      return Object.entries(bez).map(([key, b]) => {
+        const [id1, id2] = key.split('_');
+        const f1 = data.figuren?.find(f => f.id === id1);
+        const f2 = data.figuren?.find(f => f.id === id2);
+        return f1 && f2 ? `- ${f1.name} ↔ ${f2.name}: ${b.art || b.typ || 'unbestimmt'}${b.beschreibung ? ` (${b.beschreibung})` : ''}` : null;
+      }).filter(Boolean).join('\n') || 'Keine definiert';
+    })()}
+
+SZENEN (${data.felder?.length || 0}):
+${data.felder?.map((f, i) => `${i+1}. "${f.titel}"${f.zusammenfassung ? ` – ${f.zusammenfassung}` : ''}${f.wendepunkt ? ` [Wendepunkt: ${f.wendepunkt}]` : ''} (Spannung: ${f.spannungswert ?? '?'})`).join('\n') || 'Keine'}`.trim();
+
+    const fragenText = kategorie.fragen.join('\n• ');
+
+    const prompt = `${projektKontext}
 
 KATEGORIE: ${kategorie.name}
 FRAGEN:
 • ${fragenText}
 
-Gib für JEDE Frage eine kurze, konkrete Einschätzung oder Empfehlung (1-3 Sätze).
-Wenn Informationen fehlen, sag was fehlt und was du bräuchtest.
+Beantworte JEDE Frage mit einer konkreten, dramaturgisch fundierten Einschätzung (2-4 Sätze). Beziehe dich dabei auf die konkreten Figuren, Beziehungen und Szenen des Projekts. Wenn Informationen fehlen, benenne was fehlt und warum es dramaturgisch relevant wäre.
 Sei direkt und konstruktiv.
 
 WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
@@ -10949,8 +11325,9 @@ WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2000,
+          system: 'Du bist ein erfahrener Dramaturg mit tiefem Verständnis für Figurenführung, Konfliktdynamik und Spannungsdramaturgie. Du analysierst Theaterprojekte gründlich und gibst fundierte, konstruktive Einschätzungen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
         })
       });
@@ -11509,15 +11886,16 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2000,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2500,
+          system: 'Du bist ein erfahrener Dramaturg, der professionelle Treatments für Theater schreibt. Du schreibst atmosphärisch, konkret und im Präsens. Du zeigst Figuren in Aktion, nicht in Beschreibung. Jeder Abschnitt soll Lust machen weiterzulesen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
         })
       });
-      
+
       if (!response.ok) throw new Error('API-Fehler');
       const result = await response.json();
-      
+
       setTreatmentData(prev => ({
         ...prev,
         [activeKapitel]: result.content[0].text
@@ -13262,9 +13640,30 @@ const DossierAssistent = ({ data, dossier, onChange, onClose, apiKey }) => {
 Titel: ${data.projektName}
 Logline: ${data.fundament?.logline?.text || data.fundament?.logline || 'nicht definiert'}
 Thema: ${data.fundament?.thema || data.themen?.[0]?.beschreibung || 'nicht definiert'}
-Zumutung: ${zumutung || 'nicht definiert'}
-Figuren: ${data.figuren?.map(f => `${f.name} (${f.charakteristik || f.archetyp || ''})`).join(', ') || 'keine'}
+Kern/Zumutung: ${zumutung || 'nicht definiert'}
+Weltgesetz: ${weltgesetz || 'nicht definiert'}
 Schauplatz: ${data.schauplatz?.beschreibung || 'nicht definiert'}
+Atmosphäre: ${data.schauplatz?.atmosphaere || 'nicht definiert'}
+
+Figuren:
+${data.figuren?.map(f => `- ${f.name}: ${f.charakteristik || f.archetyp || '?'}${f.ziel ? ` | Will: ${f.ziel}` : ''}${f.beduerfnis ? ` | Braucht: ${f.beduerfnis}` : ''}${f.praegung ? ` | Prägung: ${f.praegung}` : ''}`).join('\n') || 'keine'}
+
+Beziehungen:
+${(() => {
+      const bez = data.beziehungs_netzwerk || {};
+      const lines = Object.entries(bez).map(([key, b]) => {
+        const [id1, id2] = key.split('_');
+        const f1 = data.figuren?.find(f => f.id === id1);
+        const f2 = data.figuren?.find(f => f.id === id2);
+        return f1 && f2 ? `- ${f1.name} ↔ ${f2.name}: ${b.art || b.typ || '?'}` : null;
+      }).filter(Boolean);
+      return lines.length > 0 ? lines.join('\n') : 'keine definiert';
+    })()}
+
+Spannungsbogen (${data.felder?.length || 0} Szenen):
+${data.felder?.map((f, i) => `${i+1}. "${f.titel}" (Spannung: ${f.spannungswert ?? '?'})${f.wendepunkt ? ` – Wendepunkt: ${f.wendepunkt}` : ''}`).join('\n') || 'keine Szenen'}
+
+Themen: ${data.themen?.map(t => t.name).join(', ') || 'keine'}
 `;
 
     const schweizHinweis = '\n\nWICHTIG: Verwende Schweizer Schreibweise mit "ss" statt "ss" (z.B. "muss", "dass", "gross").';
@@ -13342,15 +13741,16 @@ Schreibe konkret und anschaulich. Nur den Text.${schweizHinweis}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 800,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1500,
+          system: 'Du bist ein erfahrener Dramaturg und Kulturmanager, der professionelle Förderdossiers für Theaterprojekte erstellt. Du kennst die Erwartungen von Förderstellen und schreibst überzeugend, konkret und dramaturgisch fundiert. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
         })
       });
-      
+
       const result = await response.json();
       const text = result.content?.[0]?.text || '';
-      
+
       switch(type) {
         case 'kurzfassung':
           updateDossier({ kurzfassung: text });
@@ -15394,6 +15794,7 @@ const DEFAULT_DATA = {
   themen_tracking: {},
   reflexionsNotizen: {},
   recherche: [],
+  kommentare: [],
   dossier: {
     projektbeschreibung: '',
     warumJetzt: '',
@@ -15463,6 +15864,725 @@ const loadSavedState = () => {
 
 const savedState = loadSavedState();
 
+// =====================================================
+// SCHREIBTISCH-VIEW – Textverarbeitungs-Modus
+// =====================================================
+const SCHREIBTISCH_FORMATVORLAGEN = {
+  standard: { name: 'Standard', class: 'format-standard', description: 'Normaler Text', icon: '¶', shortcut: 'N' },
+  dialog: { name: 'Dialog', class: 'format-dialog', description: 'FIGUR: Sprechtext', icon: '💬', shortcut: 'D' },
+  regieanweisung: { name: 'Regieanweisung', class: 'format-regieanweisung', description: '(Handlungsanweisung)', icon: '🎬', shortcut: 'R' },
+  szeneTitel: { name: 'Szenen-Titel', class: 'format-szene-titel', description: 'Überschrift', icon: '🔍', shortcut: 'T' },
+  aktTitel: { name: 'Akt-Titel', class: 'format-akt-titel', description: 'ERSTER AKT', icon: '🏛️', shortcut: 'A' },
+  vers: { name: 'Versmaß', class: 'format-vers', description: 'Gebundene Sprache', icon: '📜', shortcut: 'V' },
+  lied: { name: 'Lied', class: 'format-lied', description: 'Gesungener Text', icon: '🎵', shortcut: 'L' },
+  pause: { name: 'Pause', class: 'format-pause', description: '— PAUSE —', icon: '⏸️', shortcut: 'P' },
+  musik: { name: 'Musik', class: 'format-musik', description: 'Musik-Einsatz', icon: '🎼' },
+  sound: { name: 'Sound', class: 'format-sound', description: 'Sound-Effekt', icon: '🔊' },
+  notiz: { name: 'Notiz', class: 'format-notiz', description: 'Regie-Notiz (nicht drucken)', icon: '📝' },
+  nebentext: { name: 'Nebentext', class: 'format-nebentext', description: 'Erläuternder Text', icon: '📄' }
+};
+
+const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparringWithAI }) => {
+  const [activeSceneId, setActiveSceneId] = useState(null);
+  const [contextMenu, setContextMenu] = useState(null);
+  const [currentPosition, setCurrentPosition] = useState('');
+  const [currentFormat, setCurrentFormat] = useState('standard');
+  const mainRef = useRef(null);
+  const sceneRefs = useRef({});
+  const editorRefs = useRef({});
+
+  // Szenen nach Position sortiert
+  const sortedFelder = useMemo(() =>
+    [...(data.felder || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0)),
+    [data.felder]
+  );
+
+  // Akt-Gruppierung erkennen (aus Szenentiteln)
+  const akteUndSzenen = useMemo(() => {
+    const groups = [];
+    let currentAkt = null;
+
+    sortedFelder.forEach((feld, idx) => {
+      const titel = feld.titel || '';
+      // Akt-Erkennung: "I.", "II.", "1. Akt", "Akt 1", "ERSTER AKT" etc.
+      const aktMatch = titel.match(/^(I{1,4}V?|IV|V|V?I{0,3})\.\s/i) ||
+                       titel.match(/^(\d+)\.\s*Akt/i) ||
+                       titel.match(/^Akt\s*(\d+)/i) ||
+                       titel.match(/^(ERST|ZWEIT|DRITT|VIERT|FÜNFT)(ER|ES)\s+AKT/i);
+
+      if (aktMatch || idx === 0) {
+        // Akt-Prefix aus Titel extrahieren
+        let aktName = null;
+        if (aktMatch) {
+          aktName = titel;
+        } else if (idx === 0 && !aktMatch) {
+          aktName = null; // Kein expliziter Akt
+        }
+        currentAkt = { aktName, szenen: [] };
+        groups.push(currentAkt);
+      }
+
+      if (!currentAkt) {
+        currentAkt = { aktName: null, szenen: [] };
+        groups.push(currentAkt);
+      }
+
+      currentAkt.szenen.push({ ...feld, _globalIdx: idx });
+    });
+
+    return groups;
+  }, [sortedFelder]);
+
+  // Scroll-Position tracken für Kopfzeile
+  const handleScroll = useCallback(() => {
+    if (!mainRef.current) return;
+    const scrollTop = mainRef.current.scrollTop + 120;
+    let found = '';
+
+    for (const feld of sortedFelder) {
+      const el = sceneRefs.current[feld.id];
+      if (el && el.offsetTop <= scrollTop) {
+        found = feld.titel;
+      }
+    }
+    setCurrentPosition(found);
+  }, [sortedFelder]);
+
+  useEffect(() => {
+    const el = mainRef.current;
+    if (el) {
+      el.addEventListener('scroll', handleScroll);
+      return () => el.removeEventListener('scroll', handleScroll);
+    }
+  }, [handleScroll]);
+
+  // Zu Szene scrollen
+  const scrollToScene = useCallback((sceneId) => {
+    const el = sceneRefs.current[sceneId];
+    if (el && mainRef.current) {
+      setActiveSceneId(sceneId);
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  // fmt-* Klassen in Rebu format-* Klassen konvertieren (für Kompatibilität)
+  const convertFmtToFormat = useCallback((html) => {
+    if (!html) return '';
+    return html
+      .replace(/\bfmt-dialog\b/g, 'format-dialog')
+      .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
+      .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
+      .replace(/\bfmt-akt-titel\b/g, 'format-akt-titel')
+      .replace(/\bfmt-vers\b/g, 'format-vers')
+      .replace(/\bfmt-lied\b/g, 'format-lied')
+      .replace(/\bfmt-figurenname\b/g, 'format-standard')
+      .replace(/class="figur"/g, 'class="figur-name"')
+      .replace(/class="text"/g, 'class="dialog-text"');
+  }, []);
+
+  // Rebu format-* Klassen zurück in fmt-* konvertieren (für Dramera-Datenmodell)
+  const convertFormatToFmt = useCallback((html) => {
+    if (!html) return '';
+    return html
+      .replace(/\bformat-dialog\b/g, 'fmt-dialog')
+      .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
+      .replace(/\bformat-szene-titel\b/g, 'fmt-szenen-titel')
+      .replace(/\bformat-akt-titel\b/g, 'fmt-akt-titel')
+      .replace(/\bformat-vers\b/g, 'fmt-vers')
+      .replace(/\bformat-lied\b/g, 'fmt-lied')
+      .replace(/\bformat-standard\b/g, '')
+      .replace(/class="figur-name"/g, 'class="figur"')
+      .replace(/class="dialog-text"/g, 'class="text"');
+  }, []);
+
+  // Sync: Editor-Inhalt zurück ins Datenmodell schreiben
+  const syncEditorToData = useCallback((sceneId) => {
+    const editor = editorRefs.current[sceneId];
+    if (!editor) return;
+    const rebuHtml = editor.innerHTML;
+    const fmtHtml = convertFormatToFmt(rebuHtml);
+    updateFeld(sceneId, { inhalt: fmtHtml });
+  }, [updateFeld, convertFormatToFmt]);
+
+  // Debounced sync
+  const syncTimerRef = useRef({});
+  const debouncedSync = useCallback((sceneId) => {
+    if (syncTimerRef.current[sceneId]) clearTimeout(syncTimerRef.current[sceneId]);
+    syncTimerRef.current[sceneId] = setTimeout(() => syncEditorToData(sceneId), 800);
+  }, [syncEditorToData]);
+
+  // Formatvorlage auf aktuelle Auswahl/Absatz anwenden (wie Rebu)
+  const applyFormat = useCallback((formatKey) => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    // Finde den Editor, in dem die Auswahl liegt
+    let editorEl = range.commonAncestorContainer;
+    while (editorEl && !editorEl.classList?.contains('schreibtisch-editor')) {
+      editorEl = editorEl.parentNode;
+    }
+    if (!editorEl) return;
+    const sceneId = editorEl.dataset.sceneId;
+
+    const selectedText = range.toString().trim();
+    const vorlage = SCHREIBTISCH_FORMATVORLAGEN[formatKey];
+    if (!vorlage) return;
+
+    // Finde aktuellen Absatz
+    let node = selection.anchorNode;
+    while (node && node !== editorEl) {
+      if (node.nodeType === 1 && (node.tagName === 'P' || node.tagName === 'DIV')) break;
+      node = node.parentNode;
+    }
+
+    if (!node || node === editorEl) {
+      // Kein Absatz gefunden – neuen erstellen
+      if (!selectedText) return;
+      node = range.startContainer;
+    }
+
+    if (node && node !== editorEl && node.nodeType === 1) {
+      const text = selectedText || node.textContent.replace(/\s+/g, ' ').trim();
+      if (!text) return;
+
+      let newElement;
+      if (formatKey === 'dialog') {
+        newElement = document.createElement('div');
+        newElement.className = vorlage.class;
+        const dMatch = text.match(/^([A-ZÄÖÜa-zäöü][A-ZÄÖÜa-zäöüß\s\d.]*?):\s*(.*)$/);
+        if (dMatch) {
+          newElement.innerHTML = `<span class="figur-name">${dMatch[1].trim().toUpperCase()}:</span><span class="dialog-text">${dMatch[2] || ''}</span>`;
+        } else {
+          newElement.innerHTML = `<span class="figur-name">FIGUR:</span><span class="dialog-text">${text}</span>`;
+        }
+      } else if (formatKey === 'regieanweisung') {
+        newElement = document.createElement('p');
+        newElement.className = vorlage.class;
+        let rt = text;
+        if (!rt.startsWith('(')) rt = '(' + rt;
+        if (!rt.endsWith(')')) rt = rt + ')';
+        newElement.textContent = rt;
+      } else {
+        newElement = document.createElement('p');
+        newElement.className = vorlage.class;
+        newElement.textContent = text;
+      }
+
+      node.parentNode.replaceChild(newElement, node);
+
+      // Cursor ans Ende
+      const newRange = document.createRange();
+      newRange.selectNodeContents(newElement);
+      newRange.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+
+      debouncedSync(sceneId);
+      setCurrentFormat(formatKey);
+    }
+  }, [debouncedSync]);
+
+  // Aktuelles Format am Cursor erkennen
+  const detectCurrentFormat = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+    let node = selection.anchorNode;
+    while (node) {
+      if (node.nodeType === 1 && node.className) {
+        for (const [key, vorlage] of Object.entries(SCHREIBTISCH_FORMATVORLAGEN)) {
+          if (node.classList?.contains(vorlage.class)) {
+            setCurrentFormat(key);
+            return;
+          }
+        }
+      }
+      node = node.parentNode;
+    }
+    setCurrentFormat('standard');
+  }, []);
+
+  // Keyboard Shortcuts
+  const handleEditorKeyDown = useCallback((e, sceneId) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
+      const key = e.key.toUpperCase();
+      for (const [fKey, vorlage] of Object.entries(SCHREIBTISCH_FORMATVORLAGEN)) {
+        if (vorlage.shortcut === key) {
+          e.preventDefault();
+          applyFormat(fKey);
+          return;
+        }
+      }
+    }
+    // Enter in Dialog -> neuer Dialog-Block
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const selection = window.getSelection();
+      let node = selection?.anchorNode;
+      while (node) {
+        if (node.nodeType === 1 && node.classList?.contains('format-dialog')) {
+          e.preventDefault();
+          const newDiv = document.createElement('div');
+          newDiv.className = 'format-dialog';
+          newDiv.innerHTML = '<span class="figur-name">FIGUR:</span><span class="dialog-text">&nbsp;</span>';
+          node.parentNode.insertBefore(newDiv, node.nextSibling);
+          // Cursor in dialog-text setzen
+          const dt = newDiv.querySelector('.dialog-text');
+          if (dt) {
+            const r = document.createRange();
+            r.selectNodeContents(dt);
+            r.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(r);
+          }
+          debouncedSync(sceneId);
+          return;
+        }
+        node = node.parentNode;
+      }
+    }
+  }, [applyFormat, debouncedSync]);
+
+  // Kontextmenü
+  const handleContextMenu = useCallback((e, sceneId, elementType) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, sceneId, elementType });
+  }, []);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  useEffect(() => {
+    document.addEventListener('click', closeContextMenu);
+    return () => document.removeEventListener('click', closeContextMenu);
+  }, [closeContextMenu]);
+
+  // Neue Szene einfügen
+  const insertSceneAfter = useCallback((afterIdx) => {
+    const newId = `f${Date.now()}`;
+    const newFeld = {
+      id: newId, titel: 'Neue Szene', position: afterIdx + 1,
+      figuren: [], themen: [], notizen: '', zusammenfassung: '',
+      ziel: '', widerstand: '', wendepunkt: '', figuren_ziele: [],
+      gespraechsart: '', status: 'idee', inhalt: ''
+    };
+    setData(prev => {
+      const felder = [...(prev.felder || [])];
+      felder.forEach(f => { if (f.position > afterIdx) f.position += 1; });
+      felder.push(newFeld);
+      return { ...prev, felder };
+    });
+    setTimeout(() => scrollToScene(newId), 100);
+  }, [setData, scrollToScene]);
+
+  // Titel editieren
+  const handleTitelEdit = useCallback((sceneId, newTitel) => {
+    // Nummer am Anfang entfernen (wird automatisch generiert)
+    const clean = newTitel.replace(/^\d+\.\s*/, '').trim();
+    if (clean) updateFeld(sceneId, { titel: clean });
+  }, [updateFeld]);
+
+  // Ort editieren
+  const handleOrtEdit = useCallback((sceneId, newOrt) => {
+    updateFeld(sceneId, { ort: newOrt });
+  }, [updateFeld]);
+
+  // PDF-Export
+  const exportPDF = useCallback(() => { window.print(); }, []);
+
+  // DOCX-Export
+  const exportDOCX = useCallback(async () => {
+    try {
+      // Lade docx library dynamisch wenn nicht vorhanden (UMD Build für Browser)
+      if (!window.docx) {
+        const cdnUrls = [
+          'https://unpkg.com/docx@8.5.0/build/index.umd.js',
+          'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'
+        ];
+        let loaded = false;
+        for (const url of cdnUrls) {
+          if (loaded) break;
+          try {
+            const s = document.createElement('script');
+            s.src = url;
+            document.head.appendChild(s);
+            await new Promise((resolve, reject) => {
+              s.onload = () => { loaded = true; resolve(); };
+              s.onerror = reject;
+              setTimeout(() => reject(new Error('Timeout')), 5000);
+            });
+          } catch (e) {
+            console.log('CDN fehlgeschlagen:', url);
+          }
+        }
+        if (!window.docx) {
+          throw new Error('docx-Library konnte nicht geladen werden. Bitte prüfe deine Internetverbindung.');
+        }
+      }
+      const { Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak } = window.docx;
+      const children = [];
+
+      // Titelseite
+      children.push(
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 4000 }, children: [
+          new TextRun({ text: data.projektName || 'Unbenanntes Stück', font: 'Trebuchet MS', size: 56, bold: true })
+        ]}),
+        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 2000 }, children: [
+          new TextRun({ text: 'Ein Theaterstück', font: 'Georgia', size: 28, italics: true })
+        ]})
+      );
+      if (data.autor?.name) {
+        children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 2000 }, children: [
+          new TextRun({ text: `von ${data.autor.name}`, font: 'Trebuchet MS', size: 22 })
+        ]}));
+      }
+
+      // Personenliste
+      if (data.figuren?.length > 0) {
+        children.push(
+          new Paragraph({ spacing: { before: 600 }, children: [new PageBreak()] }),
+          new Paragraph({ spacing: { after: 300 }, children: [
+            new TextRun({ text: 'PERSONEN', font: 'Trebuchet MS', size: 28, bold: true })
+          ]})
+        );
+        data.figuren.forEach(f => {
+          children.push(new Paragraph({ spacing: { after: 60 }, children: [
+            new TextRun({ text: f.name.toUpperCase(), font: 'Georgia', size: 22, bold: true }),
+            new TextRun({ text: f.beschreibung ? ` — ${f.beschreibung}` : '', font: 'Georgia', size: 22 })
+          ]}));
+        });
+      }
+
+      // Szenen – HTML parsen und in DOCX umwandeln
+      sortedFelder.forEach((feld, idx) => {
+        if (idx === 0) children.push(new Paragraph({ children: [new PageBreak()] }));
+
+        children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
+          new TextRun({ text: `${idx + 1}. ${feld.titel}`, font: 'Georgia', size: 24, bold: true })
+        ]}));
+
+        if (feld.ort) {
+          children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 }, children: [
+            new TextRun({ text: feld.ort, font: 'Georgia', size: 22, italics: true })
+          ]}));
+        }
+
+        // HTML parsen
+        const htmlStr = convertFmtToFormat(feld.inhalt || '');
+        if (htmlStr) {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(`<div>${htmlStr}</div>`, 'text/html');
+          doc.body.firstChild.childNodes.forEach(node => {
+            if (node.nodeType !== 1) return;
+            const cls = node.className || '';
+
+            if (cls.includes('format-akt-titel')) {
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 500, after: 200 }, children: [
+                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 22, bold: true, allCaps: true })
+              ]}));
+            } else if (cls.includes('format-szene-titel')) {
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
+                new TextRun({ text: node.textContent, font: 'Georgia', size: 24, bold: true })
+              ]}));
+            } else if (cls.includes('format-regieanweisung')) {
+              children.push(new Paragraph({ indent: { left: 3402 }, spacing: { before: 60, after: 60 }, children: [
+                new TextRun({ text: node.textContent, font: 'Georgia', size: 22, italics: true })
+              ]}));
+            } else if (cls.includes('format-dialog')) {
+              const fn = node.querySelector('.figur-name');
+              const dt = node.querySelector('.dialog-text');
+              children.push(new Paragraph({ spacing: { before: 100 }, children: [
+                new TextRun({ text: fn ? fn.textContent : '', font: 'Trebuchet MS', size: 21, bold: true })
+              ]}));
+              children.push(new Paragraph({ indent: { left: 284 }, children: [
+                new TextRun({ text: dt ? dt.textContent : '', font: 'Trebuchet MS', size: 22 })
+              ]}));
+            } else if (cls.includes('format-vers') || cls.includes('format-lied')) {
+              children.push(new Paragraph({ indent: { left: cls.includes('format-lied') ? 1134 : 284 }, children: [
+                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 22, italics: true })
+              ]}));
+            } else if (cls.includes('format-pause')) {
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 400 }, children: [
+                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 24, bold: true })
+              ]}));
+            } else if (cls.includes('format-musik') || cls.includes('format-sound')) {
+              children.push(new Paragraph({ indent: { left: 2268 }, spacing: { before: 80, after: 80 }, children: [
+                new TextRun({ text: node.textContent, font: 'Georgia', size: 22, italics: true })
+              ]}));
+            } else if (node.textContent.trim()) {
+              children.push(new Paragraph({ children: [
+                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 24 })
+              ]}));
+            }
+          });
+        } else if (feld.zusammenfassung) {
+          children.push(new Paragraph({ children: [
+            new TextRun({ text: `[${feld.zusammenfassung}]`, font: 'Georgia', size: 20, italics: true, color: '999999' })
+          ]}));
+        }
+      });
+
+      const doc = new Document({
+        sections: [{ properties: {
+          page: { margin: { top: 1440, right: 1440, bottom: 1728, left: 1440 } }
+        }, children }]
+      });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(data.projektName || 'Stueck').replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, '_')}_Schreibtisch.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('DOCX-Export fehlgeschlagen:', err);
+      alert('DOCX-Export fehlgeschlagen: ' + err.message);
+    }
+  }, [data, sortedFelder, convertFmtToFormat]);
+
+  // Spannungsfarbe
+  const getTensionColor = (val) => {
+    if (val == null) return '#ccc';
+    if (val <= 3) return '#22c55e';
+    if (val <= 6) return '#eab308';
+    if (val <= 8) return '#f97316';
+    return '#ef4444';
+  };
+
+  // Render
+  return (
+    <div className="schreibtisch-container">
+      {/* Navigation Sidebar */}
+      <div className="schreibtisch-nav">
+        <div className="schreibtisch-nav-header">
+          <span>Szenen</span>
+          <span style={{ fontSize: '0.7rem', color: '#aaa', fontWeight: 400 }}>{sortedFelder.length}</span>
+        </div>
+        <div className="schreibtisch-nav-list">
+          {akteUndSzenen.map((akt, aktIdx) => (
+            <React.Fragment key={aktIdx}>
+              {akt.aktName && <div className="schreibtisch-nav-akt">{akt.aktName}</div>}
+              {akt.szenen.map(sz => (
+                <div
+                  key={sz.id}
+                  className={`schreibtisch-nav-szene ${activeSceneId === sz.id ? 'active' : ''}`}
+                  onClick={() => scrollToScene(sz.id)}
+                  title={sz.zusammenfassung || sz.titel}
+                >
+                  <span className="nav-tension" style={{ background: getTensionColor(sz.spannungswert) }} />
+                  {sz._globalIdx + 1}. {sz.titel}
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* Hauptbereich */}
+      <div className="schreibtisch-main" ref={mainRef}>
+        {/* Formatvorlagen-Toolbar */}
+        <div className="schreibtisch-toolbar">
+          <div className="schreibtisch-toolbar-group">
+            <select
+              value={currentFormat}
+              onChange={(e) => applyFormat(e.target.value)}
+              title="Formatvorlage"
+            >
+              {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).map(([key, v]) => (
+                <option key={key} value={key}>{v.icon} {v.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="schreibtisch-toolbar-divider" />
+
+          <div className="schreibtisch-toolbar-group">
+            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('bold')} title="Fett (Ctrl+B)"><b>F</b></button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('italic')} title="Kursiv (Ctrl+I)"><i>K</i></button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('underline')} title="Unterstrichen (Ctrl+U)"><u>U</u></button>
+          </div>
+
+          <div className="schreibtisch-toolbar-divider" />
+
+          <div className="schreibtisch-toolbar-group">
+            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('undo')} title="Rückgängig (Ctrl+Z)">↩</button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('redo')} title="Wiederholen (Ctrl+Y)">↪</button>
+          </div>
+
+          <div className="schreibtisch-toolbar-divider" />
+
+          <div className="schreibtisch-toolbar-group">
+            <span className="schreibtisch-topbar-title">{data.projektName || 'Unbenanntes Stück'}</span>
+            <span className="schreibtisch-topbar-pos" style={{ marginLeft: '1rem' }}>{currentPosition}</span>
+          </div>
+
+          <div style={{ flex: 1 }} />
+
+          <div className="schreibtisch-toolbar-group">
+            <button className="schreibtisch-toolbar-btn" onClick={exportPDF} title="Als PDF drucken">PDF</button>
+            <button className="schreibtisch-toolbar-btn" onClick={exportDOCX} title="Als DOCX exportieren">DOCX</button>
+          </div>
+        </div>
+
+        {/* A4-Seite */}
+        <div className="schreibtisch-page">
+          {/* Titelseite */}
+          <div className="schreibtisch-titelseite">
+            <h1>{data.projektName || 'Unbenanntes Stück'}</h1>
+            {data.fundament?.logline && (
+              <div className="untertitel">{typeof data.fundament.logline === 'object' ? data.fundament.logline.text : data.fundament.logline}</div>
+            )}
+            {data.autor?.name && <div className="autor-info">von {data.autor.name}</div>}
+          </div>
+
+          {/* Personenliste */}
+          {data.figuren?.length > 0 && (
+            <div className="schreibtisch-personen">
+              <h2>Personen</h2>
+              {data.figuren.map(f => (
+                <div key={f.id} className="schreibtisch-person">
+                  <span className="person-name">{f.name.toUpperCase()}</span>
+                  {f.beschreibung && <span className="person-desc"> — {f.beschreibung}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Szenen */}
+          {sortedFelder.map((feld, idx) => {
+            const figurenInSzene = (feld.figuren || [])
+              .map(id => data.figuren?.find(f => f.id === id))
+              .filter(Boolean);
+
+            // Inhalt: fmt-* in format-* konvertieren für Rebu-kompatible Darstellung
+            const editorHtml = convertFmtToFormat(feld.inhalt || '');
+            const hasContent = !!feld.inhalt?.trim();
+
+            return (
+              <React.Fragment key={feld.id}>
+                {idx > 0 && (
+                  <div className="schreibtisch-insert-bar">
+                    <button onClick={() => insertSceneAfter(idx - 1)}>+ Szene einfügen</button>
+                  </div>
+                )}
+                {idx > 0 && <hr className="schreibtisch-szene-divider" />}
+
+                <div
+                  ref={el => sceneRefs.current[feld.id] = el}
+                  className="schreibtisch-szene-block"
+                  onContextMenu={(e) => handleContextMenu(e, feld.id, 'szene')}
+                >
+                  {/* Szenentitel – editierbar */}
+                  <div
+                    className="schreibtisch-szenen-titel"
+                    contentEditable
+                    suppressContentEditableWarning
+                    onBlur={(e) => handleTitelEdit(feld.id, e.target.textContent)}
+                    onClick={() => setActiveSceneId(feld.id)}
+                  >
+                    {idx + 1}. {feld.titel}
+                  </div>
+
+                  {/* Ort – editierbar */}
+                  {(feld.ort || activeSceneId === feld.id) && (
+                    <div
+                      className="schreibtisch-ort"
+                      contentEditable
+                      suppressContentEditableWarning
+                      onBlur={(e) => handleOrtEdit(feld.id, e.target.textContent)}
+                    >
+                      {feld.ort || ''}
+                    </div>
+                  )}
+
+                  {/* Zusammenfassung (wenn kein Inhalt) */}
+                  {!hasContent && feld.zusammenfassung && (
+                    <div className="schreibtisch-zusammenfassung">{feld.zusammenfassung}</div>
+                  )}
+
+                  {/* Szenen-Inhalt – ein contentEditable div mit Rebu format-* Klassen */}
+                  <div
+                    ref={el => editorRefs.current[feld.id] = el}
+                    className="schreibtisch-editor"
+                    data-scene-id={feld.id}
+                    contentEditable
+                    suppressContentEditableWarning
+                    dangerouslySetInnerHTML={{ __html: hasContent ? editorHtml : (figurenInSzene.length > 0
+                      ? `<p class="format-regieanweisung">(${figurenInSzene.map(f => f.name.toUpperCase()).join(', ')})</p><p class="format-standard"><br></p>`
+                      : '<p class="format-standard"><br></p>')
+                    }}
+                    onInput={() => debouncedSync(feld.id)}
+                    onKeyDown={(e) => handleEditorKeyDown(e, feld.id)}
+                    onClick={() => { setActiveSceneId(feld.id); detectCurrentFormat(); }}
+                    onKeyUp={detectCurrentFormat}
+                    style={{ minHeight: '3rem', outline: 'none' }}
+                  />
+                </div>
+              </React.Fragment>
+            );
+          })}
+
+          {/* Neue Szene am Ende */}
+          <div className="schreibtisch-insert-bar" style={{ opacity: 0.6, marginTop: '2rem' }}>
+            <button onClick={() => insertSceneAfter(sortedFelder.length - 1)}>+ Neue Szene am Ende</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Kontextmenü */}
+      {contextMenu && (
+        <div className="schreibtisch-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}>
+
+          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).slice(0, 8).map(([key, v]) => (
+            <div key={key} className="schreibtisch-context-menu-item" onClick={() => {
+              applyFormat(key);
+              closeContextMenu();
+            }}>
+              {v.icon} {v.name}
+              {v.shortcut && <span className="schreibtisch-toolbar-shortcut">Ctrl+Shift+{v.shortcut}</span>}
+            </div>
+          ))}
+
+          <div className="schreibtisch-context-menu-sep" />
+
+          <div className="schreibtisch-context-menu-item" onClick={() => {
+            insertSceneAfter(sortedFelder.findIndex(f => f.id === contextMenu.sceneId));
+            closeContextMenu();
+          }}>➕ Neue Szene danach</div>
+
+          {apiKey && (
+            <>
+              <div className="schreibtisch-context-menu-sep" />
+              <div className="schreibtisch-context-menu-item" onClick={() => {
+                const feld = data.felder.find(f => f.id === contextMenu.sceneId);
+                if (feld && sparringWithAI) sparringWithAI('dialog', feld);
+                closeContextMenu();
+              }}>💬 KI-Dialog-Vorschlag</div>
+              <div className="schreibtisch-context-menu-item" onClick={() => {
+                const feld = data.felder.find(f => f.id === contextMenu.sceneId);
+                if (feld && sparringWithAI) sparringWithAI('szenentitel_einzeln', feld);
+                closeContextMenu();
+              }}>🔍 Szene analysieren</div>
+              <div className="schreibtisch-context-menu-item" onClick={() => {
+                const feld = data.felder.find(f => f.id === contextMenu.sceneId);
+                if (feld && sparringWithAI) sparringWithAI('szene', feld);
+                closeContextMenu();
+              }}>🎯 Sparring starten</div>
+            </>
+          )}
+
+          <div className="schreibtisch-context-menu-sep" />
+
+          <div className="schreibtisch-context-menu-item" onClick={() => {
+            const val = prompt('Spannungswert (0-10):', '5');
+            if (val !== null) updateFeld(contextMenu.sceneId, { spannungswert: Math.min(10, Math.max(0, parseInt(val) || 5)) });
+            closeContextMenu();
+          }}>⚡ Spannungswert setzen</div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 function DrameraWerkbank() {
   // Lade gespeicherte Daten aus localStorage oder verwende Default
   const [data, setData] = useState(savedState?.data || DEFAULT_DATA);
@@ -15481,6 +16601,12 @@ function DrameraWerkbank() {
   const [aktuellesRaster, setAktuellesRaster] = useState(savedState?.aktuellesRaster || 'anfang-mitte-ende');
   const [showTitelLeiste, setShowTitelLeiste] = useState(false);
   const [showReflexion, setShowReflexion] = useState(false);
+  const [showSpannungsbogen, setShowSpannungsbogen] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [versionHistory, setVersionHistory] = useState(() => {
+    try { const vh = localStorage.getItem('nina_version_history'); return vh ? JSON.parse(vh) : []; } catch(e) { return []; }
+  });
   const [offeneFormAbschnitte, setOffeneFormAbschnitte] = useState(savedState?.offeneFormAbschnitte || DEFAULT_OFFENE_FORM);
   const [rasterEditorOpen, setRasterEditorOpen] = useState(false);
   const [expandedSections, setExpandedSections] = useState({ vorgaben: true, figuren: true, themen: true, szenenIdeen: true });
@@ -15497,7 +16623,7 @@ function DrameraWerkbank() {
   const [vorlageFigurName, setVorlageFigurName] = useState('');
   const [newItemValue, setNewItemValue] = useState('');
   const [showMenu, setShowMenu] = useState(false);
-  
+
   // === GOOGLE DRIVE STATE ===
   const [gdriveRefresh, setGdriveRefresh] = useState(0);
   const [showImportExportModal, setShowImportExportModal] = useState(false);
@@ -15508,6 +16634,15 @@ function DrameraWerkbank() {
   
   // === NINA-EXCHANGE v3.0 IMPORT STATE ===
   const [ninaImportPreview, setNinaImportPreview] = useState(null); // { data, analysis, version, source }
+
+  // === TWIN SYSTEM STATE (Dramera ↔ Rebu) ===
+  const [showTwinModal, setShowTwinModal] = useState(false);
+  const [twinSyncStatus, setTwinSyncStatus] = useState(() => {
+    try {
+      const ts = localStorage.getItem('nina-twin-last-sync');
+      return ts ? { lastSync: ts, direction: localStorage.getItem('nina-twin-last-direction') || 'unknown' } : null;
+    } catch { return null; }
+  });
   
   // === CLOUD SYNC STATE ===
   const [cloudUser, setCloudUser] = useState(null);
@@ -15599,6 +16734,19 @@ function DrameraWerkbank() {
           bearbeitenSidebarWidth
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+
+        // === VERSIONSHISTORIE: Snapshot speichern ===
+        try {
+          const snapshot = { timestamp: new Date().toISOString(), data: JSON.parse(JSON.stringify(data)) };
+          setVersionHistory(prev => {
+            const updated = [...prev, snapshot].slice(-10);
+            localStorage.setItem('nina_version_history', JSON.stringify(updated));
+            return updated;
+          });
+        } catch (vhErr) {
+          console.warn('Versionshistorie-Speicherung fehlgeschlagen:', vhErr);
+        }
+
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
         console.log('Auto-Save: Projekt gespeichert');
@@ -15619,6 +16767,22 @@ function DrameraWerkbank() {
     };
   }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
   
+  // === VERSIONSHISTORIE: Beim Start aus localStorage laden ===
+  useEffect(() => {
+    if (!HAS_LOCAL_STORAGE) return;
+    try {
+      const stored = localStorage.getItem('nina_version_history');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setVersionHistory(parsed.slice(-10));
+        }
+      }
+    } catch (e) {
+      console.warn('Versionshistorie konnte nicht geladen werden:', e);
+    }
+  }, []);
+
   // Warnung vor Tab-Schliessung bei ungespeicherten Änderungen
   useEffect(() => {
     const handleBeforeUnload = (e) => {
@@ -15647,7 +16811,7 @@ function DrameraWerkbank() {
   const importNinaExchangeRef = useRef(null);
   
   // ============================================
-  // NINA-EXCHANGE IMPORT v3.0 (von Rebu/Propla)
+  // NINA-EXCHANGE IMPORT v3.0/v4.0 (von Rebu/Propla)
   // ============================================
   const handleNinaExchangeImport = (e) => {
     const file = e.target.files[0];
@@ -16439,7 +17603,7 @@ function DrameraWerkbank() {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Antworte nur mit: OK' }]
         })
@@ -16888,20 +18052,21 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2500,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 3000,
+          system: 'Du bist ein erfahrener Dramaturg und dramaturgischer Sparringspartner. Du analysierst Szenen, Figurenkonstellationen und Spannungsverläufe mit professionellem Blick. Du denkst in Want/Need/Ghost, in Subtext und dramatischer Ironie. Wenn du Dialoge schreibst, haben die Figuren eigene Stimmen und verfolgen verborgene Ziele. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
         })
       });
-      
+
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.error?.message || 'API-Fehler');
       }
-      
+
       const result = await response.json();
       const fullText = result.content[0].text;
-      
+
       // Aktionen aus dem Ergebnis extrahieren
       const actions = parseActions(fullText);
       const cleanText = stripActions(fullText);
@@ -17419,7 +18584,7 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
       const needsWebSearch = /recherchier|such|find|aktuell|news|wikipedia|was weisst|im netz|im internet|online/i.test(userMessage);
       
       const requestBody = {
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         system: DRAMATURG_SYSTEM_PROMPT + '\n\n' + projektKontext,
         messages: [...dramaturgMessages.slice(-10), newUserMsg].map(m => ({
@@ -17585,30 +18750,68 @@ Was möchtest du tun?`
   const analyzeChunk = async (chunkText, chunkIndex, totalChunks, knownFiguren = []) => {
     const isFirstChunk = chunkIndex === 0;
     
-    // Minimaler Prompt - nur Struktur extrahieren, kein Volltext
-    const systemPrompt = `Extrahiere die Struktur dieses Theatertexts.
+    // Tiefenanalyse-Prompt - Struktur UND dramaturgische Felder extrahieren
+    const systemPrompt = `Du bist ein erfahrener Dramaturg. Extrahiere die Struktur und dramaturgische Analyse dieses Theatertexts.
 
 ANTWORTE NUR MIT DIESEM EXAKTEN JSON-FORMAT:
 
 {
   "titel": "Titel des Stücks",
+  "logline": "Eine Logline des Stücks (1 Satz: Wer will was und was steht im Weg?)",
+  "kern": "Worum geht es im Kern? Was ist die zentrale Zumutung/These des Stücks?",
   "figuren": [
-    {"name": "Figurenname", "beschreibung": "Wer ist diese Figur (Rolle, Beziehungen)"}
+    {
+      "name": "Figurenname",
+      "beschreibung": "Wer ist diese Figur (2-3 Sätze)",
+      "beruf": "Beruf oder soziale Rolle (falls erkennbar)",
+      "alter": "Ungefähres Alter (falls erkennbar, z.B. 'Mitte 40')",
+      "geschlecht": "m/w/d (falls erkennbar)",
+      "charakteristik": "Kurzcharakteristik in einem Satz",
+      "sprechweise": "Wie spricht diese Figur? Kurze/lange Sätze, Dialekt, besondere Muster?",
+      "want": "Was will diese Figur konkret erreichen? (bewusstes Ziel)",
+      "need": "Was braucht sie wirklich, auch wenn sie es nicht weiss? (unbewusstes Bedürfnis)",
+      "ghost": "Welche Wunde aus der Vergangenheit prägt sie?",
+      "geheimnisse": "Was verbirgt sie vor anderen?",
+      "widersprueche": "Welche Paradoxe prägen diese Figur?",
+      "archetyp": "protagonist/antagonist/mentor/ally/trickster/shapeshifter (falls klar erkennbar)"
+    }
   ],
-  "themen": ["Thema1", "Thema2"],
+  "beziehungen": [
+    {
+      "figur1": "Name Figur 1",
+      "figur2": "Name Figur 2",
+      "art": "Art der Beziehung (z.B. Vater-Tochter, Rivalen, Liebende)",
+      "typ": "familie/liebe/freundschaft/rivalitaet/feindschaft/beruflich/sonstig",
+      "beschreibung": "Was verbindet/trennt sie?"
+    }
+  ],
+  "themen": ["Thema1", "Thema2", "Thema3"],
   "szenen": [
     {
-      "titel": "Aussagekräftiger Szenentitel",
+      "titel": "Aussagekräftiger Szenentitel (3-6 Wörter)",
       "zusammenfassung": "Was passiert in dieser Szene (2-3 Sätze)",
-      "figuren": ["Figur1", "Figur2"]
+      "figuren": ["Figur1", "Figur2"],
+      "ort": "Wo spielt die Szene?",
+      "wendepunkt": "Gibt es einen Wendepunkt? Welchen?",
+      "spannungswert": 5,
+      "dialog": [
+        {"typ": "regie", "text": "(Regieanweisung, z.B. Bühnenanweisung oder Auf-/Abtritt)"},
+        {"typ": "dialog", "figur": "Figurenname", "text": "Was die Figur sagt"},
+        {"typ": "regie", "text": "(Weitere Regieanweisung)"},
+        {"typ": "dialog", "figur": "Andere Figur", "text": "Antwort"}
+      ]
     }
   ]
 }
 
 WICHTIGE REGELN:
 - Figurennamen stehen meist in GROSSBUCHSTABEN vor dem Doppelpunkt
-- Szenen beginnen mit "Szene" oder einer Nummer im Originaltext
-- SZENENTITEL: Erfinde einen AUSSAGEKRÄFTIGEN Titel (3-6 Wörter), der beschreibt, was passiert. NIEMALS nur "1. Szene" oder "Szene 1"! Beispiele: "Der König erwacht allein", "Lea betritt das Schloss", "Das grosse Festmahl", "Benno kommt zu Besuch"
+- Szenen beginnen mit "Szene", "Akt", "Auftritt" oder einer Nummer
+- SZENENTITEL: Erfinde einen AUSSAGEKRÄFTIGEN Titel (3-6 Wörter), der beschreibt was passiert. NIEMALS nur "1. Szene"! Beispiele: "Der König erwacht allein", "Lea betritt das Schloss"
+- spannungswert: Schätze die dramatische Intensität der Szene auf einer Skala von 0 (ruhig) bis 10 (Höhepunkt). Verteile die Werte so, dass ein Spannungsbogen erkennbar wird.
+- want/need/ghost: Analysiere diese NUR wenn der Text genügend Hinweise gibt. Lasse Felder leer ("") wenn nicht erkennbar.
+- beziehungen: Erkenne die wichtigsten Beziehungen zwischen Figuren aus dem Text.
+- dialog: Extrahiere den VOLLSTÄNDIGEN Dialogtext jeder Szene. Jeder Eintrag ist entweder {"typ":"dialog","figur":"Name","text":"..."} oder {"typ":"regie","text":"..."}. Regieanweisungen in Klammern (z.B. "(Er steht auf.)") sind typ "regie". Figurenrede ist typ "dialog" mit dem Figurennamen. Gib den Dialog möglichst vollständig wieder, kürze ihn NICHT ab.
 - Gib NUR JSON zurück, KEINE Erklärungen
 - Alle Strings müssen in doppelten Anführungszeichen sein`;
 
@@ -17621,7 +18824,7 @@ WICHTIGE REGELN:
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-sonnet-4-6',
         max_tokens: 64000,
         messages: [
           { role: 'user', content: `Analysiere diesen Textabschnitt und gib NUR JSON zurück:\n\n${chunkText}` }
@@ -17712,45 +18915,65 @@ WICHTIGE REGELN:
   const mergeChunkResults = (results) => {
     const merged = {
       titel: '',
+      logline: '',
+      kern: '',
       figuren: [],
+      beziehungen: [],
       themen: [],
       szenen: []
     };
-    
+
     const figurenMap = new Map(); // Für Deduplizierung
     const themenSet = new Set();
-    
+    const beziehungenSet = new Set(); // Deduplizierung nach figur1+figur2
+
     results.forEach((result, index) => {
-      // Titel vom ersten Chunk
-      if (index === 0 && result.titel) {
-        merged.titel = result.titel;
+      // Titel, Logline, Kern vom ersten Chunk
+      if (index === 0) {
+        if (result.titel) merged.titel = result.titel;
+        if (result.logline) merged.logline = result.logline;
+        if (result.kern) merged.kern = result.kern;
       }
-      
-      // Figuren sammeln und deduplizieren
+
+      // Figuren sammeln und deduplizieren (mit allen Feldern ergänzen)
       (result.figuren || []).forEach(fig => {
         const key = fig.name.toLowerCase().trim();
         if (!figurenMap.has(key)) {
-          figurenMap.set(key, fig);
-        } else if (fig.beschreibung && !figurenMap.get(key).beschreibung) {
-          // Beschreibung ergänzen falls vorher leer
-          figurenMap.get(key).beschreibung = fig.beschreibung;
+          figurenMap.set(key, { ...fig });
+        } else {
+          // Felder ergänzen wenn beim existierenden Eintrag leer
+          const existing = figurenMap.get(key);
+          const fields = ['beschreibung', 'beruf', 'alter', 'geschlecht', 'charakteristik', 'sprechweise', 'want', 'need', 'ghost', 'geheimnisse', 'widersprueche', 'archetyp'];
+          fields.forEach(field => {
+            if (fig[field] && !existing[field]) existing[field] = fig[field];
+          });
         }
       });
-      
-      // Themen sammeln (nur vom ersten Chunk)
-      if (index === 0 && result.themen) {
-        result.themen.forEach(t => themenSet.add(t));
-      }
-      
+
+      // Beziehungen sammeln und deduplizieren
+      (result.beziehungen || []).forEach(bez => {
+        const key = [bez.figur1, bez.figur2].sort().join('_').toLowerCase();
+        if (!beziehungenSet.has(key)) {
+          beziehungenSet.add(key);
+          merged.beziehungen.push(bez);
+        }
+      });
+
+      // Themen sammeln
+      (result.themen || []).forEach(t => {
+        const text = typeof t === 'string' ? t : t.name || String(t);
+        themenSet.add(text);
+      });
+
       // Szenen anfügen
       (result.szenen || []).forEach(szene => {
         merged.szenen.push(szene);
       });
     });
-    
+
     merged.figuren = Array.from(figurenMap.values());
     merged.themen = Array.from(themenSet);
-    
+
     return merged;
   };
   
@@ -17834,28 +19057,55 @@ WICHTIGE REGELN:
     
     setImportStep('importing');
     
-    // Figuren erstellen
+    // Figuren erstellen (mit allen analysierten Feldern)
     const neueFiguren = importAnalysis.figuren?.map((f, i) => ({
       id: `fig_imp_${Date.now()}_${i}`,
       name: f.name,
       beschreibung: f.beschreibung || '',
-      pi: '',
-      ziel: '',
+      beruf: f.beruf || '',
+      alter: f.alter || '',
+      geschlecht: f.geschlecht || '',
+      charakteristik: f.charakteristik || '',
+      sprechweise: f.sprechweise || '',
+      ziel: f.want || '',
+      beduerfnis: f.need || '',
+      praegung: f.ghost || '',
+      begehren: f.want || '',
+      verletzungen: f.ghost || '',
+      geheimnisse: f.geheimnisse || '',
+      widersprueche: f.widersprueche || '',
+      archetyp: f.archetyp || '',
+      physische_eigenheiten: '',
+      erscheinung: '',
+      backstory: '',
       arc: '',
       funktion: '',
-      kontrast: '',
-      geheimnisse: '',
-      backstory: '',
-      physische_eigenheiten: '',
-      sprechweise: ''
+      kontrast: ''
     })) || [];
-    
+
     // Themen erstellen
     const neueThemen = importAnalysis.themen?.map((t, i) => ({
       id: `th_imp_${Date.now()}_${i}`,
-      name: t
+      name: typeof t === 'string' ? t : t.name || t
     })) || [];
-    
+
+    // Dialog-Array in HTML-Format konvertieren
+    const dialogToHtml = (dialog, szeneTitel) => {
+      if (!dialog || !Array.isArray(dialog) || dialog.length === 0) return '';
+      let html = '';
+      if (szeneTitel) {
+        html += `<div class="fmt-szenen-titel">${szeneTitel}</div>`;
+      }
+      dialog.forEach(entry => {
+        if (entry.typ === 'regie') {
+          html += `<div class="fmt-regie">${entry.text}</div>`;
+        } else if (entry.typ === 'dialog' && entry.figur) {
+          html += `<div class="fmt-dialog"><span class="figur">${entry.figur}:</span><span class="text">${entry.text || ''}</span></div>`;
+        }
+      });
+      return html;
+    };
+
     // Szenen/Felder erstellen
     const neueFelder = importAnalysis.szenen?.map((s, i) => {
       // Figuren-IDs zuordnen
@@ -17863,7 +19113,10 @@ WICHTIGE REGELN:
         const fig = neueFiguren.find(f => f.name.toLowerCase() === name.toLowerCase());
         return fig?.id;
       }).filter(Boolean);
-      
+
+      // Dialog in HTML konvertieren
+      const dialogHtml = dialogToHtml(s.dialog, s.titel);
+
       return {
         id: `feld_imp_${Date.now()}_${i}`,
         titel: s.titel || `Szene ${i + 1}`,
@@ -17872,24 +19125,52 @@ WICHTIGE REGELN:
         themen: [],
         notizen: '',
         zusammenfassung: s.zusammenfassung || '',
+        ort: s.ort || '',
         ziel: '',
         widerstand: '',
-        wendepunkt: '',
+        wendepunkt: s.wendepunkt || '',
+        spannungswert: typeof s.spannungswert === 'number' ? s.spannungswert : 5,
         figuren_ziele: [],
         gespraechsart: '',
         status: 'entwurf',
-        inhalt: s.inhalt || ''
+        inhalt: dialogHtml || s.inhalt || ''
       };
     }) || [];
-    
-    // NEUES PROJEKT erstellen (nicht hinzufügen!)
+
+    // Beziehungen erstellen
+    const neueBeziehungen = {};
+    (importAnalysis.beziehungen || []).forEach(bez => {
+      const fig1 = neueFiguren.find(f => f.name.toLowerCase() === (bez.figur1 || '').toLowerCase());
+      const fig2 = neueFiguren.find(f => f.name.toLowerCase() === (bez.figur2 || '').toLowerCase());
+      if (fig1 && fig2) {
+        const key = `${fig1.id}_${fig2.id}`;
+        neueBeziehungen[key] = {
+          art: bez.art || '',
+          typ: bez.typ || '',
+          beschreibung: bez.beschreibung || ''
+        };
+      }
+    });
+
+    // Fundament aus Analyse füllen
+    const fundament = {
+      ...DEFAULT_DATA.fundament,
+      logline: importAnalysis.logline || '',
+      kern: importAnalysis.kern ? { zumutung: importAnalysis.kern } : {}
+    };
+
+    // NEUES PROJEKT erstellen (mit allen DEFAULT_DATA Feldern!)
     setData({
+      ...DEFAULT_DATA,
       projektName: importAnalysis.titel || 'Importiertes Stück',
-      vorgaben: [],
+      fundament,
       figuren: neueFiguren,
       themen: neueThemen,
+      szenenIdeen: [],
       felder: neueFelder,
-      schreibflaecheInhalt: ''
+      beziehungs_netzwerk: Object.keys(neueBeziehungen).length > 0 ? neueBeziehungen : {},
+      schreibflaeche: '',
+      schreibflaecheInhalte: {}
     });
     
     // Dialog schliessen
@@ -18832,36 +20113,9 @@ WICHTIGE REGELN:
   };
   
   // =====================================================
-  // NINA-EXCHANGE EXPORT v3.0 (für Rebu/Propla)
+  // NINA-EXCHANGE EXPORT v4.0 (für Rebu/Propla)
   // =====================================================
   const exportForNina = () => {
-    // Figuren-Map für ID-Lookup
-    const figurenMap = {};
-    (data.figuren || []).forEach(f => { figurenMap[f.id] = f; });
-    
-    // Themen-Map für ID-Lookup
-    const themenMap = {};
-    (data.themen || []).forEach(t => { themenMap[t.id] = t; });
-    
-    // Beziehungen pro Figur sammeln
-    const beziehungenProFigur = {};
-    (data.beziehungen || []).forEach(bez => {
-      // Für figur1
-      if (!beziehungenProFigur[bez.figur1]) beziehungenProFigur[bez.figur1] = [];
-      beziehungenProFigur[bez.figur1].push({
-        target_figure_id: figurenMap[bez.figur2]?._exchangeId || bez.figur2,
-        type: bez.typ || '',
-        description: bez.beschreibung || bez.details || ''
-      });
-      // Für figur2 (Gegenrichtung)
-      if (!beziehungenProFigur[bez.figur2]) beziehungenProFigur[bez.figur2] = [];
-      beziehungenProFigur[bez.figur2].push({
-        target_figure_id: figurenMap[bez.figur1]?._exchangeId || bez.figur1,
-        type: bez.typ || '',
-        description: bez.beschreibung || bez.details || ''
-      });
-    });
-    
     // Datenschutz-Dialog (falls Autor-Kontaktdaten vorhanden)
     let includeContacts = true;
     const hasPersonalData = data.autor?.email || data.autor?.adresse;
@@ -18875,18 +20129,94 @@ WICHTIGE REGELN:
       );
       includeContacts = choice;
     }
+
+    // Nutze die gemeinsame v4.0 Export-Logik
+    const ninaExport = createNinaExchangeV4();
+    ninaExport.includes_contacts = includeContacts;
+    ninaExport.twin = undefined; // Twin-Metadaten nicht in manuellem Export
+
+    // Als JSON-Datei herunterladen
+    const safeName = (data.projektName || 'projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_');
+    const now = new Date();
+    const ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 5).replace(':', '-');
+    const fileName = `${safeName}_Weba_Exchange_${ts}.json`;
+    const content = JSON.stringify(ninaExport, null, 2);
+    downloadFile(content, fileName, 'application/json');
     
-    // ============================================
-    // NINA-Exchange Format v3.0 erstellen
-    // ============================================
-    const ninaExport = {
+    // Statistiken für Feedback
+    const szenenMitText = ninaExport.scenes.filter(s => s.content && s.content.trim().length > 0).length;
+    const hatKonzept = ninaExport.konzept.fundament.kern || ninaExport.konzept.fundament.logline;
+    const hatRecherche = ninaExport.recherche.length > 0;
+    const hatMusik = ninaExport.musikkonzept.konzept_text || ninaExport.musikkonzept.stueckliste.length > 0;
+    const hatBeziehungen = ninaExport.beziehungen.length > 0;
+    
+    // Feedback
+    let msg = `✅ NINA-Exchange v4.0 Export erstellt!\n\n`;
+    msg += `📁 Datei: ${fileName}\n\n`;
+    msg += `📋 Projekt: ${data.projektName || 'Unbenannt'}\n`;
+    msg += `✍️ Autor: ${data.autor?.name || '(nicht angegeben)'}\n\n`;
+    msg += `👤 ${ninaExport.figures.length} Figuren\n`;
+    msg += `🎬 ${ninaExport.scenes.length} Szenen (${szenenMitText} mit Text)\n`;
+    if (hatBeziehungen) msg += `🔗 ${ninaExport.beziehungen.length} Beziehungen\n`;
+    if (hatKonzept) msg += `🧠 Konzept/Fundament\n`;
+    if (hatRecherche) msg += `📚 ${ninaExport.recherche.length} Recherche-Materialien\n`;
+    if (hatMusik) msg += `🎵 Musikkonzept (${ninaExport.musikkonzept.stueckliste.length} Stücke)\n`;
+    if (!includeContacts && hasPersonalData) msg += `\n🔒 Ohne Kontaktdaten exportiert.`;
+    msg += `\n\nDiese Datei kann in Werkbank, Rebu und Propla importiert werden.`;
+    
+    alert(msg);
+  };
+
+  // =====================================================
+  // TWIN SYSTEM: DRAMERA ↔ REBU BRIDGE
+  // =====================================================
+
+  // URLs der Zwillings-Apps (GitHub Pages)
+  const REBU_URL = 'https://ublueli.github.io/Regiebuch---Offline/';
+  const TWIN_BRIDGE_KEY = 'nina-twin-bridge';
+  const TWIN_SYNC_KEY = 'nina-twin-last-sync';
+  const TWIN_DIR_KEY = 'nina-twin-last-direction';
+
+  // NINA-Exchange v4.0 erstellen (erweitertes Format für Twin System)
+  const createNinaExchangeV4 = () => {
+    // Basis: v3.0 Export-Logik wiederverwenden
+    const figurenMap = {};
+    (data.figuren || []).forEach(f => { figurenMap[f.id] = f; });
+    const themenMap = {};
+    (data.themen || []).forEach(t => { themenMap[t.id] = t; });
+
+    // Beziehungen pro Figur sammeln
+    const beziehungenProFigur = {};
+    (data.beziehungen || []).forEach(bez => {
+      if (!beziehungenProFigur[bez.figur1]) beziehungenProFigur[bez.figur1] = [];
+      beziehungenProFigur[bez.figur1].push({
+        target_figure_id: figurenMap[bez.figur2]?._exchangeId || bez.figur2,
+        type: bez.typ || '',
+        description: bez.beschreibung || bez.details || ''
+      });
+      if (!beziehungenProFigur[bez.figur2]) beziehungenProFigur[bez.figur2] = [];
+      beziehungenProFigur[bez.figur2].push({
+        target_figure_id: figurenMap[bez.figur1]?._exchangeId || bez.figur1,
+        type: bez.typ || '',
+        description: bez.beschreibung || bez.details || ''
+      });
+    });
+
+    return {
       format: 'nina-exchange',
-      version: '3.0',
+      version: '4.0',
       exportedFrom: 'werkbank',
       exportedAt: new Date().toISOString(),
-      includes_contacts: includeContacts,
-      
-      // === PROJEKT (alle Felder) ===
+      includes_contacts: false,
+
+      // Twin-System Metadaten
+      twin: {
+        source_app: 'dramera',
+        source_url: window.location.href,
+        transfer_method: 'bridge', // wird vom Aufrufer überschrieben
+        project_id: data.projektName || 'unbenannt'
+      },
+
       project: {
         name: data.projektName || data.fundament?.titel?.titel || 'Unbenannt',
         subtitle: data.fundament?.titel?.untertitel || data.untertitel || '',
@@ -18904,20 +20234,18 @@ WICHTIGE REGELN:
         structure_type: data.strukturTyp || 'akte',
         status: 'active'
       },
-      
-      // === FIGUREN (v3.0 mit Beziehungen + _source) ===
+
       figures: (data.figuren || []).map((f, idx) => ({
         id: f._exchangeId || f.id,
         name: f.name || '',
         short_name: f.kuerzel || f.name?.split(' ')[0] || '',
         description: f.beschreibung || f.biografie || '',
-        figure_type: f.archetyp === 'protagonist' ? 'main' : 
+        figure_type: f.archetyp === 'protagonist' ? 'main' :
                      f.archetyp === 'antagonist' ? 'main' :
                      f.archetyp === 'mentor' ? 'supporting' :
                      f.archetyp === 'ally' ? 'supporting' : 'main',
         color: f.farbe || '#3b82f6',
         sort_order: idx,
-        // Dramaturgie-Felder
         want_external: f.want || f.begehren || '',
         want_internal: f.wantInternal || '',
         need: f.need || '',
@@ -18932,12 +20260,10 @@ WICHTIGE REGELN:
         obstacle: f.hindernis || '',
         conflict: f.konflikt || '',
         development: f.entwicklung || f.arc || '',
-        // v3.0: Beziehungen pro Figur
         relationships: beziehungenProFigur[f.id] || [],
         _source: 'werkbank'
       })),
-      
-      // === SZENEN (v3.0 mit _source) ===
+
       scenes: (data.felder || []).map((s, idx) => ({
         id: s._exchangeId || s.id,
         number: s.position !== undefined ? String(s.position + 1) : String(idx + 1),
@@ -18957,10 +20283,13 @@ WICHTIGE REGELN:
         estimated_duration: s.dauer || null,
         status: s.status || 'planned',
         sort_order: s.position || idx,
+        // v4.0: Rebu-Felder (leer von Dramera, werden von Rebu befüllt)
+        rehearsal_notes: '',
+        blocking_notes: '',
+        cue_references: [],
         _source: 'werkbank'
       })),
-      
-      // === SZENEN-IDEEN ===
+
       scene_ideas: (data.szenenIdeen || []).map(idea => ({
         id: idea.id,
         titel: idea.titel || '',
@@ -18968,29 +20297,25 @@ WICHTIGE REGELN:
         figuren: idea.figuren || [],
         status: idea.status || 'idee'
       })),
-      
-      // === THEMEN ===
+
       themes: (data.themen || []).map(t => ({
         id: t.id,
         text: t.text || t.name || ''
       })),
-      
-      // === WERKBANK-SPEZIFISCHE BLÖCKE (v3.0) ===
-      
-      // Konzept
+
       konzept: {
         treatment: data.treatment?.kapitel ? JSON.stringify(data.treatment.kapitel) : '',
         fundament: {
-          kern: (typeof data.fundament?.kern === 'object') ? 
-            (data.fundament.kern.zumutung || data.fundament.kern.weltgesetz || JSON.stringify(data.fundament.kern)) : 
+          kern: (typeof data.fundament?.kern === 'object') ?
+            (data.fundament.kern.zumutung || data.fundament.kern.weltgesetz || JSON.stringify(data.fundament.kern)) :
             (data.fundament?.kern || ''),
-          logline: (typeof data.fundament?.logline === 'object') ? 
-            (data.fundament.logline.text || JSON.stringify(data.fundament.logline)) : 
+          logline: (typeof data.fundament?.logline === 'object') ?
+            (data.fundament.logline.text || JSON.stringify(data.fundament.logline)) :
             (data.fundament?.logline || ''),
           unaussprechliches: data.fundament?.unaussprechliches || '',
           emotionaler_bogen: data.fundament?.emotionale_bewegung ? JSON.stringify(data.fundament.emotionale_bewegung) : '',
-          konflikt: (typeof data.fundament?.konflikt === 'object') ? 
-            JSON.stringify(data.fundament.konflikt) : 
+          konflikt: (typeof data.fundament?.konflikt === 'object') ?
+            JSON.stringify(data.fundament.konflikt) :
             (data.fundament?.konflikt || data.konflikt || '')
         },
         werte: data.wertequadrat ? [{
@@ -19006,8 +20331,7 @@ WICHTIGE REGELN:
           beschreibung: t.beschreibung || ''
         }))
       },
-      
-      // Recherche / Material
+
       recherche: (data.recherche || []).map(item => ({
         id: item.id,
         type: item.type || 'text',
@@ -19020,8 +20344,7 @@ WICHTIGE REGELN:
         used: item.used || false,
         createdAt: item.createdAt || ''
       })),
-      
-      // Musikkonzept
+
       musikkonzept: {
         konzept_text: data.musik?.konzept || '',
         stueckliste: (data.musik?.stuecke || []).map(m => ({
@@ -19032,8 +20355,7 @@ WICHTIGE REGELN:
           einsatz: m.einsatz || ''
         }))
       },
-      
-      // Beziehungen (auch als flacher Block für Apps die es so brauchen)
+
       beziehungen: (data.beziehungen || []).map(bez => ({
         figur1_id: figurenMap[bez.figur1]?._exchangeId || bez.figur1,
         figur2_id: figurenMap[bez.figur2]?._exchangeId || bez.figur2,
@@ -19042,41 +20364,223 @@ WICHTIGE REGELN:
         type: bez.typ || '',
         description: bez.beschreibung || '',
         details: bez.details || ''
-      }))
+      })),
+
+      spannungskurve: (data.felder || []).map((f, idx) => ({
+        szene_id: f._exchangeId || f.id,
+        position: idx,
+        spannungswert: f.spannungswert || 5
+      })),
+
+      eckpfeiler: (data.figuren || []).filter(f => f.begehren || f.need || f.ghost || f.wahrheit || f.luege).map(f => ({
+        figur_id: f._exchangeId || f.id,
+        figur_name: f.name,
+        begehren: f.begehren || '',
+        need: f.need || '',
+        ghost: f.ghost || '',
+        wahrheit: f.wahrheit || '',
+        luege: f.luege || ''
+      })),
+
+      kommentare: (data.kommentare || []).map(k => ({
+        elementType: k.elementType,
+        elementId: k.elementId,
+        text: k.text,
+        rolle: k.rolle,
+        timestamp: k.timestamp
+      })),
+
+      // === v4.0 NEU: Rebu-spezifische Blöcke (werden von Rebu befüllt) ===
+      cues: [],
+      rehearsals: [],
+      costumes: [],
+      props: [],
+      stage_plans: [],
+      castings: [],
+      ensemble: [],
+      team: []
     };
-    
-    // Als JSON-Datei herunterladen
+  };
+
+  // === TRANSFER-METHODE 1: localStorage Bridge (gleiche Domain) ===
+  const twinTransferViaLocalStorage = () => {
+    try {
+      const exchangeData = createNinaExchangeV4();
+      exchangeData.twin.transfer_method = 'localstorage';
+
+      localStorage.setItem(TWIN_BRIDGE_KEY, JSON.stringify(exchangeData));
+      localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
+      localStorage.setItem(TWIN_DIR_KEY, 'dramera-to-rebu');
+
+      setTwinSyncStatus({ lastSync: new Date().toISOString(), direction: 'dramera-to-rebu' });
+      setShowTwinModal(false);
+
+      // Rebu in neuem Tab öffnen
+      window.open(REBU_URL + '?twin=import&source=dramera', '_blank');
+    } catch (e) {
+      console.error('Twin Bridge Fehler:', e);
+      alert('Fehler beim Transfer: ' + e.message + '\n\nVersuche stattdessen den Datei-Download.');
+    }
+  };
+
+  // === TRANSFER-METHODE 2: Datei-Download (.nina) ===
+  const twinTransferViaFile = () => {
+    const exchangeData = createNinaExchangeV4();
+    exchangeData.twin.transfer_method = 'file';
+
     const safeName = (data.projektName || 'projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_');
     const now = new Date();
-    const ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 5).replace(':', '-');
-    const fileName = `${safeName}_Weba_Exchange_${ts}.json`;
-    const content = JSON.stringify(ninaExport, null, 2);
+    const ts = now.toISOString().slice(0, 10);
+    const fileName = `${safeName}_Twin_${ts}.nina.json`;
+    const content = JSON.stringify(exchangeData, null, 2);
     downloadFile(content, fileName, 'application/json');
-    
-    // Statistiken für Feedback
-    const szenenMitText = ninaExport.scenes.filter(s => s.content && s.content.trim().length > 0).length;
-    const hatKonzept = ninaExport.konzept.fundament.kern || ninaExport.konzept.fundament.logline;
-    const hatRecherche = ninaExport.recherche.length > 0;
-    const hatMusik = ninaExport.musikkonzept.konzept_text || ninaExport.musikkonzept.stueckliste.length > 0;
-    const hatBeziehungen = ninaExport.beziehungen.length > 0;
-    
-    // Feedback
-    let msg = `✅ NINA-Exchange v3.0 Export erstellt!\n\n`;
-    msg += `📁 Datei: ${fileName}\n\n`;
-    msg += `📋 Projekt: ${data.projektName || 'Unbenannt'}\n`;
-    msg += `✍️ Autor: ${data.autor?.name || '(nicht angegeben)'}\n\n`;
-    msg += `👤 ${ninaExport.figures.length} Figuren\n`;
-    msg += `🎬 ${ninaExport.scenes.length} Szenen (${szenenMitText} mit Text)\n`;
-    if (hatBeziehungen) msg += `🔗 ${ninaExport.beziehungen.length} Beziehungen\n`;
-    if (hatKonzept) msg += `🧠 Konzept/Fundament\n`;
-    if (hatRecherche) msg += `📚 ${ninaExport.recherche.length} Recherche-Materialien\n`;
-    if (hatMusik) msg += `🎵 Musikkonzept (${ninaExport.musikkonzept.stueckliste.length} Stücke)\n`;
-    if (!includeContacts && hasPersonalData) msg += `\n🔒 Ohne Kontaktdaten exportiert.`;
-    msg += `\n\nDiese Datei kann in Werkbank, Rebu und Propla importiert werden.`;
-    
-    alert(msg);
+
+    localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
+    localStorage.setItem(TWIN_DIR_KEY, 'dramera-to-rebu');
+    setTwinSyncStatus({ lastSync: new Date().toISOString(), direction: 'dramera-to-rebu' });
+    setShowTwinModal(false);
   };
-  
+
+  // === TRANSFER-METHODE 3: URL-Parameter (für kleine Projekte) ===
+  const twinTransferViaURL = () => {
+    const exchangeData = createNinaExchangeV4();
+    exchangeData.twin.transfer_method = 'url';
+
+    try {
+      const jsonStr = JSON.stringify(exchangeData);
+      // Prüfen ob die Daten klein genug für URL sind (max ~32KB für sichere URLs)
+      if (jsonStr.length > 32000) {
+        alert('Das Projekt ist zu gross für den URL-Transfer (' + Math.round(jsonStr.length / 1024) + ' KB).\n\nBitte nutze stattdessen den direkten Transfer oder den Datei-Download.');
+        return;
+      }
+
+      const encoded = btoa(unescape(encodeURIComponent(jsonStr)));
+      const url = REBU_URL + '?twin=import&source=dramera&data=' + encodeURIComponent(encoded);
+
+      localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
+      localStorage.setItem(TWIN_DIR_KEY, 'dramera-to-rebu');
+      setTwinSyncStatus({ lastSync: new Date().toISOString(), direction: 'dramera-to-rebu' });
+      setShowTwinModal(false);
+
+      window.open(url, '_blank');
+    } catch (e) {
+      alert('URL-Transfer fehlgeschlagen: ' + e.message + '\n\nBitte nutze den Datei-Download.');
+    }
+  };
+
+  // === Twin-Import: Daten von Rebu empfangen ===
+  const twinCheckForIncoming = () => {
+    try {
+      // Prüfe URL-Parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('twin') === 'import' && urlParams.get('source') === 'rebu') {
+        // Daten aus URL?
+        const urlData = urlParams.get('data');
+        if (urlData) {
+          try {
+            const decoded = decodeURIComponent(escape(atob(urlData)));
+            const importData = JSON.parse(decoded);
+            if (importData.format === 'nina-exchange') {
+              // URL bereinigen
+              window.history.replaceState({}, '', window.location.pathname);
+              return importData;
+            }
+          } catch (e) { console.warn('URL-Daten ungültig:', e); }
+        }
+
+        // Daten aus localStorage Bridge?
+        const bridgeData = localStorage.getItem(TWIN_BRIDGE_KEY);
+        if (bridgeData) {
+          try {
+            const importData = JSON.parse(bridgeData);
+            if (importData.format === 'nina-exchange' && importData.exportedFrom === 'rebu') {
+              // URL bereinigen
+              window.history.replaceState({}, '', window.location.pathname);
+              return importData;
+            }
+          } catch (e) { console.warn('Bridge-Daten ungültig:', e); }
+        }
+      }
+      return null;
+    } catch { return null; }
+  };
+
+  // Beim Laden: Prüfe ob Twin-Daten warten
+  useEffect(() => {
+    const incoming = twinCheckForIncoming();
+    if (incoming) {
+      const source = incoming.exportedFrom === 'rebu' ? 'Rebu' : incoming.exportedFrom;
+      const figurenCount = (incoming.figures || []).length;
+      const szenenCount = (incoming.scenes || []).length;
+
+      const accept = confirm(
+        `Daten von ${source} empfangen!\n\n` +
+        `${figurenCount} Figuren, ${szenenCount} Szenen\n` +
+        `Format: NINA-Exchange v${incoming.version || '?'}\n\n` +
+        `Sollen die Daten importiert werden?\n` +
+        `(Bestehende Felder werden NICHT überschrieben)`
+      );
+
+      if (accept) {
+        // Nutze den bestehenden NINA-Exchange Import-Mechanismus
+        // Simuliere ein File-Input-Event
+        const fakeEvent = {
+          target: {
+            files: [new Blob([JSON.stringify(incoming)], { type: 'application/json' })]
+          }
+        };
+        // Direkter Import via bestehende Logik
+        const blob = new Blob([JSON.stringify(incoming)], { type: 'application/json' });
+        const file = new File([blob], 'twin-import.json', { type: 'application/json' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        if (importNinaExchangeRef.current) {
+          importNinaExchangeRef.current.files = dt.files;
+          importNinaExchangeRef.current.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // Sync-Status aktualisieren
+        localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
+        localStorage.setItem(TWIN_DIR_KEY, 'rebu-to-dramera');
+        setTwinSyncStatus({ lastSync: new Date().toISOString(), direction: 'rebu-to-dramera' });
+
+        // Bridge-Daten bereinigen
+        localStorage.removeItem(TWIN_BRIDGE_KEY);
+      }
+    }
+  }, []);
+
+  // Hilfsfunktion: Sync-Status-Text
+  const getTwinSyncText = () => {
+    if (!twinSyncStatus?.lastSync) return null;
+    try {
+      const d = new Date(twinSyncStatus.lastSync);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffMin = Math.floor(diffMs / 60000);
+      const diffH = Math.floor(diffMs / 3600000);
+      const diffD = Math.floor(diffMs / 86400000);
+
+      let timeStr;
+      if (diffMin < 1) timeStr = 'gerade eben';
+      else if (diffMin < 60) timeStr = `vor ${diffMin} Min.`;
+      else if (diffH < 24) timeStr = `vor ${diffH} Std.`;
+      else timeStr = `vor ${diffD} Tag${diffD > 1 ? 'en' : ''}`;
+
+      const dir = twinSyncStatus.direction === 'dramera-to-rebu' ? 'an Rebu' :
+                   twinSyncStatus.direction === 'rebu-to-dramera' ? 'von Rebu' : '';
+      return `${timeStr} ${dir}`;
+    } catch { return null; }
+  };
+
+  // Sync-Dot-Status berechnen
+  const getTwinSyncDotClass = () => {
+    if (!twinSyncStatus?.lastSync) return 'none';
+    const diffMs = new Date() - new Date(twinSyncStatus.lastSync);
+    if (diffMs < 3600000) return 'fresh'; // < 1 Stunde
+    return 'stale'; // > 1 Stunde
+  };
+
   // =====================================================
   // EXPORT-FUNKTIONEN
   // =====================================================
@@ -20459,7 +21963,17 @@ WICHTIGE REGELN:
   const transformiereZuText = async (rawData, werkzeugId) => {
     const prompt = WERKZEUG_KI_PROMPTS[werkzeugId];
     if (!prompt) return rawData; // Fallback: unverändert
-    
+
+    // Projekt-Kontext für dramaturgische Einbettung
+    const kern = data.fundament?.kern || {};
+    const zumutung = typeof kern === 'object' ? kern.zumutung : data.fundament?.zumutung;
+    const projektKontextKurz = `
+PROJEKT: ${data.projektName || 'Unbenannt'}
+KERN: ${zumutung || 'Nicht definiert'}
+LOGLINE: ${data.fundament?.logline?.text || data.fundament?.logline || ''}
+FIGUREN: ${data.figuren?.map(f => `${f.name}${f.ziel ? ` (will: ${f.ziel})` : ''}`).join(', ') || 'Keine'}
+THEMEN: ${data.themen?.map(t => t.name).join(', ') || 'Keine'}`.trim();
+
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -20470,11 +21984,15 @@ WICHTIGE REGELN:
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 600,
+          model: 'claude-sonnet-4-6',
+          max_tokens: 800,
+          system: 'Du bist ein erfahrener Dramaturg. Du transformierst dramaturgische Notizen in lebendige, präzise Prosatexte. Du kennst das Gesamtprojekt und bettest die Einzelteile in den dramaturgischen Zusammenhang ein. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{
             role: 'user',
-            content: `KONTEXT: ${prompt.context}
+            content: `PROJEKT-KONTEXT:
+${projektKontextKurz}
+
+WERKZEUG: ${prompt.context}
 
 ROHDATEN:
 ${rawData}
@@ -20483,12 +22001,11 @@ AUFTRAG: ${prompt.instruction}
 
 STIL:
 - Schreibe Fliesstext, keine Stichpunkte
-- Bleib nah an den Rohdaten – erfinde nichts Neues dazu
+- Bleib nah an den Rohdaten – erfinde nichts Neues dazu, aber stelle Bezüge zum Gesamtprojekt her wo sinnvoll
 - Schreibe lebendig und anschaulich, mit etwas Farbe
 - Vermeide trockene Aufzählungen – verwebe die Infos zu einem Text
 - Kurz und prägnant, aber nicht steril
 - Wie ein guter Programmheft-Text: macht neugierig, bleibt konkret
-- WICHTIG: Schweizer Rechtschreibung – verwende "ss" statt "ss"
 - Antworte NUR mit dem Text, keine Einleitung oder Kommentar`
           }]
         })
@@ -21756,6 +23273,7 @@ STIL:
         <img style={{width:'160px', height:'auto'}} src="nina-logo.jpg" alt="NINA Logo" />
         <div className="sidebar-app-title">N!NA-Dramera</div>
         <div className="sidebar-app-version">Weba v4.35</div>
+        <button className="dashboard-header-btn" onClick={() => setShowDashboard(true)} title="Projektübersicht / Dashboard">📊 Übersicht</button>
       </div>
       
       {/* Projekt-Dropdown mit Menü */}
@@ -21918,6 +23436,9 @@ STIL:
                         🤖
                       </button>
                     )}
+                    {type === 'figuren' && (
+                      <KommentarButton elementType="figur" elementId={item.id} kommentare={data.kommentare} onAdd={(k) => setData(p => ({ ...p, kommentare: [...(p.kommentare || []), k] }))} onDelete={(kId) => setData(p => ({ ...p, kommentare: (p.kommentare || []).filter(k => k.id !== kId) }))}/>
+                    )}
                     {phase === 'ordnen' && type === 'szenenIdeen' && <span className="arrow">→</span>}
                     <button onClick={(e) => { e.stopPropagation(); deleteFromSammlung(type, item.id); }} className="delete-btn">×</button>
                   </div>
@@ -21965,15 +23486,17 @@ STIL:
       />;
       case 'themenbrowser': return <ThemenbrowserTool onSelect={handleThemeSelect} selectedThemes={data.themen.filter(t => t.contrast)} onAddToSchreibflaeche={addToSchreibflaeche} />;
       case 'motiv': return <MotivTool onSelect={handleMotivSelect} selectedMotive={data.selectedMotive || []} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'motivketten': return <MotivkettenTool themen={data.themen} felder={data.felder} onNavigate={(f) => { setPhase('ordnen'); setAusgewaehltesFeld(f); }} />;
       // Figuren
       case 'figur': return <FigurTool figur={selectedFigur || data.figuren[0]} onChange={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
       case 'biographie': return <BiographieTool figur={selectedFigur || data.figuren[0]} onChange={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
       case 'beziehungen': return <BeziehungenTool figur={selectedFigur || data.figuren[0]} figuren={data.figuren} onChange={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
-      case 'beziehungs_grafik': return <BeziehungsGrafikTool 
-        figuren={data.figuren} 
+      case 'beziehungs_grafik': return <BeziehungsGrafikTool
+        figuren={data.figuren}
         beziehungen={data.beziehungs_netzwerk || {}}
         onBeziehungChange={(v) => setData(p => ({ ...p, beziehungs_netzwerk: v }))}
         onAddToSchreibflaeche={addToSchreibflaeche}
+        felder={data.felder}
       />;
       case 'maerchenmodell': return <MaerchenModellTool projektData={data} onUpdate={(updates) => setData(p => ({ ...p, ...updates }))} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
       case '5-eckpfeiler': return <FiveEckpfeilerTool figur={selectedFigur || data.figuren[0]} onUpdate={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
@@ -22694,6 +24217,31 @@ STIL:
       <aside className="werkzeug-sidebar" style={{ width: `${werkzeugSidebarWidth}px` }}>
         <h2 className="sidebar-title">Werkzeuge</h2>
         
+        {/* Werkzeug-Empfehlungen */}
+        {!aktivesWerkzeug && (() => {
+          const empf = [];
+          if (!data.fundament?.kern?.zumutung && !data.fundament?.kern?.weltgesetz) empf.push({ id: 'kern', icon: '🎯', text: 'Kern der Geschichte definieren' });
+          if (!data.fundament?.logline) empf.push({ id: 'logline', icon: '📝', text: 'Logline schreiben' });
+          if (data.figuren.length === 0) empf.push({ id: 'figur', icon: '👤', text: 'Erste Figur anlegen' });
+          if (data.figuren.length > 1 && !data.beziehungs_netzwerk) empf.push({ id: 'beziehungs_grafik', icon: '🕸️', text: 'Beziehungen definieren' });
+          if (data.figuren.length > 0 && !data.figuren.some(f => f.begehren || f.want)) empf.push({ id: '5-eckpfeiler', icon: '🏛️', text: '5 Eckpfeiler ausfüllen' });
+          if (data.themen.length === 0) empf.push({ id: 'thema', icon: '💡', text: 'Themen anlegen' });
+          if (!data.wertequadrat?.virtue_a) empf.push({ id: 'wertequadrat', icon: '⬜', text: 'Wertequadrat erstellen' });
+          if (data.szenenIdeen.length > 0 && data.felder.length === 0) empf.push({ id: '_ordnen', icon: '🎬', text: 'Zum Ordnen wechseln' });
+          const shown = empf.slice(0, 3);
+          if (shown.length === 0) return null;
+          return (
+            <div style={{ padding: '0.5rem', margin: '0 0.5rem 0.5rem', background: '#fefce8', borderRadius: '8px', border: '1px solid #fde68a' }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>💡 Empfehlungen</div>
+              {shown.map(e => (
+                <button key={e.id} onClick={() => e.id === '_ordnen' ? setPhase('ordnen') : openWerkzeug(e.id)} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', padding: '3px 0', fontSize: '0.75rem', color: '#78350f', cursor: 'pointer' }}>
+                  {e.icon} {e.text}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
         {/* Kategorien als Akkordeon – NUR sichtbar wenn KEIN Werkzeug aktiv */}
         {!aktivesWerkzeug && (
         <div className="kategorien-liste">
@@ -23079,6 +24627,29 @@ STIL:
         .gefuehl-btn:hover { background: #e8d5e7; border-color: #9b6b9b; }
         .help-btn { padding: 0.4rem 0.6rem; border-radius: 50%; border: 1px solid #d1d5db; background: #fdf8f3; font-size: 0.9rem; cursor: pointer; color: #6b4423; margin-left: 0.5rem; }
         .help-btn:hover { background: #f5ebe0; }
+
+        /* Twin System - Rebu Button */
+        .rebu-twin-btn { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.8rem; border-radius: 0.375rem; border: 1.5px solid #8b5cf6; background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(20,184,166,0.08)); font-size: 0.8rem; font-weight: 600; cursor: pointer; color: #5b21b6; margin-left: 0.5rem; transition: all 0.2s; position: relative; }
+        .rebu-twin-btn:hover { background: linear-gradient(135deg, #8b5cf6, #14b8a6); color: white; border-color: #7c3aed; }
+        .rebu-twin-btn .twin-icon { font-size: 1rem; }
+        .rebu-twin-btn .sync-dot { position: absolute; top: -2px; right: -2px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid white; }
+        .rebu-twin-btn .sync-dot.fresh { background: #10b981; }
+        .rebu-twin-btn .sync-dot.stale { background: #f59e0b; }
+        .rebu-twin-btn .sync-dot.none { display: none; }
+
+        /* Twin Transfer Modal */
+        .twin-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1200; }
+        .twin-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 1201; background: white; border-radius: 16px; padding: 1.5rem; max-width: 520px; width: 92%; max-height: 85vh; overflow-y: auto; box-shadow: 0 25px 60px rgba(0,0,0,0.3); }
+        .twin-modal h2 { margin: 0; font-size: 1.15rem; font-weight: 600; }
+        .twin-modal .twin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.2rem; }
+        .twin-modal .twin-close { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: #999; }
+        .twin-option { padding: 0.8rem; border-radius: 10px; border: 1.5px solid #e5e7eb; margin-bottom: 0.5rem; cursor: pointer; transition: all 0.15s; }
+        .twin-option:hover { border-color: #8b5cf6; background: rgba(139,92,246,0.04); }
+        .twin-option-primary { border-color: #8b5cf6; background: linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06)); }
+        .twin-option h4 { margin: 0 0 0.2rem; font-size: 0.85rem; font-weight: 600; color: #374151; }
+        .twin-option p { margin: 0; font-size: 0.72rem; color: #6b7280; }
+        .twin-sync-info { margin-top: 1rem; padding: 0.6rem 0.8rem; border-radius: 8px; background: #f9fafb; border: 1px solid #e5e7eb; font-size: 0.72rem; color: #6b7280; }
+        .twin-sync-info .sync-time { font-weight: 600; color: #374151; }
         .wiki-btn:hover { background: #6b4423; color: #fff; border-color: #6b4423; }
         
         /* Gefühl Popup */
@@ -24426,6 +25997,28 @@ STIL:
           display: flex;
           flex-direction: column;
         }
+        /* Spannungsbogen Visualisierung */
+        .spannungsbogen-container {
+          background: #fdf8f3;
+          border: 1px solid #d1d5db;
+          border-radius: 0.5rem;
+          margin: 0.5rem 1rem;
+          padding: 0.5rem;
+        }
+        .spannungsbogen-svg {
+          width: 100%;
+          max-height: 200px;
+          display: block;
+          user-select: none;
+        }
+        .spannungsbogen-empty {
+          text-align: center;
+          padding: 1.5rem;
+          color: #8b7355;
+          font-size: 0.85rem;
+          font-style: italic;
+        }
+
         .reflexion-panel-header {
           display: flex;
           justify-content: space-between;
@@ -30654,6 +32247,690 @@ STIL:
         .open-generator-btn:hover {
           opacity: 0.9;
         }
+
+        /* === DASHBOARD & VERSION HISTORY STYLES === */
+        .dashboard-header-btn {
+          display: inline-block;
+          margin-top: 0.5rem;
+          padding: 0.3rem 0.75rem;
+          background: rgba(255,255,255,0.12);
+          color: #e8cdb8;
+          border: 1px solid rgba(255,255,255,0.2);
+          border-radius: 6px;
+          font-size: 0.78rem;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dashboard-header-btn:hover {
+          background: rgba(255,255,255,0.22);
+          color: #fff;
+        }
+        .dashboard-modal {
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 1201;
+          background: white;
+          border-radius: 16px;
+          padding: 1.5rem;
+          max-width: 560px;
+          width: 92%;
+          max-height: 85vh;
+          overflow-y: auto;
+          box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+        }
+        .dashboard-project-info {
+          background: #f9fafb;
+          border-radius: 8px;
+          padding: 0.75rem 1rem;
+          margin-bottom: 1rem;
+          border: 1px solid #e5e7eb;
+        }
+        .dashboard-completion-overall {
+          background: #f0fdf4;
+          border-radius: 8px;
+          padding: 0.75rem 1rem;
+          margin-bottom: 1rem;
+          border: 1px solid #d1fae5;
+        }
+        .dashboard-progress-bar {
+          width: 100%;
+          height: 8px;
+          background: #e5e7eb;
+          border-radius: 4px;
+          overflow: hidden;
+          margin-top: 0.3rem;
+        }
+        .dashboard-progress-fill {
+          height: 100%;
+          border-radius: 4px;
+          transition: width 0.3s ease;
+          min-width: 0;
+        }
+        .dashboard-sections {
+          display: flex;
+          flex-direction: column;
+          gap: 0.6rem;
+        }
+        .dashboard-section-item {
+          background: #f9fafb;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 0.6rem 0.8rem;
+        }
+        .dashboard-section-title {
+          font-weight: 600;
+          font-size: 0.9rem;
+          margin-bottom: 0.25rem;
+        }
+        .dashboard-check-item {
+          font-size: 0.83rem;
+          margin-left: 0.3rem;
+        }
+        .dashboard-version-btn {
+          display: inline-block;
+          padding: 0.5rem 1rem;
+          background: #f3f4f6;
+          border: 1px solid #d1d5db;
+          border-radius: 8px;
+          font-size: 0.88rem;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dashboard-version-btn:hover {
+          background: #e5e7eb;
+        }
+        .version-history-list {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+        .version-history-entry {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: #f9fafb;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+          padding: 0.6rem 0.8rem;
+        }
+        .version-history-info {
+          flex: 1;
+        }
+        .version-restore-btn {
+          padding: 0.35rem 0.75rem;
+          background: #8b5cf6;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 0.8rem;
+          cursor: pointer;
+          white-space: nowrap;
+          margin-left: 0.5rem;
+          transition: background 0.15s;
+        }
+        .version-restore-btn:hover {
+          background: #7c3aed;
+        }
+
+        /* ================================================
+           SCHREIBTISCH - Textverarbeitungs-Modus
+           ================================================ */
+        .schreibtisch-container {
+          display: flex;
+          height: calc(100vh - 60px);
+          background: #e8e4df;
+          overflow: hidden;
+        }
+
+        /* Navigation Sidebar */
+        .schreibtisch-nav {
+          width: 240px;
+          min-width: 200px;
+          background: #fff;
+          border-right: 1px solid #d1cdc6;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .schreibtisch-nav-header {
+          padding: 0.75rem 1rem;
+          border-bottom: 1px solid #e0dbd2;
+          font-family: 'Trebuchet MS', 'Helvetica Neue', Arial, sans-serif;
+          font-weight: 700;
+          font-size: 0.85rem;
+          color: #6b4423;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .schreibtisch-nav-list {
+          flex: 1;
+          overflow-y: auto;
+          padding: 0.5rem 0;
+        }
+        .schreibtisch-nav-akt {
+          padding: 0.5rem 1rem 0.25rem;
+          font-family: 'Trebuchet MS', Arial, sans-serif;
+          font-weight: 700;
+          font-size: 0.75rem;
+          color: #8b7355;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .schreibtisch-nav-szene {
+          padding: 0.3rem 1rem 0.3rem 1.5rem;
+          font-size: 0.8rem;
+          color: #4a4540;
+          cursor: pointer;
+          border-left: 3px solid transparent;
+          transition: all 0.15s;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .schreibtisch-nav-szene:hover {
+          background: #f5f0eb;
+          color: #6b4423;
+        }
+        .schreibtisch-nav-szene.active {
+          background: #f0ebe4;
+          border-left-color: #6b4423;
+          color: #6b4423;
+          font-weight: 600;
+        }
+        .schreibtisch-nav-szene .nav-tension {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          margin-right: 6px;
+          vertical-align: middle;
+        }
+
+        /* Hauptbereich */
+        .schreibtisch-main {
+          flex: 1;
+          overflow-y: auto;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 2rem 1rem;
+        }
+
+        /* Kopfzeile */
+        .schreibtisch-topbar {
+          position: sticky;
+          top: 0;
+          z-index: 10;
+          width: 100%;
+          max-width: 21cm;
+          background: rgba(232, 228, 223, 0.95);
+          backdrop-filter: blur(8px);
+          padding: 0.4rem 1rem;
+          margin-bottom: 1rem;
+          border-radius: 0.5rem;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 0.8rem;
+          color: #6b6560;
+        }
+        .schreibtisch-topbar-title {
+          font-family: 'Trebuchet MS', Arial, sans-serif;
+          font-weight: 700;
+          color: #4a4540;
+        }
+        .schreibtisch-topbar-pos {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-style: italic;
+          color: #8b8580;
+        }
+        .schreibtisch-topbar-actions {
+          display: flex;
+          gap: 0.5rem;
+        }
+        .schreibtisch-topbar-actions button {
+          padding: 0.25rem 0.6rem;
+          border: 1px solid #c8c3bb;
+          border-radius: 0.25rem;
+          background: #fff;
+          font-size: 0.75rem;
+          cursor: pointer;
+          color: #5a5550;
+          transition: all 0.15s;
+        }
+        .schreibtisch-topbar-actions button:hover {
+          background: #6b4423;
+          color: #fff;
+          border-color: #6b4423;
+        }
+
+        /* A4-Seite */
+        .schreibtisch-page {
+          width: 21cm;
+          max-width: 100%;
+          background: #fff;
+          box-shadow: 0 2px 12px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
+          border-radius: 2px;
+          padding: 2.5cm 2.5cm 3cm 2.5cm;
+          margin-bottom: 2rem;
+          min-height: 29.7cm;
+          position: relative;
+        }
+
+        /* Titelseite */
+        .schreibtisch-titelseite {
+          text-align: center;
+          padding-top: 6cm;
+          padding-bottom: 4cm;
+          border-bottom: 2px solid #d1cdc6;
+          margin-bottom: 2rem;
+        }
+        .schreibtisch-titelseite h1 {
+          font-family: 'Trebuchet MS', 'Helvetica Neue', Arial, sans-serif;
+          font-size: 28pt;
+          font-weight: 700;
+          color: #1a1a1a;
+          margin: 0 0 0.5rem;
+          letter-spacing: 0.02em;
+        }
+        .schreibtisch-titelseite .untertitel {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 14pt;
+          font-style: italic;
+          color: #555;
+          margin-bottom: 2rem;
+        }
+        .schreibtisch-titelseite .autor-info {
+          font-family: 'Trebuchet MS', Arial, sans-serif;
+          font-size: 11pt;
+          color: #666;
+          margin-top: 3rem;
+        }
+
+        /* Personenliste */
+        .schreibtisch-personen {
+          margin-bottom: 2rem;
+          padding-bottom: 2rem;
+          border-bottom: 1px solid #e0dbd2;
+        }
+        .schreibtisch-personen h2 {
+          font-family: 'Trebuchet MS', Arial, sans-serif;
+          font-size: 14pt;
+          font-weight: 700;
+          margin-bottom: 1rem;
+          color: #1a1a1a;
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+        }
+        .schreibtisch-person {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 11pt;
+          line-height: 1.8;
+          color: #1a1a1a;
+        }
+        .schreibtisch-person .person-name {
+          font-weight: 700;
+        }
+        .schreibtisch-person .person-desc {
+          font-weight: 400;
+          color: #555;
+        }
+
+        /* Rebu-kompatible Formatvorlagen im Schreibtisch */
+        .schreibtisch-page .format-standard {
+          margin: 0.35rem 0;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 12pt;
+          color: #212121;
+        }
+        .schreibtisch-page .format-dialog {
+          margin: 0.6rem 0 0.2rem 0;
+          display: block;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 12pt;
+          color: #212121;
+        }
+        .schreibtisch-page .format-dialog .figur-name {
+          display: block;
+          font-weight: bold;
+          white-space: nowrap;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          font-size: 10.5pt;
+          margin-bottom: 0.1rem;
+        }
+        .schreibtisch-page .format-dialog .dialog-text {
+          display: block;
+          font-weight: normal;
+          margin-left: 0.5cm;
+        }
+        .schreibtisch-page .format-regieanweisung {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 11pt;
+          font-style: italic;
+          color: #414141;
+          margin: 0.4rem 0;
+          margin-left: 6cm;
+        }
+        .schreibtisch-page .format-szene-titel {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-weight: bold;
+          font-size: 12pt;
+          text-align: center;
+          margin-top: 2rem;
+          margin-bottom: 2rem;
+          color: #212121;
+        }
+        .schreibtisch-page .format-lied {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-style: italic;
+          font-size: 11pt;
+          margin: 0.15rem 0;
+          margin-left: 2cm;
+          color: #212121;
+          line-height: 1.3;
+        }
+        .schreibtisch-page .format-vers {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-style: italic;
+          font-size: 11pt;
+          margin: 0.15rem 0;
+          margin-left: 0.5cm;
+          color: #212121;
+          white-space: pre-wrap;
+          line-height: 1.3;
+        }
+        .schreibtisch-page .format-akt-titel {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 11pt;
+          font-weight: bold;
+          text-align: center;
+          text-transform: uppercase;
+          letter-spacing: 0.2em;
+          margin: 2.5rem 0 1rem;
+          padding: 0.8rem 0;
+          border-top: 2px solid #374151;
+          border-bottom: 2px solid #374151;
+          color: #212121;
+        }
+        .schreibtisch-page .format-pause {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 12pt;
+          font-weight: bold;
+          text-align: center;
+          text-transform: uppercase;
+          letter-spacing: 0.3em;
+          margin: 2.5rem 0;
+          padding: 0.75rem 0;
+          color: #888888;
+        }
+        .schreibtisch-page .format-musik {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 11pt;
+          font-style: italic;
+          margin: 0.6rem 0;
+          margin-left: 8.5rem;
+          padding: 6pt 10pt;
+          line-height: 1.4;
+          color: #7c3aed;
+          border-left: 3px solid #7c3aed;
+          background: #f5f3ff;
+        }
+        .schreibtisch-page .format-sound {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 11pt;
+          font-style: italic;
+          margin: 0.6rem 0;
+          margin-left: 8.5rem;
+          padding: 6pt 10pt;
+          line-height: 1.4;
+          color: #059669;
+          border-left: 3px solid #059669;
+          background: #ecfdf5;
+        }
+        .schreibtisch-page .format-notiz {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          font-size: 10pt;
+          font-style: italic;
+          color: #92400e;
+          background: #fef3c7;
+          padding: 8pt 12pt;
+          border-left: 3px solid #fbbf24;
+          margin: 0.75rem 0;
+          border-radius: 0 4px 4px 0;
+        }
+        .schreibtisch-page .format-nebentext {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 10pt;
+          font-style: italic;
+          margin: 0.5rem 0;
+          line-height: 1.5;
+          color: #6b7280;
+        }
+        .schreibtisch-page .format-gestrichen {
+          text-decoration: line-through;
+          color: #9ca3af;
+          background: #fef2f2;
+        }
+        .schreibtisch-page .format-ergaenzung {
+          background: #dbeafe;
+          color: #1e40af;
+          border-bottom: 2px solid #3b82f6;
+        }
+        .schreibtisch-page .inline-regie {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-style: italic;
+          color: #414141;
+          font-size: 0.92em;
+        }
+
+        /* Szenentitel im Schreibtisch-Header (editierbar) */
+        .schreibtisch-szenen-titel {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-weight: bold;
+          font-size: 12pt;
+          text-align: center;
+          margin-top: 2rem;
+          margin-bottom: 0.5rem;
+          color: #212121;
+        }
+
+        /* Ort-Angabe */
+        .schreibtisch-ort {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 11pt;
+          font-style: italic;
+          color: #414141;
+          text-align: center;
+          margin-bottom: 1rem;
+        }
+
+        /* Formatvorlagen-Toolbar */
+        .schreibtisch-toolbar {
+          position: sticky;
+          top: 0;
+          z-index: 15;
+          width: 21cm;
+          max-width: 100%;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 0.5rem;
+          padding: 0.35rem 0.75rem;
+          margin-bottom: 1rem;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          flex-wrap: wrap;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+        }
+        .schreibtisch-toolbar-group {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .schreibtisch-toolbar-divider {
+          width: 1px;
+          height: 24px;
+          background: #d1d5db;
+          margin: 0 0.35rem;
+        }
+        .schreibtisch-toolbar select {
+          padding: 0.3rem 0.5rem;
+          border: 1px solid #d1d5db;
+          border-radius: 0.25rem;
+          font-size: 0.8rem;
+          background: #fff;
+          cursor: pointer;
+          color: #374151;
+        }
+        .schreibtisch-toolbar-btn {
+          padding: 0.25rem 0.5rem;
+          border: 1px solid transparent;
+          border-radius: 0.25rem;
+          background: transparent;
+          font-size: 0.8rem;
+          cursor: pointer;
+          color: #374151;
+          transition: all 0.1s;
+          line-height: 1;
+        }
+        .schreibtisch-toolbar-btn:hover {
+          background: #e5e7eb;
+          border-color: #d1d5db;
+        }
+        .schreibtisch-toolbar-btn.active {
+          background: #3b82f6;
+          color: #fff;
+          border-color: #3b82f6;
+        }
+        .schreibtisch-toolbar-shortcut {
+          font-size: 0.65rem;
+          color: #9ca3af;
+          margin-left: 0.25rem;
+        }
+
+        /* Editierbare Bereiche */
+        .schreibtisch-szene-block {
+          position: relative;
+          padding: 0.25rem 0;
+        }
+        .schreibtisch-szene-block [contenteditable]:focus {
+          outline: none;
+          background: #fefcf8;
+          border-radius: 2px;
+        }
+        .schreibtisch-szene-block [contenteditable] {
+          outline: none;
+          min-height: 1em;
+        }
+
+        /* Szenen-Trennlinie */
+        .schreibtisch-szene-divider {
+          border: none;
+          border-top: 1px solid #e8e4df;
+          margin: 1.5rem 0;
+        }
+
+        /* Kontextmenü */
+        .schreibtisch-context-menu {
+          position: fixed;
+          z-index: 1000;
+          background: #fff;
+          border: 1px solid #d1cdc6;
+          border-radius: 0.5rem;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+          padding: 0.35rem 0;
+          min-width: 220px;
+          font-size: 0.85rem;
+        }
+        .schreibtisch-context-menu-item {
+          padding: 0.45rem 1rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          color: #333;
+          transition: background 0.1s;
+        }
+        .schreibtisch-context-menu-item:hover {
+          background: #f0ebe4;
+          color: #6b4423;
+        }
+        .schreibtisch-context-menu-sep {
+          border-top: 1px solid #e8e4df;
+          margin: 0.25rem 0;
+        }
+
+        /* Einfüge-Leiste zwischen Szenen */
+        .schreibtisch-insert-bar {
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          opacity: 0;
+          transition: opacity 0.2s;
+          cursor: pointer;
+        }
+        .schreibtisch-insert-bar:hover {
+          opacity: 1;
+        }
+        .schreibtisch-insert-bar button {
+          font-size: 0.7rem;
+          padding: 0.15rem 0.6rem;
+          border: 1px dashed #c8c3bb;
+          border-radius: 0.25rem;
+          background: transparent;
+          color: #8b8580;
+          cursor: pointer;
+        }
+        .schreibtisch-insert-bar button:hover {
+          border-style: solid;
+          background: #6b4423;
+          color: #fff;
+          border-color: #6b4423;
+        }
+
+        /* Zusammenfassung (klappbar) */
+        .schreibtisch-zusammenfassung {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 9pt;
+          color: #999;
+          font-style: italic;
+          margin: 0 0 0.5rem 0;
+          padding: 0.3rem 0.5rem;
+          background: #faf8f5;
+          border-radius: 3px;
+          border-left: 2px solid #e0dbd2;
+        }
+
+        /* Leerer Szenen-Inhalt */
+        .schreibtisch-empty-scene {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 10pt;
+          color: #bbb;
+          font-style: italic;
+          padding: 1rem 0;
+          cursor: text;
+        }
+
+        /* Print styles */
+        @media print {
+          .schreibtisch-nav, .schreibtisch-topbar, .schreibtisch-insert-bar,
+          .schreibtisch-context-menu, .header, .phase-tabs { display: none !important; }
+          .schreibtisch-container { background: white !important; }
+          .schreibtisch-main { padding: 0 !important; }
+          .schreibtisch-page {
+            box-shadow: none !important;
+            padding: 2cm 2.5cm !important;
+            margin: 0 !important;
+            width: 100% !important;
+          }
+          .schreibtisch-szene-block { border-left: none !important; }
+          .schreibtisch-akt-titel { page-break-before: always; }
+        }
       `}</style>
 
       {/* Treatment Generator View */}
@@ -30701,8 +32978,9 @@ STIL:
           <div className="header-right">
             <div className="phase-tabs">
               {[
-                { id: 'sammeln', label: '📝 Sammeln', tooltip: 'Material notieren: Figuren, Themen, Ideen' }, 
-                { id: 'ordnen', label: '🎬 Ordnen', tooltip: 'Szenen auf dem Zeitstrahl strukturieren' }
+                { id: 'sammeln', label: '📝 Sammeln', tooltip: 'Material notieren: Figuren, Themen, Ideen' },
+                { id: 'ordnen', label: '🎬 Ordnen', tooltip: 'Szenen auf dem Zeitstrahl strukturieren' },
+                { id: 'schreibtisch', label: '📄 Schreibtisch', tooltip: 'Das Stück als durchgängiges Dokument bearbeiten' }
               ].map(p => (
                 <button 
                   key={p.id} 
@@ -30715,6 +32993,10 @@ STIL:
               ))}
             </div>
             <button className="wiki-btn" onClick={() => openWiki()}>📚 Wiki</button>
+            <button className="rebu-twin-btn" onClick={() => setShowTwinModal(true)} title={getTwinSyncText() ? `Letzter Sync: ${getTwinSyncText()}` : 'Projekt in Rebu (Regiebuch) öffnen'}>
+              <span className="twin-icon">🎭</span> Rebu
+              <span className={`sync-dot ${getTwinSyncDotClass()}`} />
+            </button>
             <button className="gefuehl-btn" onClick={zeigeZufaelligesGefuehl} title="Ein Gefühl, für das es keinen Namen gibt">💭</button>
             <button className="help-btn" onClick={() => openWiki('anleitung')} title="Wie funktioniert Dramera?">❓</button>
             {phase === 'ordnen' && (
@@ -31245,6 +33527,14 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                       >
                         🔍 Fragen
                       </button>
+                      <button 
+                        onClick={() => setShowSpannungsbogen(!showSpannungsbogen)} 
+                        className={`struktur-check-btn ${showSpannungsbogen ? 'active' : ''}`}
+                        title="Spannungsbogen anzeigen"
+                      >
+                        📈 Spannungsbogen
+                      </button>
+
                       <button onClick={() => addFeld(`Szene ${data.felder.length + 1}`)} className="add-feld-btn">+ Szene</button>
                     </div>
                   </div>
@@ -31267,6 +33557,16 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                       </div>
                     </div>
                   )}
+
+
+                  {/* SPANNUNGSBOGEN-PANEL (aufklappbar) */}
+                  {showSpannungsbogen && (
+                    <SpannungsbogenVisualisierung
+                      felder={data.felder}
+                      onChange={updateFeld}
+                    />
+                  )}
+
 
                   {/* TRACKING-LEISTE mit Dropdowns */}
                   {(data.figuren.length > 0 || data.themen.length > 0) && (
@@ -31507,7 +33807,10 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                             >
                               <div className="feld-karte-header">
                                 <div className="feld-nummer">{i + 1}. {f.titel}</div>
-                                <div className="feld-status">{getStatus(f.status).icon}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                                  <KommentarButton elementType="feld" elementId={f.id} kommentare={data.kommentare} onAdd={(k) => setData(p => ({ ...p, kommentare: [...(p.kommentare || []), k] }))} onDelete={(kId) => setData(p => ({ ...p, kommentare: (p.kommentare || []).filter(k => k.id !== kId) }))}/>
+                                  <div className="feld-status">{getStatus(f.status).icon}</div>
+                                </div>
                               </div>
                               {f.zusammenfassung && <div className="feld-zusammenfassung">{f.zusammenfassung.length > 35 ? f.zusammenfassung.slice(0, 35) + '...' : f.zusammenfassung}</div>}
                               <div className="feld-karte-meta">
@@ -32385,6 +34688,18 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
               )}
             </div>
           )}
+
+          {/* Schreibtisch-Phase */}
+          {phase === 'schreibtisch' && (
+            <SchreibtischView
+              data={data}
+              setData={setData}
+              updateFeld={updateFeld}
+              addFeld={addFeld}
+              apiKey={apiKey}
+              sparringWithAI={sparringWithAI}
+            />
+          )}
         </div>
 
         {/* Wiki Panel */}
@@ -32474,6 +34789,198 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
           </>
         )}
 
+        {/* ===== PROJEKTUEBERSICHT / DASHBOARD MODAL ===== */}
+        {showDashboard && (() => {
+          const kern = data.fundament?.kern;
+          const kernFilled = !!(kern?.zumutung || kern?.weltgesetz);
+          const loglineFilled = !!data.fundament?.logline;
+          const titelFilled = !!data.fundament?.titel?.titel;
+          const fundamentChecks = [
+            { label: 'Kern', filled: kernFilled },
+            { label: 'Logline', filled: loglineFilled },
+            { label: 'Titel', filled: titelFilled }
+          ];
+          const fundamentScore = fundamentChecks.filter(c => c.filled).length;
+
+          const figurenCount = (data.figuren || []).length;
+          const figurenWithWantNeed = (data.figuren || []).filter(f => f.begehren || f.need || f.beduerfnis).length;
+
+          const szenenIdeenCount = (data.szenenIdeen || []).length;
+
+          const szenenCount = (data.felder || []).length;
+          const szenenWithContent = (data.felder || []).filter(f => (f.inhalt && f.inhalt.trim()) || (f.text && f.text.trim())).length;
+
+          const themenCount = (data.themen || []).length;
+          const rechercheCount = (data.recherche || []).length;
+
+          // Werkzeug content check (inline version)
+          const werkzeugCheck = (wId) => {
+            switch(wId) {
+              case 'autor': return !!(data.autor?.name);
+              case 'titel': return !!(data.fundament?.titel?.titel);
+              case 'logline': return !!(data.fundament?.logline);
+              case 'kern': return !!(data.fundament?.kern?.zumutung || data.fundament?.kern?.weltgesetz);
+              case 'unaussprechliches': {
+                const u = data.fundament?.unaussprechliches;
+                return !!(u && (typeof u === 'string' ? u : u?.text));
+              }
+              case 'emotionale_bewegung': return !!(data.fundament?.emotionale_bewegung?.von);
+              case 'thema': return (data.themen || []).length > 0;
+              case 'wertequadrat': return !!(data.wertequadrat?.virtue_a);
+              case 'motiv': return !!((data.fundament?.motive?.eigene || []).length > 0);
+              case 'konflikt': return !!(data.fundament?.konflikt?.beschreibung || data.fundament?.konflikt?.protagonisten?.length);
+              case 'spannung': {
+                const sp = data.fundament?.spannung;
+                return sp && Object.values(sp).some(v => v && typeof v === 'string' && v.trim());
+              }
+              case 'kraefte': return !!(data.kraefte?.protagonist?.figurId || data.kraefte?.protagonist?.kraftName);
+              case 'maerchenmodell': {
+                const mm = data.maerchenmodell;
+                return mm && Object.values(mm).some(v => v && typeof v === 'string' && v.trim());
+              }
+              case 'schauplatz': case 'setting_place': return !!(data.schauplatz?.hauptort);
+              case 'zeit': case 'setting_time': return !!(data.zeit?.epoche || data.zeit?.zeitrahmen);
+              case 'musik': return !!(data.musik?.konzept || (data.musik?.stuecke || []).length > 0);
+              case 'recherche': case 'stoffrecherche': return (data.recherche || []).length > 0;
+              default: return false;
+            }
+          };
+
+          const allWerkzeugIds = Object.values(WERKZEUG_KATEGORIEN).flatMap(k => k.werkzeuge.map(w => w.id));
+          const werkzeugeWithContent = allWerkzeugIds.filter(id => werkzeugCheck(id)).length;
+
+          const totalItems = fundamentScore + Math.min(figurenCount, 3) + Math.min(szenenIdeenCount, 1) + Math.min(szenenWithContent, 3) + Math.min(themenCount, 1) + Math.min(rechercheCount, 1) + werkzeugeWithContent;
+          const maxItems = 3 + 3 + 1 + 3 + 1 + 1 + allWerkzeugIds.length;
+          const completionPct = maxItems > 0 ? Math.round((totalItems / maxItems) * 100) : 0;
+
+          return (
+            <>
+              <div className="overlay" onClick={() => setShowDashboard(false)} style={{zIndex:1200}} />
+              <div role="dialog" aria-modal={true} className="dashboard-modal">
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
+                  <h2 style={{margin:0,fontSize:'1.2rem',fontWeight:700}}>📊 Projektübersicht</h2>
+                  <button onClick={() => setShowDashboard(false)} style={{background:'none',border:'none',fontSize:'1.3rem',cursor:'pointer',color:'#6b7280'}}>✕</button>
+                </div>
+
+                <div className="dashboard-project-info">
+                  <div style={{fontWeight:600,fontSize:'1.05rem'}}>{data.projektName || 'Neues Projekt'}</div>
+                  {data.autor?.name && <div style={{color:'#6b7280',fontSize:'0.85rem'}}>Autor: {data.autor.name}</div>}
+                </div>
+
+                <div className="dashboard-completion-overall">
+                  <div style={{fontWeight:600,marginBottom:'0.3rem'}}>Vollständigkeit: {completionPct}%</div>
+                  <div className="dashboard-progress-bar">
+                    <div className="dashboard-progress-fill" style={{width: completionPct + '%', background: completionPct > 66 ? '#059669' : completionPct > 33 ? '#f59e0b' : '#ef4444'}} />
+                  </div>
+                </div>
+
+                <div className="dashboard-sections">
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">🧠 Fundament</div>
+                    {fundamentChecks.map(c => (
+                      <div key={c.label} className="dashboard-check-item">
+                        <span style={{color: c.filled ? '#059669' : '#d1d5db'}}>{c.filled ? '✅' : '⬜'}</span>{' '}{c.label}
+                      </div>
+                    ))}
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: (fundamentScore/3*100) + '%', background:'#8b5cf6'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">👤 Figuren</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{figurenCount} Figuren, {figurenWithWantNeed} mit Want/Need</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: (figurenCount > 0 ? figurenWithWantNeed/figurenCount*100 : 0) + '%', background:'#ef4444'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">🎬 Szenen-Ideen</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{szenenIdeenCount} Ideen</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: Math.min(szenenIdeenCount/10*100, 100) + '%', background:'#2563eb'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">📐 Szenen (Zeitstrahl)</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{szenenCount} Szenen, {szenenWithContent} mit Inhalt</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: (szenenCount > 0 ? szenenWithContent/szenenCount*100 : 0) + '%', background:'#059669'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">💡 Themen</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{themenCount} Themen</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: Math.min(themenCount/5*100, 100) + '%', background:'#f59e0b'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">🔬 Recherche</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{rechercheCount} Einträge</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: Math.min(rechercheCount/5*100, 100) + '%', background:'#64748b'}} /></div>
+                  </div>
+
+                  <div className="dashboard-section-item">
+                    <div className="dashboard-section-title">🛠️ Werkzeuge mit Inhalt</div>
+                    <div style={{fontSize:'0.85rem',color:'#6b7280'}}>{werkzeugeWithContent} von {allWerkzeugIds.length} Werkzeugen</div>
+                    <div className="dashboard-progress-bar"><div className="dashboard-progress-fill" style={{width: (allWerkzeugIds.length > 0 ? werkzeugeWithContent/allWerkzeugIds.length*100 : 0) + '%', background:'#8b5cf6'}} /></div>
+                  </div>
+                </div>
+
+                <div style={{marginTop:'1.2rem',borderTop:'1px solid #e5e7eb',paddingTop:'1rem'}}>
+                  <button className="dashboard-version-btn" onClick={() => { setShowDashboard(false); setShowVersionHistory(true); }}>
+                    🕐 Versionshistorie ({versionHistory.length} Einträge)
+                  </button>
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {/* ===== VERSIONSHISTORIE MODAL ===== */}
+        {showVersionHistory && (
+          <>
+            <div className="overlay" onClick={() => setShowVersionHistory(false)} style={{zIndex:1200}} />
+            <div role="dialog" aria-modal={true} className="dashboard-modal">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1rem'}}>
+                <h2 style={{margin:0,fontSize:'1.2rem',fontWeight:700}}>🕐 Versionshistorie</h2>
+                <button onClick={() => setShowVersionHistory(false)} style={{background:'none',border:'none',fontSize:'1.3rem',cursor:'pointer',color:'#6b7280'}}>✕</button>
+              </div>
+              {versionHistory.length === 0 ? (
+                <div style={{color:'#9ca3af',textAlign:'center',padding:'2rem 0'}}>
+                  Noch keine Versionen gespeichert. Die letzten 10 Auto-Save-Punkte werden hier angezeigt.
+                </div>
+              ) : (
+                <div className="version-history-list">
+                  {[...versionHistory].reverse().map((v, idx) => {
+                    const d = new Date(v.timestamp);
+                    const timeStr = d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                    const figurenN = (v.data?.figuren || []).length;
+                    const szenenN = (v.data?.felder || []).length;
+                    return (
+                      <div key={idx} className="version-history-entry">
+                        <div className="version-history-info">
+                          <div style={{fontWeight:600,fontSize:'0.9rem'}}>{timeStr}</div>
+                          <div style={{fontSize:'0.8rem',color:'#6b7280'}}>
+                            {v.data?.projektName || 'Projekt'} — {figurenN} Figuren, {szenenN} Szenen
+                          </div>
+                        </div>
+                        <button
+                          className="version-restore-btn"
+                          onClick={() => {
+                            if (window.confirm('Version vom ' + timeStr + ' wiederherstellen? Aktuelle Daten werden überschrieben.')) {
+                              setData({...DEFAULT_DATA, ...v.data});
+                              setShowVersionHistory(false);
+                            }
+                          }}
+                        >Wiederherstellen</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              <div style={{marginTop:'1rem',textAlign:'center'}}>
+                <button className="dashboard-version-btn" onClick={() => { setShowVersionHistory(false); setShowDashboard(true); }}>📊 Zurück zur Übersicht</button>
+              </div>
+            </div>
+          </>
+        )}
+
         {/* ===== IMPORT / EXPORT MODAL (wie Rebu) ===== */}
         {showImportExportModal && (
           <>
@@ -32554,6 +35061,23 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 </div>
               </div>
 
+              {/* === TWIN SYSTEM (Dramera ↔ Rebu) === */}
+              <div style={{marginBottom:'1.2rem'}}>
+                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>🎭 Zwillingssystem</h3>
+                <div style={{padding:'0.7rem',borderRadius:'8px',border:'1.5px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))',cursor:'pointer'}} onClick={() => { setShowImportExportModal(false); setShowTwinModal(true); }}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div>
+                      <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>🎭 In Rebu öffnen</div>
+                      <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>
+                        Projekt an das Regiebuch übertragen
+                        {twinSyncStatus?.lastSync && <span style={{marginLeft:'0.5rem',color:'#8b5cf6'}}> · Letzter Sync: {getTwinSyncText()}</span>}
+                      </div>
+                    </div>
+                    <span style={{fontSize:'1.2rem'}}>⚡</span>
+                  </div>
+                </div>
+              </div>
+
               {/* === GOOGLE DRIVE === */}
               <div>
                 <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>☁️ Google Drive</h3>
@@ -32595,6 +35119,68 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     </>
                   )}
                 </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ===== TWIN SYSTEM MODAL (Dramera ↔ Rebu) ===== */}
+        {showTwinModal && (
+          <>
+            <div className="twin-modal-overlay" onClick={() => setShowTwinModal(false)} />
+            <div className="twin-modal">
+              <div className="twin-header">
+                <h2>🎭 In Rebu öffnen</h2>
+                <button className="twin-close" onClick={() => setShowTwinModal(false)}>×</button>
+              </div>
+
+              <div style={{fontSize:'0.78rem',color:'#6b7280',marginBottom:'1rem',lineHeight:'1.5'}}>
+                Übertrage dein Projekt an <strong>Rebu</strong> (Regiebuch) für die Probenarbeit.
+                Figuren, Szenen, Dialoge, Konzept und Beziehungen werden mitgeschickt.
+              </div>
+
+              {/* Transfer-Optionen */}
+              <div style={{marginBottom:'0.8rem'}}>
+                <div className="twin-option twin-option-primary" onClick={twinTransferViaLocalStorage}>
+                  <h4>⚡ Direkter Transfer</h4>
+                  <p>Daten im Browser übergeben und Rebu öffnen. Funktioniert wenn beide Apps auf GitHub Pages laufen (gleiche Domain).</p>
+                </div>
+
+                <div className="twin-option" onClick={twinTransferViaFile}>
+                  <h4>📁 Als Datei herunterladen</h4>
+                  <p>NINA-Exchange v4.0 Datei (.nina.json) speichern und in Rebu manuell importieren. Funktioniert immer.</p>
+                </div>
+
+                <div className="twin-option" onClick={twinTransferViaURL}>
+                  <h4>🔗 Via Link öffnen</h4>
+                  <p>Rebu mit den Daten als URL-Parameter öffnen. Nur für kleinere Projekte (unter 32 KB).</p>
+                </div>
+              </div>
+
+              {/* Statistik-Vorschau */}
+              <div style={{padding:'0.6rem 0.8rem',borderRadius:'8px',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))',border:'1px solid rgba(139,92,246,0.2)',fontSize:'0.72rem',color:'#374151',marginBottom:'0.8rem'}}>
+                <div style={{fontWeight:600,marginBottom:'0.3rem'}}>Was wird übertragen:</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.2rem'}}>
+                  <span>👤 {(data.figuren || []).length} Figuren</span>
+                  <span>🎬 {(data.felder || []).length} Szenen</span>
+                  <span>🔗 {(data.beziehungen || []).length} Beziehungen</span>
+                  <span>📝 {(data.felder || []).filter(s => s.inhalt || data.schreibflaecheInhalte?.[s.id]).length} mit Text</span>
+                  {data.fundament?.kern && <span>🧠 Konzept</span>}
+                  {data.recherche?.length > 0 && <span>📚 {data.recherche.length} Recherche</span>}
+                </div>
+              </div>
+
+              {/* Sync-Status */}
+              {twinSyncStatus?.lastSync && (
+                <div className="twin-sync-info">
+                  Letzter Sync: <span className="sync-time">{getTwinSyncText()}</span>
+                </div>
+              )}
+
+              {/* Hinweis */}
+              <div style={{marginTop:'0.8rem',fontSize:'0.68rem',color:'#9ca3af',lineHeight:'1.4'}}>
+                💡 Bestehende Daten in Rebu werden nicht überschrieben — nur leere Felder werden aufgefüllt.
+                Nach der Probenarbeit kannst du aus Rebu zurück an Dramera senden.
               </div>
             </div>
           </>
@@ -33896,44 +36482,85 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                   <div className="import-step preview">
                     <div className="preview-section">
                       <h3>📋 Erkannter Titel</h3>
-                      <input 
-                        type="text" 
-                        value={importAnalysis.titel || ''} 
+                      <input
+                        type="text"
+                        value={importAnalysis.titel || ''}
                         onChange={(e) => setImportAnalysis(prev => ({ ...prev, titel: e.target.value }))}
                         className="preview-input"
                       />
                     </div>
-                    
+
+                    {/* Logline & Kern */}
+                    {(importAnalysis.logline || importAnalysis.kern) && (
+                      <div className="preview-section">
+                        <h3>🧠 Fundament</h3>
+                        {importAnalysis.logline && (
+                          <div style={{ fontSize: '0.85rem', color: '#4b5563', marginBottom: '0.5rem' }}>
+                            <strong>Logline:</strong> {importAnalysis.logline}
+                          </div>
+                        )}
+                        {importAnalysis.kern && (
+                          <div style={{ fontSize: '0.85rem', color: '#4b5563' }}>
+                            <strong>Kern:</strong> {importAnalysis.kern}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="preview-section">
                       <h3>👥 Erkannte Figuren ({importAnalysis.figuren?.length || 0})</h3>
                       <div className="preview-list">
                         {importAnalysis.figuren?.map((f, i) => (
-                          <div key={i} className="preview-item figur">
-                            <input 
-                              type="checkbox" 
-                              checked={f.selected !== false}
-                              onChange={(e) => {
-                                const newFiguren = [...importAnalysis.figuren];
-                                newFiguren[i] = { ...f, selected: e.target.checked };
-                                setImportAnalysis(prev => ({ ...prev, figuren: newFiguren }));
-                              }}
-                            />
-                            <span className="preview-name">{f.name}</span>
-                            {f.beschreibung && <span className="preview-desc">{f.beschreibung}</span>}
+                          <div key={i} className="preview-item figur" style={{ padding: '0.5rem', marginBottom: '0.5rem', background: '#fdf8f3', borderRadius: '6px', border: '1px solid #e8ddd0' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                              <input
+                                type="checkbox"
+                                checked={f.selected !== false}
+                                onChange={(e) => {
+                                  const newFiguren = [...importAnalysis.figuren];
+                                  newFiguren[i] = { ...f, selected: e.target.checked };
+                                  setImportAnalysis(prev => ({ ...prev, figuren: newFiguren }));
+                                }}
+                              />
+                              <span className="preview-name" style={{ fontWeight: 600 }}>{f.name}</span>
+                              {f.beruf && <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>({f.beruf})</span>}
+                              {f.alter && <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>{f.alter}</span>}
+                              {f.archetyp && <span style={{ fontSize: '0.65rem', background: '#e0e7ff', color: '#4338ca', padding: '1px 6px', borderRadius: '8px' }}>{f.archetyp}</span>}
+                            </div>
+                            {f.beschreibung && <div style={{ fontSize: '0.8rem', color: '#4b5563', marginBottom: '0.25rem' }}>{f.beschreibung}</div>}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', fontSize: '0.7rem' }}>
+                              {f.want && <span style={{ background: '#dcfce7', color: '#166534', padding: '1px 6px', borderRadius: '6px' }}>Want: {f.want.substring(0, 50)}{f.want.length > 50 ? '...' : ''}</span>}
+                              {f.need && <span style={{ background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '6px' }}>Need: {f.need.substring(0, 50)}{f.need.length > 50 ? '...' : ''}</span>}
+                              {f.ghost && <span style={{ background: '#fce7f3', color: '#9d174d', padding: '1px 6px', borderRadius: '6px' }}>Ghost: {f.ghost.substring(0, 50)}{f.ghost.length > 50 ? '...' : ''}</span>}
+                            </div>
                           </div>
                         ))}
                       </div>
                     </div>
-                    
+
+                    {/* Beziehungen */}
+                    {importAnalysis.beziehungen?.length > 0 && (
+                      <div className="preview-section">
+                        <h3>🔗 Erkannte Beziehungen ({importAnalysis.beziehungen.length})</h3>
+                        <div className="preview-list">
+                          {importAnalysis.beziehungen.map((bez, i) => (
+                            <div key={i} style={{ fontSize: '0.8rem', padding: '0.25rem 0', color: '#4b5563' }}>
+                              <strong>{bez.figur1}</strong> ↔ <strong>{bez.figur2}</strong>: {bez.art}{bez.beschreibung ? ` – ${bez.beschreibung}` : ''}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="preview-section">
                       <h3>💡 Erkannte Themen ({importAnalysis.themen?.length || 0})</h3>
                       <div className="preview-list horizontal">
                         {importAnalysis.themen?.map((t, i) => (
-                          <span key={i} className="preview-tag thema">{t}</span>
+                          <span key={i} className="preview-tag thema">{typeof t === 'string' ? t : t.name}</span>
                         ))}
                       </div>
                     </div>
-                    
+
                     <div className="preview-section">
                       <h3>🎬 Erkannte Szenen ({importAnalysis.szenen?.length || 0})</h3>
                       <div className="preview-list">
@@ -33942,28 +36569,49 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                             <div className="szene-preview-header">
                               <span className="szene-nummer">{i + 1}.</span>
                               <span className="szene-titel">{s.titel}</span>
+                              {s.spannungswert != null && <span style={{ fontSize: '0.7rem', background: '#ede9fe', color: '#6d28d9', padding: '1px 5px', borderRadius: '6px', marginLeft: '4px' }}>⚡{s.spannungswert}</span>}
                             </div>
                             <div className="szene-preview-meta">
                               {s.figuren?.map((f, j) => (
                                 <span key={j} className="preview-tag figur-small">{f}</span>
                               ))}
+                              {s.ort && <span style={{ fontSize: '0.7rem', color: '#6b7280' }}>📍 {s.ort}</span>}
                             </div>
                             {s.zusammenfassung && (
                               <div className="szene-preview-summary">{s.zusammenfassung}</div>
+                            )}
+                            {s.wendepunkt && (
+                              <div style={{ fontSize: '0.75rem', color: '#b45309', marginTop: '2px' }}>◆ {s.wendepunkt}</div>
+                            )}
+                            {s.dialog && s.dialog.length > 0 && (
+                              <div style={{ marginTop: '4px', padding: '4px 6px', background: '#fefce8', borderRadius: '4px', fontSize: '0.7rem', color: '#854d0e', maxHeight: '80px', overflow: 'hidden' }}>
+                                <span style={{ fontWeight: 600 }}>📜 {s.dialog.filter(d => d.typ === 'dialog').length} Dialogzeilen, {s.dialog.filter(d => d.typ === 'regie').length} Regieanweisungen</span>
+                                <div style={{ marginTop: '2px', opacity: 0.8 }}>
+                                  {s.dialog.filter(d => d.typ === 'dialog').slice(0, 2).map((d, di) => (
+                                    <div key={di}><b>{d.figur}:</b> {(d.text || '').substring(0, 60)}{(d.text || '').length > 60 ? '…' : ''}</div>
+                                  ))}
+                                  {s.dialog.filter(d => d.typ === 'dialog').length > 2 && <div>…</div>}
+                                </div>
+                              </div>
                             )}
                           </div>
                         ))}
                       </div>
                     </div>
-                    
+
+                    {/* Import-Zusammenfassung */}
+                    <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '0.75rem', fontSize: '0.8rem', color: '#166534', marginBottom: '0.75rem' }}>
+                      Beim Import werden automatisch ausgefüllt: Titel, Logline, Kern, Figuren-Profile (Name, Beruf, Alter, Want/Need/Ghost, Sprechweise, Geheimnisse), Beziehungen, Themen, Szenen (mit Ort, Wendepunkt, Spannungswert) und <b>Dialogtext mit Figurenzuordnung und Regieanweisungen</b>.
+                    </div>
+
                     <div className="import-actions">
-                      <button 
+                      <button
                         className="import-btn secondary"
                         onClick={() => { setImportStep('upload'); setImportAnalysis(null); }}
                       >
                         ← Zurück
                       </button>
-                      <button 
+                      <button
                         className="import-btn primary"
                         onClick={executeImport}
                       >
