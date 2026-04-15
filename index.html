@@ -19276,8 +19276,7 @@ WICHTIGE REGELN:
       // DOCX mit mammoth lesen
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const mammoth = await import('https://cdn.jsdelivr.net/npm/mammoth@1.6.0/+esm');
-        const result = await mammoth.extractRawText({ arrayBuffer });
+        const result = await window.mammoth.extractRawText({ arrayBuffer });
         setImportText(result.value);
       } catch (err) {
         setImportError('Fehler beim Lesen der DOCX-Datei: ' + err.message);
