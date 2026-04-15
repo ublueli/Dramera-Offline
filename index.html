@@ -16884,24 +16884,18 @@ function DrameraWerkbank() {
   // ============================================
   // NINA-EXCHANGE IMPORT v3.0/v4.0 (von Rebu/Propla)
   // ============================================
-  const handleNinaExchangeImport = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    
-    const reader = new FileReader();
-    reader.onload = (evt) => {
+  // Verarbeitet geparste NINA-Exchange-Daten (wird von File-Import UND Twin-Import genutzt)
+  const processNinaExchangeData = (importData) => {
       try {
-        const importData = JSON.parse(evt.target.result);
-        
         // Prüfen ob es ein NINA-Exchange Format ist
         if (importData.format !== 'nina-exchange') {
           alert('❌ Diese Datei ist kein NINA-Exchange Format.\n\nBitte exportiere das Projekt zuerst aus Rebu oder Propla.');
           return;
         }
-        
+
         const version = importData.version || '1.0';
-        const source = importData.exportedFrom === 'rebu' ? 'Rebu' : 
-                       importData.exportedFrom === 'propla' ? 'Propla' : 
+        const source = importData.exportedFrom === 'rebu' ? 'Rebu' :
+                       importData.exportedFrom === 'propla' ? 'Propla' :
                        importData.exportedFrom === 'werkbank' ? 'Weba' : 'unbekannt';
         
         // === ANALYSE-PHASE ===
@@ -17060,7 +17054,23 @@ function DrameraWerkbank() {
         
         // Preview anzeigen
         setNinaImportPreview({ data: importData, analysis, version, source });
-        
+
+      } catch (err) {
+        console.error('NINA-Exchange Import Fehler:', err);
+        alert('❌ Import fehlgeschlagen: ' + err.message);
+      }
+  };
+
+  // File-Input-Handler: Liest Datei und ruft processNinaExchangeData auf
+  const handleNinaExchangeImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const importData = JSON.parse(evt.target.result);
+        processNinaExchangeData(importData);
       } catch (err) {
         console.error('NINA-Exchange Import Fehler:', err);
         alert('❌ Import fehlgeschlagen: ' + err.message);
@@ -20593,22 +20603,8 @@ WICHTIGE REGELN:
       );
 
       if (accept) {
-        // Nutze den bestehenden NINA-Exchange Import-Mechanismus
-        // Simuliere ein File-Input-Event
-        const fakeEvent = {
-          target: {
-            files: [new Blob([JSON.stringify(incoming)], { type: 'application/json' })]
-          }
-        };
-        // Direkter Import via bestehende Logik
-        const blob = new Blob([JSON.stringify(incoming)], { type: 'application/json' });
-        const file = new File([blob], 'twin-import.json', { type: 'application/json' });
-        const dt = new DataTransfer();
-        dt.items.add(file);
-        if (importNinaExchangeRef.current) {
-          importNinaExchangeRef.current.files = dt.files;
-          importNinaExchangeRef.current.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        // Direkt die Import-Logik aufrufen (nicht über File-Input simulieren)
+        processNinaExchangeData(incoming);
 
         // Sync-Status aktualisieren
         localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
