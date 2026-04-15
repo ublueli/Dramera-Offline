@@ -140,8 +140,10 @@ function autoResizeTextarea(el) {
 function initAutoResizeTextareas() {
   // Alle Textareas mit der Klasse versehen und initial anpassen
   function processTextareas(root) {
-    const textareas = (root || document).querySelectorAll('textarea:not(.no-auto-resize):not(.schreibflaeche textarea)');
-    textareas.forEach(ta => {
+    const textareas = (root || document).querySelectorAll('textarea:not(.no-auto-resize)');
+    // Schreibfläche-Textareas ausschließen (contentEditable, nicht textarea)
+    const filtered = Array.from(textareas).filter(ta => !ta.closest('.schreibflaeche'));
+    filtered.forEach(ta => {
       if (!ta.classList.contains('auto-resize')) {
         ta.classList.add('auto-resize');
         autoResizeTextarea(ta);
