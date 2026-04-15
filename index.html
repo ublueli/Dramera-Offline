@@ -16036,10 +16036,66 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     }
   }, []);
 
+  // Inline-Regieanweisungen: (Klammertexte) in Dialogen als Regie formatieren
+  const wrapInlineRegie = useCallback((html) => {
+    if (!html || (!html.includes('dialog-text') && !html.includes('format-dialog') && !html.includes('class="text"') && !html.includes('fmt-dialog'))) return html;
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+
+    // In Dialog-Text-Spans nach (Klammertexten) suchen
+    temp.querySelectorAll('.dialog-text, .text, .format-dialog, .fmt-dialog').forEach(el => {
+      const isContainer = el.classList.contains('format-dialog') || el.classList.contains('fmt-dialog');
+
+      // Bestehende inline-regie Spans unwrappen
+      el.querySelectorAll('.inline-regie').forEach(span => {
+        span.replaceWith(document.createTextNode(span.textContent));
+      });
+
+      // Text-Knoten durchgehen und (Klammertexte) wrappen
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      const textNodes = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        // Bei Container: Text in figur/figur-name Spans ignorieren
+        if (isContainer) {
+          const parent = node.parentElement;
+          if (parent && (parent.classList.contains('figur') || parent.classList.contains('figur-name'))) continue;
+        }
+        if (/\([^)]{2,}\)/.test(node.textContent)) {
+          textNodes.push(node);
+        }
+      }
+
+      textNodes.forEach(textNode => {
+        const parts = textNode.textContent.split(/(\([^)]{2,}\))/g);
+        if (parts.length <= 1) return;
+        const fragment = document.createDocumentFragment();
+        parts.forEach(part => {
+          if (/^\([^)]{2,}\)$/.test(part)) {
+            const span = document.createElement('span');
+            span.className = 'inline-regie';
+            span.textContent = part;
+            fragment.appendChild(span);
+          } else if (part) {
+            fragment.appendChild(document.createTextNode(part));
+          }
+        });
+        textNode.replaceWith(fragment);
+      });
+    });
+
+    return temp.innerHTML;
+  }, []);
+
+  // Inline-Regie-Spans entfernen (vor dem Speichern)
+  const stripInlineRegie = useCallback((html) => {
+    return html.replace(/<span class="inline-regie">([\s\S]*?)<\/span>/g, '$1');
+  }, []);
+
   // fmt-* Klassen in Rebu format-* Klassen konvertieren (für Kompatibilität)
   const convertFmtToFormat = useCallback((html) => {
     if (!html) return '';
-    return html
+    let converted = html
       .replace(/\bfmt-dialog\b/g, 'format-dialog')
       .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
       .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
@@ -16049,12 +16105,16 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bfmt-figurenname\b/g, 'format-standard')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
-  }, []);
+    // Inline-Regieanweisungen in Dialogen wrappen
+    return wrapInlineRegie(converted);
+  }, [wrapInlineRegie]);
 
   // Rebu format-* Klassen zurück in fmt-* konvertieren (für Dramera-Datenmodell)
   const convertFormatToFmt = useCallback((html) => {
     if (!html) return '';
-    return html
+    // Erst inline-regie Spans entfernen (nur Darstellungs-Markup)
+    let cleaned = stripInlineRegie(html);
+    return cleaned
       .replace(/\bformat-dialog\b/g, 'fmt-dialog')
       .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
       .replace(/\bformat-szene-titel\b/g, 'fmt-szenen-titel')
@@ -16064,7 +16124,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bformat-standard\b/g, '')
       .replace(/class="figur-name"/g, 'class="figur"')
       .replace(/class="dialog-text"/g, 'class="text"');
-  }, []);
+  }, [stripInlineRegie]);
 
   // Sync: Editor-Inhalt zurück ins Datenmodell schreiben
   const syncEditorToData = useCallback((sceneId) => {
@@ -16075,12 +16135,60 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     updateFeld(sceneId, { inhalt: fmtHtml });
   }, [updateFeld, convertFormatToFmt]);
 
+  // Live inline-regie im Editor anwenden (nach Sync)
+  const applyInlineRegieToEditor = useCallback((sceneId) => {
+    const editor = editorRefs.current[sceneId];
+    if (!editor) return;
+    const html = editor.innerHTML;
+    if (!html.includes('format-dialog') && !html.includes('dialog-text')) return;
+    const stripped = stripInlineRegie(html);
+    const wrapped = wrapInlineRegie(stripped);
+    if (wrapped === html) return;
+    // Cursor-Position sichern
+    const sel = window.getSelection();
+    let savedOffset = null;
+    if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let total = 0;
+      while (walker.nextNode()) {
+        if (walker.currentNode === sel.anchorNode) { savedOffset = total + sel.anchorOffset; break; }
+        total += walker.currentNode.textContent.length;
+      }
+    }
+    editor.innerHTML = wrapped;
+    // Cursor wiederherstellen
+    if (savedOffset !== null) {
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let total = 0;
+      while (walker.nextNode()) {
+        const len = walker.currentNode.textContent.length;
+        if (total + len >= savedOffset) {
+          try {
+            const range = document.createRange();
+            range.setStart(walker.currentNode, Math.min(savedOffset - total, len));
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } catch(e) {}
+          return;
+        }
+        total += len;
+      }
+    }
+  }, [wrapInlineRegie, stripInlineRegie]);
+
   // Debounced sync
   const syncTimerRef = useRef({});
+  const inlineRegieTimerRef = useRef({});
   const debouncedSync = useCallback((sceneId) => {
     if (syncTimerRef.current[sceneId]) clearTimeout(syncTimerRef.current[sceneId]);
-    syncTimerRef.current[sceneId] = setTimeout(() => syncEditorToData(sceneId), 800);
-  }, [syncEditorToData]);
+    syncTimerRef.current[sceneId] = setTimeout(() => {
+      syncEditorToData(sceneId);
+      // Inline-Regie nach kurzem Delay aktualisieren
+      if (inlineRegieTimerRef.current[sceneId]) clearTimeout(inlineRegieTimerRef.current[sceneId]);
+      inlineRegieTimerRef.current[sceneId] = setTimeout(() => applyInlineRegieToEditor(sceneId), 100);
+    }, 800);
+  }, [syncEditorToData, applyInlineRegieToEditor]);
 
   // Formatvorlage auf aktuelle Auswahl/Absatz anwenden (wie Rebu)
   const applyFormat = useCallback((formatKey) => {
@@ -16491,6 +16599,18 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
             <button className="schreibtisch-toolbar-btn" onClick={exportPDF} title="Als PDF drucken">PDF</button>
             <button className="schreibtisch-toolbar-btn" onClick={exportDOCX} title="Als DOCX exportieren">DOCX</button>
           </div>
+        </div>
+
+        {/* Format-Shortcuts Overlay */}
+        <div className="schreibtisch-format-overlay">
+          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).slice(0, 8).map(([key, v]) => (
+            <span key={key}
+              className={`schreibtisch-format-tag ${currentFormat === key ? 'active' : ''}`}
+              onClick={() => applyFormat(key)}
+              title={`${v.name} (Ctrl+Shift+${v.shortcut})`}>
+              <strong>{v.shortcut}</strong> {v.name}
+            </span>
+          ))}
         </div>
 
         {/* A4-Seite */}
@@ -32657,11 +32777,20 @@ STIL:
           color: #212121;
         }
         .schreibtisch-page .format-dialog {
-          margin: 0.6rem 0 0.2rem 0;
+          margin: 0.3rem 0 0;
           display: block;
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-size: 12pt;
           color: #212121;
+          border: none;
+        }
+        .schreibtisch-page .format-dialog + .format-dialog {
+          margin-top: 0.15rem;
+        }
+        .schreibtisch-page .format-dialog,
+        .schreibtisch-page .format-dialog * {
+          border-top: none !important;
+          border-bottom: none !important;
         }
         .schreibtisch-page .format-dialog .figur-name {
           display: block;
@@ -32795,6 +32924,42 @@ STIL:
           font-style: italic;
           color: #414141;
           font-size: 0.92em;
+        }
+
+        /* Format-Shortcuts Overlay */
+        .schreibtisch-format-overlay {
+          display: flex;
+          gap: 4px;
+          padding: 4px 12px;
+          background: #f8f7f4;
+          border-bottom: 1px solid #e8e4df;
+          flex-wrap: wrap;
+          position: sticky;
+          top: 41px;
+          z-index: 10;
+        }
+        .schreibtisch-format-tag {
+          font-size: 11px;
+          color: #6b7280;
+          padding: 2px 8px;
+          border-radius: 3px;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          white-space: nowrap;
+        }
+        .schreibtisch-format-tag:hover {
+          background: #e5e7eb;
+        }
+        .schreibtisch-format-tag.active {
+          background: #1e40af;
+          color: white;
+        }
+        .schreibtisch-format-tag.active strong {
+          color: #93c5fd;
+        }
+        .schreibtisch-format-tag strong {
+          color: #3b82f6;
+          margin-right: 2px;
         }
 
         /* Szenentitel im Schreibtisch-Header (editierbar) */
