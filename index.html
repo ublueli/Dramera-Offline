@@ -13,6 +13,126 @@
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <!-- Supabase entfernt für Stand-alone Version -->
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+
+  <!-- TipTap Rich Text Editor via esm.sh CDN -->
+  <script type="module">
+  import { Editor, Node, Mark, Extension, mergeAttributes } from 'https://esm.sh/@tiptap/core@2.10.6'
+  import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.10.6'
+  import Underline from 'https://esm.sh/@tiptap/extension-underline@2.10.6'
+  import TextStyle from 'https://esm.sh/@tiptap/extension-text-style@2.10.6'
+  import FontFamily from 'https://esm.sh/@tiptap/extension-font-family@2.10.6'
+
+  const FORMAT_CLASSES = {
+    standard: 'format-standard', dialog: 'format-dialog',
+    regieanweisung: 'format-regieanweisung', szeneTitel: 'format-szene-titel',
+    aktTitel: 'format-akt-titel', vers: 'format-vers', lied: 'format-lied',
+    pause: 'format-pause', musik: 'format-musik', sound: 'format-sound',
+    notiz: 'format-notiz', nebentext: 'format-nebentext',
+  };
+
+  // TheaterParagraph: Ersetzt Standard-Paragraph mit formatType-Attribut
+  const TheaterParagraph = Node.create({
+    name: 'paragraph',
+    group: 'block',
+    content: 'inline*',
+    addAttributes() {
+      return {
+        formatType: {
+          default: 'standard',
+          parseHTML: el => {
+            const cls = el.className || '';
+            for (const [fmt, clsName] of Object.entries(FORMAT_CLASSES)) {
+              if (cls.includes(clsName)) return fmt;
+            }
+            return 'standard';
+          },
+          renderHTML: () => ({}),
+        }
+      };
+    },
+    parseHTML() {
+      return [
+        { tag: 'div[class*="format-"]' },
+        { tag: 'p[class*="format-"]' },
+        { tag: 'p' },
+        { tag: 'div' },
+      ];
+    },
+    renderHTML({ node }) {
+      const ft = node.attrs.formatType;
+      const cls = FORMAT_CLASSES[ft] || 'format-standard';
+      return [ft === 'dialog' ? 'div' : 'p', { class: cls }, 0];
+    },
+    addCommands() {
+      return {
+        setFormatType: (type) => ({ commands }) => commands.updateAttributes('paragraph', { formatType: type }),
+      };
+    },
+    addKeyboardShortcuts() {
+      return {
+        'Mod-Shift-d': () => this.editor.commands.setFormatType('dialog'),
+        'Mod-Shift-r': () => this.editor.commands.setFormatType('regieanweisung'),
+        'Mod-Shift-t': () => this.editor.commands.setFormatType('szeneTitel'),
+        'Mod-Shift-a': () => this.editor.commands.setFormatType('aktTitel'),
+        'Mod-Shift-l': () => this.editor.commands.setFormatType('lied'),
+        'Mod-Shift-v': () => this.editor.commands.setFormatType('vers'),
+        'Mod-Shift-p': () => this.editor.commands.setFormatType('pause'),
+        'Mod-Shift-n': () => this.editor.commands.setFormatType('standard'),
+      };
+    },
+  });
+
+  // Marks für Dialog-Struktur und Inline-Regie
+  const FigurName = Mark.create({
+    name: 'figurName',
+    parseHTML() { return [{ tag: 'span.figur-name' }, { tag: 'span.figur' }]; },
+    renderHTML({ HTMLAttributes }) {
+      return ['span', mergeAttributes(HTMLAttributes, { class: 'figur-name' }), 0];
+    },
+  });
+  const DialogText = Mark.create({
+    name: 'dialogText',
+    parseHTML() { return [{ tag: 'span.dialog-text' }, { tag: 'span.text' }]; },
+    renderHTML({ HTMLAttributes }) {
+      return ['span', mergeAttributes(HTMLAttributes, { class: 'dialog-text' }), 0];
+    },
+  });
+  const InlineRegie = Mark.create({
+    name: 'inlineRegie',
+    parseHTML() { return [{ tag: 'span.inline-regie' }]; },
+    renderHTML({ HTMLAttributes }) {
+      return ['span', mergeAttributes(HTMLAttributes, { class: 'inline-regie' }), 0];
+    },
+  });
+
+  // Factory-Funktion für Theater-Editor-Instanzen
+  window.createTheaterEditor = function(element, options = {}) {
+    return new Editor({
+      element,
+      extensions: [
+        StarterKit.configure({
+          paragraph: false, heading: false, bulletList: false,
+          orderedList: false, listItem: false, blockquote: false,
+          codeBlock: false, horizontalRule: false, code: false,
+        }),
+        TheaterParagraph, FigurName, DialogText, InlineRegie,
+        Underline, TextStyle, FontFamily,
+      ],
+      content: options.content || '<p class="format-standard"><br></p>',
+      onUpdate: options.onUpdate,
+      onSelectionUpdate: options.onSelectionUpdate,
+      onFocus: options.onFocus,
+      editorProps: {
+        attributes: { class: 'schreibtisch-prosemirror', spellcheck: 'true' },
+      },
+    });
+  };
+
+  window.__tiptapLoaded = true;
+  window.dispatchEvent(new CustomEvent('tiptap-loaded'));
+  </script>
+
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
@@ -15962,9 +16082,9 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const [currentFormat, setCurrentFormat] = useState('standard');
   const mainRef = useRef(null);
   const sceneRefs = useRef({});
-  const editorRefs = useRef({});
-  const initializedEditors = useRef({});   // Track which editors have been initialized
-  const lastSyncedContent = useRef({});    // Track content synced FROM editor to prevent re-render overwrite
+  const tiptapEditors = useRef({});
+  const lastSyncedContent = useRef({});
+  const [tiptapReady, setTiptapReady] = useState(!!window.__tiptapLoaded);
 
   // Szenen nach Position sortiert
   const sortedFelder = useMemo(() =>
@@ -16040,66 +16160,47 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     }
   }, []);
 
-  // Inline-Regieanweisungen: (Klammertexte) in Dialogen als Regie formatieren
+  // Inline-Regie: Klammertexte in Dialogen wrappen (für HTML-Konvertierung)
   const wrapInlineRegie = useCallback((html) => {
     if (!html || (!html.includes('dialog-text') && !html.includes('format-dialog') && !html.includes('class="text"') && !html.includes('fmt-dialog'))) return html;
     const temp = document.createElement('div');
     temp.innerHTML = html;
-
-    // In Dialog-Text-Spans nach (Klammertexten) suchen
     temp.querySelectorAll('.dialog-text, .text, .format-dialog, .fmt-dialog').forEach(el => {
       const isContainer = el.classList.contains('format-dialog') || el.classList.contains('fmt-dialog');
-
-      // Bestehende inline-regie Spans unwrappen
-      el.querySelectorAll('.inline-regie').forEach(span => {
-        span.replaceWith(document.createTextNode(span.textContent));
-      });
-
-      // Text-Knoten durchgehen und (Klammertexte) wrappen
+      el.querySelectorAll('.inline-regie').forEach(span => span.replaceWith(document.createTextNode(span.textContent)));
       const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
       const textNodes = [];
       while (walker.nextNode()) {
-        const node = walker.currentNode;
-        // Bei Container: Text in figur/figur-name Spans ignorieren
+        const nd = walker.currentNode;
         if (isContainer) {
-          const parent = node.parentElement;
-          if (parent && (parent.classList.contains('figur') || parent.classList.contains('figur-name'))) continue;
+          const p = nd.parentElement;
+          if (p && (p.classList.contains('figur') || p.classList.contains('figur-name'))) continue;
         }
-        if (/\([^)]{2,}\)/.test(node.textContent)) {
-          textNodes.push(node);
-        }
+        if (/\([^)]{2,}\)/.test(nd.textContent)) textNodes.push(nd);
       }
-
-      textNodes.forEach(textNode => {
-        const parts = textNode.textContent.split(/(\([^)]{2,}\))/g);
+      textNodes.forEach(tn => {
+        const parts = tn.textContent.split(/(\([^)]{2,}\))/g);
         if (parts.length <= 1) return;
-        const fragment = document.createDocumentFragment();
+        const frag = document.createDocumentFragment();
         parts.forEach(part => {
           if (/^\([^)]{2,}\)$/.test(part)) {
-            const span = document.createElement('span');
-            span.className = 'inline-regie';
-            span.textContent = part;
-            fragment.appendChild(span);
-          } else if (part) {
-            fragment.appendChild(document.createTextNode(part));
-          }
+            const s = document.createElement('span'); s.className = 'inline-regie'; s.textContent = part; frag.appendChild(s);
+          } else if (part) frag.appendChild(document.createTextNode(part));
         });
-        textNode.replaceWith(fragment);
+        tn.replaceWith(frag);
       });
     });
-
     return temp.innerHTML;
   }, []);
 
-  // Inline-Regie-Spans entfernen (vor dem Speichern)
   const stripInlineRegie = useCallback((html) => {
     return html.replace(/<span class="inline-regie">([\s\S]*?)<\/span>/g, '$1');
   }, []);
 
-  // fmt-* Klassen in Rebu format-* Klassen konvertieren (für Kompatibilität)
+  // fmt-* ↔ format-* Konvertierung
   const convertFmtToFormat = useCallback((html) => {
     if (!html) return '';
-    let converted = html
+    let c = html
       .replace(/\bfmt-dialog\b/g, 'format-dialog')
       .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
       .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
@@ -16109,15 +16210,25 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bfmt-figurenname\b/g, 'format-standard')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
-    // Inline-Regieanweisungen in Dialogen wrappen
-    return wrapInlineRegie(converted);
+    return wrapInlineRegie(c);
   }, [wrapInlineRegie]);
 
-  // Rebu format-* Klassen zurück in fmt-* konvertieren (für Dramera-Datenmodell)
   const convertFormatToFmt = useCallback((html) => {
     if (!html) return '';
-    // Erst inline-regie Spans entfernen (nur Darstellungs-Markup)
     let cleaned = stripInlineRegie(html);
+    // Dialog-Blöcke: figur-name/dialog-text Struktur sicherstellen
+    const temp = document.createElement('div');
+    temp.innerHTML = cleaned;
+    temp.querySelectorAll('.format-dialog').forEach(el => {
+      if (!el.querySelector('.figur-name, .figur')) {
+        const text = el.textContent;
+        const m = text.match(/^([A-ZÄÖÜa-zäöü][A-ZÄÖÜa-zäöüß\s\d.]*?):\s*([\s\S]*)$/);
+        if (m) {
+          el.innerHTML = '<span class="figur-name">' + m[1].trim().toUpperCase() + ':</span><span class="dialog-text">' + (m[2] || '') + '</span>';
+        }
+      }
+    });
+    cleaned = temp.innerHTML;
     return cleaned
       .replace(/\bformat-dialog\b/g, 'fmt-dialog')
       .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
@@ -16130,276 +16241,99 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/class="dialog-text"/g, 'class="text"');
   }, [stripInlineRegie]);
 
-  // Cursor-Hilfsfunktionen (wie Rebu: absolute Text-Offset-Methode)
-  const getTextOffset = useCallback((root, node, offset) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let total = 0;
-    while (walker.nextNode()) {
-      if (walker.currentNode === node) return total + offset;
-      total += walker.currentNode.textContent.length;
-    }
-    return total;
-  }, []);
-
-  const restoreTextOffset = useCallback((root, targetOffset) => {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let total = 0;
-    while (walker.nextNode()) {
-      const len = walker.currentNode.textContent.length;
-      if (total + len >= targetOffset) {
-        try {
-          const sel = window.getSelection();
-          const range = document.createRange();
-          range.setStart(walker.currentNode, Math.min(targetOffset - total, len));
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } catch(e) {}
-        return;
-      }
-      total += len;
-    }
-  }, []);
-
-  // Sync: Editor-Inhalt zurück ins Datenmodell schreiben
-  const syncEditorToData = useCallback((sceneId) => {
-    const editor = editorRefs.current[sceneId];
-    if (!editor) return;
-    const rebuHtml = editor.innerHTML;
-    const fmtHtml = convertFormatToFmt(rebuHtml);
-    lastSyncedContent.current[sceneId] = fmtHtml;
-    updateFeld(sceneId, { inhalt: fmtHtml });
-  }, [updateFeld, convertFormatToFmt]);
-
-  // Live inline-regie im Editor anwenden (nach Sync)
-  const applyInlineRegieToEditor = useCallback((sceneId) => {
-    const editor = editorRefs.current[sceneId];
-    if (!editor) return;
-    const html = editor.innerHTML;
-    if (!html.includes('format-dialog') && !html.includes('dialog-text')) return;
-    const stripped = stripInlineRegie(html);
-    const wrapped = wrapInlineRegie(stripped);
-    if (wrapped === html) return;
-    // Cursor-Position sichern und wiederherstellen (wie Rebu)
-    const sel = window.getSelection();
-    let savedOffset = null;
-    if (sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-      savedOffset = getTextOffset(editor, sel.anchorNode, sel.anchorOffset);
-    }
-    editor.innerHTML = wrapped;
-    if (savedOffset !== null) {
-      restoreTextOffset(editor, savedOffset);
-    }
-  }, [wrapInlineRegie, stripInlineRegie, getTextOffset, restoreTextOffset]);
-
-  // Debounced sync
-  const syncTimerRef = useRef({});
-  const inlineRegieTimerRef = useRef({});
-  const debouncedSync = useCallback((sceneId) => {
-    if (syncTimerRef.current[sceneId]) clearTimeout(syncTimerRef.current[sceneId]);
-    syncTimerRef.current[sceneId] = setTimeout(() => {
-      syncEditorToData(sceneId);
-      // Inline-Regie nach kurzem Delay aktualisieren
-      if (inlineRegieTimerRef.current[sceneId]) clearTimeout(inlineRegieTimerRef.current[sceneId]);
-      inlineRegieTimerRef.current[sceneId] = setTimeout(() => applyInlineRegieToEditor(sceneId), 100);
-    }, 800);
-  }, [syncEditorToData, applyInlineRegieToEditor]);
-
-  // Formatvorlage auf aktuelle Auswahl/Absatz anwenden (wie Rebu)
+  // Formatvorlage anwenden (via TipTap)
   const applyFormat = useCallback((formatKey) => {
-    const selection = window.getSelection();
-    if (!selection.rangeCount) return;
-
-    const range = selection.getRangeAt(0);
-    // Finde den Editor, in dem die Auswahl liegt
-    let editorEl = range.commonAncestorContainer;
-    while (editorEl && !editorEl.classList?.contains('schreibtisch-editor')) {
-      editorEl = editorEl.parentNode;
-    }
-    if (!editorEl) return;
-    const sceneId = editorEl.dataset.sceneId;
-
-    const vorlage = SCHREIBTISCH_FORMATVORLAGEN[formatKey];
-    if (!vorlage) return;
-
-    // Finde aktuellen Block-Absatz (P oder DIV, aber nicht den Editor selbst)
-    let node = selection.anchorNode;
-    // Wenn Textknoten oder Inline-Element, nach oben zum Block-Element navigieren
-    while (node && node !== editorEl) {
-      if (node.nodeType === 1 && node.parentNode === editorEl && (node.tagName === 'P' || node.tagName === 'DIV')) break;
-      node = node.parentNode;
-    }
-
-    // Fallback: Wenn kein Block gefunden, den nächsten Block-Container des anchorNode nehmen
-    if (!node || node === editorEl) {
-      node = selection.anchorNode;
-      while (node && node !== editorEl) {
-        if (node.nodeType === 1 && (node.tagName === 'P' || node.tagName === 'DIV')) break;
-        node = node.parentNode;
-      }
-    }
-
-    // Immer noch kein Block? Nackten Text in P wrappen
-    if (!node || node === editorEl) {
-      const anchorNode = selection.anchorNode;
-      if (anchorNode && anchorNode.nodeType === 3 && editorEl.contains(anchorNode)) {
-        const wrapper = document.createElement('p');
-        wrapper.className = 'format-standard';
-        anchorNode.parentNode.insertBefore(wrapper, anchorNode);
-        wrapper.appendChild(anchorNode);
-        node = wrapper;
-      } else {
-        return;
-      }
-    }
-
-    const selectedText = range.toString().trim();
-    const text = selectedText || node.textContent.replace(/\s+/g, ' ').trim();
-    if (!text) return;
-
-    let newElement;
-    if (formatKey === 'dialog') {
-      newElement = document.createElement('div');
-      newElement.className = vorlage.class;
-      const dMatch = text.match(/^([A-ZÄÖÜa-zäöü][A-ZÄÖÜa-zäöüß\s\d.]*?):\s*(.*)$/);
-      if (dMatch) {
-        newElement.innerHTML = `<span class="figur-name">${dMatch[1].trim().toUpperCase()}:</span><span class="dialog-text">${dMatch[2] || ''}</span>`;
-      } else {
-        newElement.innerHTML = `<span class="figur-name">FIGUR:</span><span class="dialog-text">${text}</span>`;
-      }
-    } else if (formatKey === 'regieanweisung') {
-      newElement = document.createElement('p');
-      newElement.className = vorlage.class;
-      let rt = text;
-      if (!rt.startsWith('(')) rt = '(' + rt;
-      if (!rt.endsWith(')')) rt = rt + ')';
-      newElement.textContent = rt;
-    } else {
-      newElement = document.createElement('p');
-      newElement.className = vorlage.class;
-      newElement.textContent = text;
-    }
-
-    node.parentNode.replaceChild(newElement, node);
-
-    // Cursor ans Ende des neuen Elements
-    const newRange = document.createRange();
-    if (formatKey === 'dialog') {
-      const dt = newElement.querySelector('.dialog-text');
-      if (dt) { newRange.selectNodeContents(dt); } else { newRange.selectNodeContents(newElement); }
-    } else {
-      newRange.selectNodeContents(newElement);
-    }
-    newRange.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(newRange);
-
-    debouncedSync(sceneId);
+    const editor = tiptapEditors.current[activeSceneId];
+    if (!editor) return;
+    editor.chain().focus().setFormatType(formatKey).run();
     setCurrentFormat(formatKey);
-  }, [debouncedSync]);
+  }, [activeSceneId]);
 
-  // Aktuelles Format am Cursor erkennen
-  const detectCurrentFormat = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection.rangeCount) return;
-    let node = selection.anchorNode;
-    while (node) {
-      if (node.nodeType === 1 && node.className) {
-        for (const [key, vorlage] of Object.entries(SCHREIBTISCH_FORMATVORLAGEN)) {
-          if (node.classList?.contains(vorlage.class)) {
-            setCurrentFormat(key);
-            return;
-          }
-        }
-      }
-      node = node.parentNode;
-    }
-    setCurrentFormat('standard');
+  // TipTap laden
+  useEffect(() => {
+    if (window.__tiptapLoaded) { setTiptapReady(true); return; }
+    const handler = () => setTiptapReady(true);
+    window.addEventListener('tiptap-loaded', handler);
+    return () => window.removeEventListener('tiptap-loaded', handler);
   }, []);
 
-  // Keyboard Shortcuts
-  const handleEditorKeyDown = useCallback((e, sceneId) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
-      const key = e.key.toUpperCase();
-      for (const [fKey, vorlage] of Object.entries(SCHREIBTISCH_FORMATVORLAGEN)) {
-        if (vorlage.shortcut === key) {
-          e.preventDefault();
-          applyFormat(fKey);
-          return;
+  // TipTap-Editoren erstellen und verwalten
+  useEffect(() => {
+    if (!tiptapReady || !window.createTheaterEditor) return;
+    const currentIds = new Set(sortedFelder.map(f => f.id));
+
+    // Editoren für entfernte Szenen zerstören
+    Object.keys(tiptapEditors.current).forEach(id => {
+      if (!currentIds.has(id)) {
+        tiptapEditors.current[id].destroy();
+        delete tiptapEditors.current[id];
+        delete lastSyncedContent.current[id];
+      }
+    });
+
+    // Editoren erstellen oder bei externen Änderungen aktualisieren
+    sortedFelder.forEach(feld => {
+      const mountEl = document.querySelector(`[data-tiptap-mount="${feld.id}"]`);
+      if (!mountEl) return;
+
+      // Bestehender Editor: auf externe Änderungen prüfen
+      if (tiptapEditors.current[feld.id]) {
+        const content = feld.inhalt || '';
+        if (lastSyncedContent.current[feld.id] !== content) {
+          const ed = tiptapEditors.current[feld.id];
+          const html = convertFmtToFormat(content) || '<p class="format-standard"><br></p>';
+          ed.commands.setContent(html, false);
+          lastSyncedContent.current[feld.id] = content;
         }
-      }
-    }
-    // Enter: Neuen Absatz erstellen (wie Rebu – Inhalt am Cursor splitten)
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const selection = window.getSelection();
-      if (!selection.rangeCount) return;
-      const editorEl = document.querySelector(`.schreibtisch-editor[data-scene-id="${sceneId}"]`);
-      if (!editorEl) return;
-
-      // Aktuellen Block finden
-      let currentBlock = selection.anchorNode;
-      while (currentBlock && currentBlock !== editorEl) {
-        if (currentBlock.nodeType === 1 && currentBlock.parentNode === editorEl && (currentBlock.tagName === 'P' || currentBlock.tagName === 'DIV')) break;
-        currentBlock = currentBlock.parentNode;
-      }
-      if (!currentBlock || currentBlock === editorEl) return;
-
-      e.preventDefault();
-      const currentClass = currentBlock.className || '';
-      const isDialog = currentClass.includes('format-dialog');
-      const range = selection.getRangeAt(0);
-
-      // Text nach dem Cursor extrahieren
-      const afterRange = document.createRange();
-      afterRange.setStart(range.endContainer, range.endOffset);
-      if (currentBlock.lastChild) {
-        afterRange.setEndAfter(currentBlock.lastChild);
-      } else {
-        afterRange.setEnd(currentBlock, currentBlock.childNodes.length);
-      }
-      const afterContent = afterRange.extractContents();
-      const afterText = afterContent.textContent.trim();
-
-      // Neues Element erstellen
-      const newEl = document.createElement(isDialog ? 'div' : 'p');
-      if (isDialog && afterText) {
-        newEl.className = 'format-dialog';
-        const figurSpan = currentBlock.querySelector('.figur-name');
-        const figurName = figurSpan ? figurSpan.textContent : 'FIGUR:';
-        newEl.innerHTML = `<span class="figur-name">${figurName}</span><span class="dialog-text">${afterText}</span>`;
-      } else if (isDialog) {
-        newEl.className = 'format-dialog';
-        newEl.innerHTML = '<span class="figur-name">FIGUR:</span><span class="dialog-text">&nbsp;</span>';
-      } else if (afterText) {
-        newEl.className = currentClass || 'format-standard';
-        newEl.appendChild(afterContent);
-      } else {
-        newEl.className = 'format-standard';
-        newEl.innerHTML = '<br>';
+        return;
       }
 
-      currentBlock.parentNode.insertBefore(newEl, currentBlock.nextSibling);
+      // Neuen Editor erstellen
+      const figurenInSzene = (feld.figuren || [])
+        .map(fid => data.figuren?.find(f => f.id === fid))
+        .filter(Boolean);
+      const hasContent = !!(feld.inhalt?.trim());
+      const content = hasContent
+        ? convertFmtToFormat(feld.inhalt)
+        : (figurenInSzene.length > 0
+          ? `<p class="format-regieanweisung">(${figurenInSzene.map(f => f.name.toUpperCase()).join(', ')})</p><p class="format-standard"><br></p>`
+          : '<p class="format-standard"><br></p>');
 
-      // Cursor an Anfang des neuen Elements
-      const newRange = document.createRange();
-      if (newEl.querySelector('.dialog-text')) {
-        newRange.setStart(newEl.querySelector('.dialog-text'), 0);
-      } else if (newEl.firstChild) {
-        newRange.setStart(newEl.firstChild, 0);
-      } else {
-        newRange.setStart(newEl, 0);
-      }
-      newRange.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(newRange);
+      const editor = window.createTheaterEditor(mountEl, {
+        content,
+        onUpdate: ({ editor: ed }) => {
+          clearTimeout(ed._syncTimer);
+          ed._syncTimer = setTimeout(() => {
+            const html = ed.getHTML();
+            const fmtHtml = convertFormatToFmt(html);
+            lastSyncedContent.current[feld.id] = fmtHtml;
+            updateFeld(feld.id, { inhalt: fmtHtml });
+          }, 800);
+        },
+        onSelectionUpdate: ({ editor: ed }) => {
+          const attrs = ed.getAttributes('paragraph');
+          if (attrs) setCurrentFormat(attrs.formatType || 'standard');
+        },
+        onFocus: () => setActiveSceneId(feld.id),
+      });
 
-      debouncedSync(sceneId);
-    }
-  }, [applyFormat, debouncedSync]);
+      tiptapEditors.current[feld.id] = editor;
+      lastSyncedContent.current[feld.id] = feld.inhalt || '';
+    });
+  }, [tiptapReady, sortedFelder, data.figuren, convertFmtToFormat, convertFormatToFmt, updateFeld]);
+
+  // Cleanup bei Unmount
+  useEffect(() => {
+    return () => {
+      Object.values(tiptapEditors.current).forEach(e => { clearTimeout(e._syncTimer); e.destroy(); });
+      tiptapEditors.current = {};
+    };
+  }, []);
 
   // Kontextmenü
   const handleContextMenu = useCallback((e, sceneId, elementType) => {
     e.preventDefault();
+    setActiveSceneId(sceneId);
     setContextMenu({ x: e.clientX, y: e.clientY, sceneId, elementType });
   }, []);
 
@@ -16409,37 +16343,6 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     document.addEventListener('click', closeContextMenu);
     return () => document.removeEventListener('click', closeContextMenu);
   }, [closeContextMenu]);
-
-  // Editor-Inhalte imperativ verwalten (verhindert Cursor-Springen durch React Re-Renders)
-  useEffect(() => {
-    sortedFelder.forEach(feld => {
-      const editor = editorRefs.current[feld.id];
-      if (!editor) return;
-      const content = feld.inhalt || '';
-      // Bereits initialisiert und Inhalt stammt von unserem eigenen Sync → nicht überschreiben
-      if (initializedEditors.current[feld.id] && lastSyncedContent.current[feld.id] === content) return;
-      // Editor-Inhalt setzen (Initial-Load oder externe Änderung)
-      const figurenInSzene = (feld.figuren || [])
-        .map(id => data.figuren?.find(f => f.id === id))
-        .filter(Boolean);
-      const hasContent = !!content.trim();
-      const editorHtml = hasContent ? convertFmtToFormat(content) : (figurenInSzene.length > 0
-        ? `<p class="format-regieanweisung">(${figurenInSzene.map(f => f.name.toUpperCase()).join(', ')})</p><p class="format-standard"><br></p>`
-        : '<p class="format-standard"><br></p>');
-      // Cursor sichern falls Editor fokussiert
-      const sel = window.getSelection();
-      let savedOffset = null;
-      if (initializedEditors.current[feld.id] && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-        savedOffset = getTextOffset(editor, sel.anchorNode, sel.anchorOffset);
-      }
-      editor.innerHTML = editorHtml;
-      if (savedOffset !== null) {
-        restoreTextOffset(editor, savedOffset);
-      }
-      initializedEditors.current[feld.id] = true;
-      lastSyncedContent.current[feld.id] = content;
-    });
-  });
 
   // Neue Szene einfügen
   const insertSceneAfter = useCallback((afterIdx) => {
@@ -16681,16 +16584,50 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           <div className="schreibtisch-toolbar-divider" />
 
           <div className="schreibtisch-toolbar-group">
-            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('bold')} title="Fett (Ctrl+B)"><b>F</b></button>
-            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('italic')} title="Kursiv (Ctrl+I)"><i>K</i></button>
-            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('underline')} title="Unterstrichen (Ctrl+U)"><u>U</u></button>
+            <select
+              onChange={(e) => {
+                const ed = tiptapEditors.current[activeSceneId];
+                if (ed && e.target.value) ed.chain().focus().setFontFamily(e.target.value).run();
+              }}
+              title="Schriftart"
+              defaultValue=""
+              style={{ width: '120px' }}
+            >
+              <option value="" disabled>Schrift</option>
+              <option value="Trebuchet MS">Trebuchet MS</option>
+              <option value="Georgia">Georgia</option>
+              <option value="Arial">Arial</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Courier New">Courier New</option>
+            </select>
           </div>
 
           <div className="schreibtisch-toolbar-divider" />
 
           <div className="schreibtisch-toolbar-group">
-            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('undo')} title="Rückgängig (Ctrl+Z)">↩</button>
-            <button className="schreibtisch-toolbar-btn" onClick={() => document.execCommand('redo')} title="Wiederholen (Ctrl+Y)">↪</button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleBold().run();
+            }} title="Fett (Ctrl+B)"><b>F</b></button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleItalic().run();
+            }} title="Kursiv (Ctrl+I)"><i>K</i></button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleUnderline().run();
+            }} title="Unterstrichen (Ctrl+U)"><u>U</u></button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleStrike().run();
+            }} title="Durchgestrichen"><s>D</s></button>
+          </div>
+
+          <div className="schreibtisch-toolbar-divider" />
+
+          <div className="schreibtisch-toolbar-group">
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().undo().run();
+            }} title="Rückgängig (Ctrl+Z)">↩</button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => {
+              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().redo().run();
+            }} title="Wiederholen (Ctrl+Y)">↪</button>
           </div>
 
           <div className="schreibtisch-toolbar-divider" />
@@ -16794,19 +16731,14 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
                     <div className="schreibtisch-zusammenfassung">{feld.zusammenfassung}</div>
                   )}
 
-                  {/* Szenen-Inhalt – contentEditable, Inhalt wird imperativ via useEffect gesetzt */}
-                  <div
-                    ref={el => editorRefs.current[feld.id] = el}
-                    className="schreibtisch-editor"
-                    data-scene-id={feld.id}
-                    contentEditable
-                    suppressContentEditableWarning
-                    onInput={() => debouncedSync(feld.id)}
-                    onKeyDown={(e) => handleEditorKeyDown(e, feld.id)}
-                    onClick={() => { setActiveSceneId(feld.id); detectCurrentFormat(); }}
-                    onKeyUp={detectCurrentFormat}
-                    style={{ minHeight: '3rem', outline: 'none' }}
-                  />
+                  {/* Szenen-Inhalt – TipTap Editor Mount Point */}
+                  {tiptapReady ? (
+                    <div data-tiptap-mount={feld.id} style={{ minHeight: '3rem' }} />
+                  ) : (
+                    <div style={{ minHeight: '3rem', padding: '1rem', color: '#999', fontStyle: 'italic' }}>
+                      Editor wird geladen...
+                    </div>
+                  )}
                 </div>
               </React.Fragment>
             );
@@ -33025,6 +32957,24 @@ STIL:
           font-style: italic;
           color: #414141;
           font-size: 0.92em;
+        }
+
+        /* TipTap ProseMirror Editor */
+        .schreibtisch-page .ProseMirror,
+        .schreibtisch-page .schreibtisch-prosemirror {
+          outline: none !important;
+          min-height: 3rem;
+        }
+        .schreibtisch-page .ProseMirror:focus,
+        .schreibtisch-page .schreibtisch-prosemirror:focus {
+          outline: none !important;
+        }
+        .schreibtisch-page .ProseMirror p:first-child,
+        .schreibtisch-page .ProseMirror div:first-child {
+          margin-top: 0;
+        }
+        [data-tiptap-mount] .tiptap {
+          outline: none !important;
         }
 
         /* Format-Shortcuts Overlay */
