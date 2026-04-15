@@ -15,122 +15,163 @@
   <!-- Supabase entfernt für Stand-alone Version -->
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
 
-  <!-- TipTap Rich Text Editor via esm.sh CDN -->
-  <script type="module">
-  import { Editor, Node, Mark, Extension, mergeAttributes } from 'https://esm.sh/@tiptap/core@3'
-  import StarterKit from 'https://esm.sh/@tiptap/starter-kit@3'
-  import Underline from 'https://esm.sh/@tiptap/extension-underline@3'
-  import TextStyle from 'https://esm.sh/@tiptap/extension-text-style@3'
-  import FontFamily from 'https://esm.sh/@tiptap/extension-font-family@3'
+  <!-- Quill Rich Text Editor -->
+  <link rel="stylesheet" href="https://cdn.quilljs.com/1.3.7/quill.snow.css">
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
 
-  const FORMAT_CLASSES = {
-    standard: 'format-standard', dialog: 'format-dialog',
-    regieanweisung: 'format-regieanweisung', szeneTitel: 'format-szene-titel',
-    aktTitel: 'format-akt-titel', vers: 'format-vers', lied: 'format-lied',
-    pause: 'format-pause', musik: 'format-musik', sound: 'format-sound',
-    notiz: 'format-notiz', nebentext: 'format-nebentext',
-  };
+  <script>
+  (function() {
+    var Block = Quill.import('blots/block');
+    var Inline = Quill.import('blots/inline');
 
-  // TheaterParagraph: Ersetzt Standard-Paragraph mit formatType-Attribut
-  const TheaterParagraph = Node.create({
-    name: 'paragraph',
-    group: 'block',
-    content: 'inline*',
-    addAttributes() {
-      return {
-        formatType: {
-          default: 'standard',
-          parseHTML: el => {
-            const cls = el.className || '';
-            for (const [fmt, clsName] of Object.entries(FORMAT_CLASSES)) {
-              if (cls.includes(clsName)) return fmt;
-            }
-            return 'standard';
-          },
-          renderHTML: () => ({}),
-        }
+    // camelCase-Keys (SCHREIBTISCH_FORMATVORLAGEN) → CSS-Suffix
+    var KEY_TO_CSS = {
+      standard: 'standard', dialog: 'dialog', regieanweisung: 'regieanweisung',
+      szeneTitel: 'szene-titel', aktTitel: 'akt-titel', vers: 'vers',
+      lied: 'lied', pause: 'pause', musik: 'musik', sound: 'sound',
+      notiz: 'notiz', nebentext: 'nebentext'
+    };
+    var CSS_TO_KEY = {};
+    Object.keys(KEY_TO_CSS).forEach(function(k) { CSS_TO_KEY[KEY_TO_CSS[k]] = k; });
+
+    // TheaterBlock: Block-Blot mit format-* Klassen
+    function TheaterBlock() { Block.apply(this, arguments); }
+    TheaterBlock.__proto__ = Block;
+    TheaterBlock.prototype = Object.create(Block.prototype);
+    TheaterBlock.prototype.constructor = TheaterBlock;
+
+    TheaterBlock.create = function(value) {
+      var node = Block.create.call(this);
+      var css = KEY_TO_CSS[value] || value || 'standard';
+      node.setAttribute('class', 'format-' + css);
+      return node;
+    };
+    TheaterBlock.formats = function(domNode) {
+      var cls = domNode.getAttribute('class') || '';
+      var m = cls.match(/format-([a-z-]+)/);
+      if (m) return CSS_TO_KEY[m[1]] || m[1];
+      return 'standard';
+    };
+    TheaterBlock.prototype.format = function(name, value) {
+      if (name === 'theaterBlock') {
+        var css = KEY_TO_CSS[value] || value || 'standard';
+        this.domNode.setAttribute('class', 'format-' + css);
+      } else {
+        Block.prototype.format.call(this, name, value);
+      }
+    };
+    TheaterBlock.blotName = 'theaterBlock';
+    TheaterBlock.tagName = 'P';
+    Quill.register(TheaterBlock, true);
+
+    // Inline-Blots für Dialog-Struktur
+    function FigurNameBlot() { Inline.apply(this, arguments); }
+    FigurNameBlot.__proto__ = Inline;
+    FigurNameBlot.prototype = Object.create(Inline.prototype);
+    FigurNameBlot.blotName = 'figurName';
+    FigurNameBlot.tagName = 'SPAN';
+    FigurNameBlot.className = 'figur-name';
+    Quill.register(FigurNameBlot);
+
+    function DialogTextBlot() { Inline.apply(this, arguments); }
+    DialogTextBlot.__proto__ = Inline;
+    DialogTextBlot.prototype = Object.create(Inline.prototype);
+    DialogTextBlot.blotName = 'dialogText';
+    DialogTextBlot.tagName = 'SPAN';
+    DialogTextBlot.className = 'dialog-text';
+    Quill.register(DialogTextBlot);
+
+    function InlineRegieBlot() { Inline.apply(this, arguments); }
+    InlineRegieBlot.__proto__ = Inline;
+    InlineRegieBlot.prototype = Object.create(Inline.prototype);
+    InlineRegieBlot.blotName = 'inlineRegie';
+    InlineRegieBlot.tagName = 'SPAN';
+    InlineRegieBlot.className = 'inline-regie';
+    Quill.register(InlineRegieBlot);
+
+    // Font als Inline-Style (nicht CSS-Klasse) registrieren
+    var FontStyle = Quill.import('attributors/style/font');
+    Quill.register(FontStyle, true);
+
+    // Hilfsfunktion: Block-Format setzen
+    function setBlockFormat(quill, formatKey) {
+      var range = quill.getSelection();
+      if (range) {
+        quill.formatLine(range.index, range.length || 1, 'theaterBlock', formatKey, 'user');
+      }
+      return false;
+    }
+
+    // Keyboard-Bindings für Formatvorlagen
+    var formatBindings = {
+      theaterDialog:     { key: 'D', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'dialog'); } },
+      theaterRegie:      { key: 'R', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'regieanweisung'); } },
+      theaterSzeneTitel: { key: 'T', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'szeneTitel'); } },
+      theaterAktTitel:   { key: 'A', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'aktTitel'); } },
+      theaterLied:       { key: 'L', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'lied'); } },
+      theaterVers:       { key: 'V', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'vers'); } },
+      theaterPause:      { key: 'P', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'pause'); } },
+      theaterStandard:   { key: 'N', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'standard'); } }
+    };
+
+    // Factory-Funktion für Theater-Editor-Instanzen
+    window.createTheaterEditor = function(element, options) {
+      options = options || {};
+
+      var editorDiv = document.createElement('div');
+      element.appendChild(editorDiv);
+
+      var quill = new Quill(editorDiv, {
+        theme: null,
+        modules: {
+          toolbar: false,
+          keyboard: { bindings: formatBindings },
+          history: { delay: 1000, maxStack: 100, userOnly: true }
+        },
+        formats: [
+          'theaterBlock', 'bold', 'italic', 'underline', 'strike',
+          'figurName', 'dialogText', 'inlineRegie', 'font'
+        ]
+      });
+
+      // Initialen Inhalt setzen
+      if (options.content) {
+        quill.root.innerHTML = options.content;
+      }
+
+      // Callbacks
+      if (options.onUpdate) {
+        quill.on('text-change', function(delta, oldDelta, source) {
+          if (source === 'user') options.onUpdate({ editor: quill });
+        });
+      }
+      if (options.onSelectionUpdate) {
+        quill.on('selection-change', function(range) {
+          if (range) options.onSelectionUpdate({ editor: quill, range: range });
+        });
+      }
+      if (options.onFocus) {
+        quill.root.addEventListener('focus', options.onFocus);
+      }
+
+      // API-Kompatibilitäts-Methoden
+      quill.getHTML = function() { return quill.root.innerHTML; };
+      quill.setHTML = function(html) { quill.root.innerHTML = html; };
+      quill.setFormatType = function(key) { setBlockFormat(quill, key); };
+      quill.getFormatAtCursor = function() {
+        var r = quill.getSelection();
+        if (!r) return 'standard';
+        var f = quill.getFormat(r.index);
+        return f.theaterBlock || 'standard';
       };
-    },
-    parseHTML() {
-      return [
-        { tag: 'div[class*="format-"]' },
-        { tag: 'p[class*="format-"]' },
-        { tag: 'p' },
-        { tag: 'div' },
-      ];
-    },
-    renderHTML({ node }) {
-      const ft = node.attrs.formatType;
-      const cls = FORMAT_CLASSES[ft] || 'format-standard';
-      return [ft === 'dialog' ? 'div' : 'p', { class: cls }, 0];
-    },
-    addCommands() {
-      return {
-        setFormatType: (type) => ({ commands }) => commands.updateAttributes('paragraph', { formatType: type }),
-      };
-    },
-    addKeyboardShortcuts() {
-      return {
-        'Mod-Shift-d': () => this.editor.commands.setFormatType('dialog'),
-        'Mod-Shift-r': () => this.editor.commands.setFormatType('regieanweisung'),
-        'Mod-Shift-t': () => this.editor.commands.setFormatType('szeneTitel'),
-        'Mod-Shift-a': () => this.editor.commands.setFormatType('aktTitel'),
-        'Mod-Shift-l': () => this.editor.commands.setFormatType('lied'),
-        'Mod-Shift-v': () => this.editor.commands.setFormatType('vers'),
-        'Mod-Shift-p': () => this.editor.commands.setFormatType('pause'),
-        'Mod-Shift-n': () => this.editor.commands.setFormatType('standard'),
-      };
-    },
-  });
+      quill._syncTimer = null;
 
-  // Marks für Dialog-Struktur und Inline-Regie
-  const FigurName = Mark.create({
-    name: 'figurName',
-    parseHTML() { return [{ tag: 'span.figur-name' }, { tag: 'span.figur' }]; },
-    renderHTML({ HTMLAttributes }) {
-      return ['span', mergeAttributes(HTMLAttributes, { class: 'figur-name' }), 0];
-    },
-  });
-  const DialogText = Mark.create({
-    name: 'dialogText',
-    parseHTML() { return [{ tag: 'span.dialog-text' }, { tag: 'span.text' }]; },
-    renderHTML({ HTMLAttributes }) {
-      return ['span', mergeAttributes(HTMLAttributes, { class: 'dialog-text' }), 0];
-    },
-  });
-  const InlineRegie = Mark.create({
-    name: 'inlineRegie',
-    parseHTML() { return [{ tag: 'span.inline-regie' }]; },
-    renderHTML({ HTMLAttributes }) {
-      return ['span', mergeAttributes(HTMLAttributes, { class: 'inline-regie' }), 0];
-    },
-  });
+      return quill;
+    };
 
-  // Factory-Funktion für Theater-Editor-Instanzen
-  window.createTheaterEditor = function(element, options = {}) {
-    return new Editor({
-      element,
-      extensions: [
-        StarterKit.configure({
-          paragraph: false, heading: false, bulletList: false,
-          orderedList: false, listItem: false, blockquote: false,
-          codeBlock: false, horizontalRule: false, code: false,
-        }),
-        TheaterParagraph, FigurName, DialogText, InlineRegie,
-        Underline, TextStyle, FontFamily,
-      ],
-      content: options.content || '<p class="format-standard"><br></p>',
-      onUpdate: options.onUpdate,
-      onSelectionUpdate: options.onSelectionUpdate,
-      onFocus: options.onFocus,
-      editorProps: {
-        attributes: { class: 'schreibtisch-prosemirror', spellcheck: 'true' },
-      },
-    });
-  };
-
-  window.__tiptapLoaded = true;
-  window.dispatchEvent(new CustomEvent('tiptap-loaded'));
+    // Synchrones Laden — Flag sofort verfügbar
+    window.__quillLoaded = true;
+  })();
   </script>
 
   <style>
@@ -16082,9 +16123,9 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const [currentFormat, setCurrentFormat] = useState('standard');
   const mainRef = useRef(null);
   const sceneRefs = useRef({});
-  const tiptapEditors = useRef({});
+  const quillEditors = useRef({});
   const lastSyncedContent = useRef({});
-  const [tiptapReady, setTiptapReady] = useState(!!window.__tiptapLoaded);
+  const [quillReady, setQuillReady] = useState(!!window.__quillLoaded);
 
   // Szenen nach Position sortiert
   const sortedFelder = useMemo(() =>
@@ -16241,48 +16282,48 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/class="dialog-text"/g, 'class="text"');
   }, [stripInlineRegie]);
 
-  // Formatvorlage anwenden (via TipTap)
+  // Formatvorlage anwenden (via Quill)
   const applyFormat = useCallback((formatKey) => {
-    const editor = tiptapEditors.current[activeSceneId];
+    const editor = quillEditors.current[activeSceneId];
     if (!editor) return;
-    editor.chain().focus().setFormatType(formatKey).run();
+    editor.focus();
+    editor.setFormatType(formatKey);
     setCurrentFormat(formatKey);
   }, [activeSceneId]);
 
-  // TipTap laden
+  // Quill ist synchron geladen — sicherheitshalber prüfen
   useEffect(() => {
-    if (window.__tiptapLoaded) { setTiptapReady(true); return; }
-    const handler = () => setTiptapReady(true);
-    window.addEventListener('tiptap-loaded', handler);
-    return () => window.removeEventListener('tiptap-loaded', handler);
-  }, []);
+    if (window.__quillLoaded && !quillReady) setQuillReady(true);
+  }, [quillReady]);
 
-  // TipTap-Editoren erstellen und verwalten
+  // Quill-Editoren erstellen und verwalten
   useEffect(() => {
-    if (!tiptapReady || !window.createTheaterEditor) return;
+    if (!quillReady || !window.createTheaterEditor) return;
     const currentIds = new Set(sortedFelder.map(f => f.id));
 
-    // Editoren für entfernte Szenen zerstören
-    Object.keys(tiptapEditors.current).forEach(id => {
+    // Editoren für entfernte Szenen aufräumen
+    Object.keys(quillEditors.current).forEach(id => {
       if (!currentIds.has(id)) {
-        tiptapEditors.current[id].destroy();
-        delete tiptapEditors.current[id];
+        const ed = quillEditors.current[id];
+        clearTimeout(ed._syncTimer);
+        if (ed.root && ed.root.parentElement) ed.root.parentElement.remove();
+        delete quillEditors.current[id];
         delete lastSyncedContent.current[id];
       }
     });
 
     // Editoren erstellen oder bei externen Änderungen aktualisieren
     sortedFelder.forEach(feld => {
-      const mountEl = document.querySelector(`[data-tiptap-mount="${feld.id}"]`);
+      const mountEl = document.querySelector(`[data-quill-mount="${feld.id}"]`);
       if (!mountEl) return;
 
       // Bestehender Editor: auf externe Änderungen prüfen
-      if (tiptapEditors.current[feld.id]) {
+      if (quillEditors.current[feld.id]) {
         const content = feld.inhalt || '';
         if (lastSyncedContent.current[feld.id] !== content) {
-          const ed = tiptapEditors.current[feld.id];
+          const ed = quillEditors.current[feld.id];
           const html = convertFmtToFormat(content) || '<p class="format-standard"><br></p>';
-          ed.commands.setContent(html, false);
+          ed.setHTML(html);
           lastSyncedContent.current[feld.id] = content;
         }
         return;
@@ -16311,22 +16352,24 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           }, 800);
         },
         onSelectionUpdate: ({ editor: ed }) => {
-          const attrs = ed.getAttributes('paragraph');
-          if (attrs) setCurrentFormat(attrs.formatType || 'standard');
+          setCurrentFormat(ed.getFormatAtCursor());
         },
         onFocus: () => setActiveSceneId(feld.id),
       });
 
-      tiptapEditors.current[feld.id] = editor;
+      quillEditors.current[feld.id] = editor;
       lastSyncedContent.current[feld.id] = feld.inhalt || '';
     });
-  }, [tiptapReady, sortedFelder, data.figuren, convertFmtToFormat, convertFormatToFmt, updateFeld]);
+  }, [quillReady, sortedFelder, data.figuren, convertFmtToFormat, convertFormatToFmt, updateFeld]);
 
   // Cleanup bei Unmount
   useEffect(() => {
     return () => {
-      Object.values(tiptapEditors.current).forEach(e => { clearTimeout(e._syncTimer); e.destroy(); });
-      tiptapEditors.current = {};
+      Object.values(quillEditors.current).forEach(e => {
+        clearTimeout(e._syncTimer);
+        if (e.root && e.root.parentElement) e.root.parentElement.remove();
+      });
+      quillEditors.current = {};
     };
   }, []);
 
@@ -16586,8 +16629,12 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           <div className="schreibtisch-toolbar-group">
             <select
               onChange={(e) => {
-                const ed = tiptapEditors.current[activeSceneId];
-                if (ed && e.target.value) ed.chain().focus().setFontFamily(e.target.value).run();
+                const ed = quillEditors.current[activeSceneId];
+                if (ed && e.target.value) {
+                  ed.focus();
+                  const r = ed.getSelection(true);
+                  if (r && r.length > 0) ed.formatText(r.index, r.length, 'font', e.target.value);
+                }
               }}
               title="Schriftart"
               defaultValue=""
@@ -16606,16 +16653,16 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
 
           <div className="schreibtisch-toolbar-group">
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleBold().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) { ed.focus(); const r = ed.getSelection(true); ed.formatText(r.index, Math.max(r.length, 1), 'bold', !ed.getFormat(r).bold); }
             }} title="Fett (Ctrl+B)"><b>F</b></button>
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleItalic().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) { ed.focus(); const r = ed.getSelection(true); ed.formatText(r.index, Math.max(r.length, 1), 'italic', !ed.getFormat(r).italic); }
             }} title="Kursiv (Ctrl+I)"><i>K</i></button>
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleUnderline().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) { ed.focus(); const r = ed.getSelection(true); ed.formatText(r.index, Math.max(r.length, 1), 'underline', !ed.getFormat(r).underline); }
             }} title="Unterstrichen (Ctrl+U)"><u>U</u></button>
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().toggleStrike().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) { ed.focus(); const r = ed.getSelection(true); ed.formatText(r.index, Math.max(r.length, 1), 'strike', !ed.getFormat(r).strike); }
             }} title="Durchgestrichen"><s>D</s></button>
           </div>
 
@@ -16623,10 +16670,10 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
 
           <div className="schreibtisch-toolbar-group">
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().undo().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) ed.history.undo();
             }} title="Rückgängig (Ctrl+Z)">↩</button>
             <button className="schreibtisch-toolbar-btn" onClick={() => {
-              const ed = tiptapEditors.current[activeSceneId]; if (ed) ed.chain().focus().redo().run();
+              const ed = quillEditors.current[activeSceneId]; if (ed) ed.history.redo();
             }} title="Wiederholen (Ctrl+Y)">↪</button>
           </div>
 
@@ -16731,9 +16778,9 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
                     <div className="schreibtisch-zusammenfassung">{feld.zusammenfassung}</div>
                   )}
 
-                  {/* Szenen-Inhalt – TipTap Editor Mount Point */}
-                  {tiptapReady ? (
-                    <div data-tiptap-mount={feld.id} style={{ minHeight: '3rem' }} />
+                  {/* Szenen-Inhalt – Quill Editor Mount Point */}
+                  {quillReady ? (
+                    <div data-quill-mount={feld.id} style={{ minHeight: '3rem' }} />
                   ) : (
                     <div style={{ minHeight: '3rem', padding: '1rem', color: '#999', fontStyle: 'italic' }}>
                       Editor wird geladen...
@@ -32959,22 +33006,29 @@ STIL:
           font-size: 0.92em;
         }
 
-        /* TipTap ProseMirror Editor */
-        .schreibtisch-page .ProseMirror,
-        .schreibtisch-page .schreibtisch-prosemirror {
+        /* Quill Editor */
+        .schreibtisch-page .ql-editor {
           outline: none !important;
           min-height: 3rem;
+          padding: 0;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 12pt;
+          line-height: 1.5;
         }
-        .schreibtisch-page .ProseMirror:focus,
-        .schreibtisch-page .schreibtisch-prosemirror:focus {
+        .schreibtisch-page .ql-editor:focus {
           outline: none !important;
         }
-        .schreibtisch-page .ProseMirror p:first-child,
-        .schreibtisch-page .ProseMirror div:first-child {
+        .schreibtisch-page .ql-editor p:first-child,
+        .schreibtisch-page .ql-editor div:first-child {
           margin-top: 0;
         }
-        [data-tiptap-mount] .tiptap {
-          outline: none !important;
+        .schreibtisch-page .ql-container {
+          border: none !important;
+          font-family: inherit;
+          font-size: inherit;
+        }
+        [data-quill-mount] .ql-toolbar {
+          display: none !important;
         }
 
         /* Format-Shortcuts Overlay */
