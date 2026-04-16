@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="app-build" content="dramera-2026-04-16T1">
+  <meta name="app-build" content="dramera-2026-04-16T2">
   <title>N!NA Dramera v2.2 Stand-alone – Werkbank für Dramaturg:innen (NINA-Exchange v3.0)</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100' height='100' fill='%231e3a5f' rx='12'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-family='Arial Black' font-size='40' font-weight='bold' fill='white'%3EN!%3C/text%3E%3C/svg%3E">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -110,6 +110,7 @@
     window.__copiedFormat = null;
     window.__leaderActive = false;
     window.__leaderTimer = null;
+    window.__leaderContext = null; // gespeicherter Editor-Kontext bei Esc
 
     // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname)
     var LEADER_QUILL_MAP = {
@@ -164,13 +165,15 @@
 
     window.__cancelLeader = function() {
       window.__leaderActive = false;
+      window.__leaderContext = null;
       if (window.__leaderTimer) { clearTimeout(window.__leaderTimer); window.__leaderTimer = null; }
       window.__hideLeaderPopup();
     };
 
-    window.__startLeader = function() {
+    window.__startLeader = function(ctx) {
       window.__cancelLeader();
       window.__leaderActive = true;
+      window.__leaderContext = ctx || null;
       window.__showLeaderPopup();
       window.__leaderTimer = setTimeout(function() {
         window.__cancelLeader();
@@ -194,23 +197,7 @@
         else if (inQuill.__quill) quillInstance = inQuill.__quill;
       }
 
-      // DEBUG: Sichtbare Anzeige bei Esc (wird nach Diagnose entfernt)
-      if (e.key === 'Escape') {
-        var dbg = document.createElement('div');
-        dbg.style.cssText = 'position:fixed;top:8px;left:8px;background:#000;color:#0f0;padding:8px 12px;border-radius:6px;font-size:11px;font-family:monospace;z-index:99999;white-space:pre;max-width:500px;';
-        dbg.textContent = '[LEADER-DBG] Esc pressed\n'
-          + 'activeEl: ' + (activeEl ? activeEl.tagName + '#' + (activeEl.id||'') + '.' + (activeEl.className||'').substring(0,40) : 'null') + '\n'
-          + 'isContentEditable: ' + (activeEl ? activeEl.isContentEditable : 'N/A') + '\n'
-          + 'inQuill: ' + !!inQuill + '\n'
-          + 'inOrdnen: ' + !!inOrdnen + '\n'
-          + 'inEditor: ' + inEditor + '\n'
-          + 'leaderActive: ' + window.__leaderActive + '\n'
-          + 'modal found: ' + !!document.querySelector('.overlay, .modal.show, .sparring-dialog, .twin-modal');
-        document.body.appendChild(dbg);
-        setTimeout(function(){ dbg.remove(); }, 4000);
-      }
-
-      // ESC key
+      // ESC key — start/cancel leader, save editor context
       if (e.key === 'Escape') {
         if (window.__leaderActive) {
           e.preventDefault();
@@ -223,37 +210,36 @@
           if (!modal) {
             e.preventDefault();
             e.stopPropagation();
-            window.__startLeader();
+            // Save editor context so follow-up key can use it even if focus shifts
+            window.__startLeader({
+              inQuill: !!inQuill,
+              inOrdnen: !!inOrdnen,
+              quillInstance: quillInstance,
+              activeEl: activeEl
+            });
             return;
           }
-        } else {
         }
         return;
       }
 
-      // Follow-up key when leader active
+      // Follow-up key when leader active — use SAVED context from Esc press
       if (window.__leaderActive) {
         e.preventDefault();
         e.stopPropagation();
         var lkey = e.key.toLowerCase();
+        var ctx = window.__leaderContext || {};
+        var ctxInQuill = ctx.inQuill;
+        var ctxInOrdnen = ctx.inOrdnen;
+        var ctxQuill = ctx.quillInstance;
+        var ctxActiveEl = ctx.activeEl;
         window.__cancelLeader();
-
-        // DEBUG: Folge-Taste
-        var dbg2 = document.createElement('div');
-        dbg2.style.cssText = 'position:fixed;top:8px;right:8px;background:#000;color:#ff0;padding:8px 12px;border-radius:6px;font-size:11px;font-family:monospace;z-index:99999;white-space:pre;max-width:500px;';
-        dbg2.textContent = '[LEADER-DBG] Follow-up: "' + lkey + '"\n'
-          + 'in LEADER_QUILL_MAP: ' + (lkey in LEADER_QUILL_MAP) + '\n'
-          + 'inQuill: ' + !!inQuill + ', inOrdnen: ' + !!inOrdnen + '\n'
-          + 'quillInstance: ' + !!quillInstance + '\n'
-          + 'mapped to: ' + (LEADER_QUILL_MAP[lkey] || 'N/A');
-        document.body.appendChild(dbg2);
-        setTimeout(function(){ dbg2.remove(); }, 4000);
 
         // Format keys
         if (lkey in LEADER_QUILL_MAP) {
-          if (inQuill && quillInstance) {
-            setBlockFormat(quillInstance, LEADER_QUILL_MAP[lkey]);
-          } else if (inOrdnen) {
+          if (ctxInQuill && ctxQuill) {
+            setBlockFormat(ctxQuill, LEADER_QUILL_MAP[lkey]);
+          } else if (ctxInOrdnen && ctxActiveEl) {
             // Ordnen mode: direct CSS class manipulation
             var ordnenMap = {
               'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
@@ -263,7 +249,7 @@
             var sel = window.getSelection();
             if (sel && sel.rangeCount > 0) {
               var node = sel.anchorNode;
-              var container = activeEl;
+              var container = ctxActiveEl;
               while (node && node !== container && node.parentNode !== container) node = node.parentNode;
               if (node && node.classList) {
                 Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
@@ -277,15 +263,15 @@
 
         // K = copy format
         if (lkey === 'k') {
-          if (inQuill && quillInstance && quillInstance.getFormatAtCursor) {
-            var fmt = quillInstance.getFormatAtCursor();
+          if (ctxInQuill && ctxQuill && ctxQuill.getFormatAtCursor) {
+            var fmt = ctxQuill.getFormatAtCursor();
             window.__copiedFormat = { type: 'quill', format: fmt || 'standard' };
             window.__showFormatToast('Format kopiert: ' + (FORMAT_NAMEN[fmt] || fmt || 'Standard'));
-          } else if (inOrdnen) {
+          } else if (ctxInOrdnen && ctxActiveEl) {
             var sel = window.getSelection();
             if (sel && sel.rangeCount > 0) {
               var node = sel.anchorNode;
-              while (node && node !== activeEl && node.parentNode !== activeEl) node = node.parentNode;
+              while (node && node !== ctxActiveEl && node.parentNode !== ctxActiveEl) node = node.parentNode;
               if (node && node.classList) {
                 var cls = Array.from(node.classList).find(function(c) { return c.startsWith('fmt-'); });
                 window.__copiedFormat = { type: 'ordnen', format: cls || null };
@@ -299,15 +285,14 @@
         // E = paste format
         if (lkey === 'e') {
           if (!window.__copiedFormat) { window.__showFormatToast('Kein Format kopiert'); return; }
-          if (inQuill && quillInstance) {
+          if (ctxInQuill && ctxQuill) {
             var fmt = window.__copiedFormat.format;
             if (window.__copiedFormat.type === 'ordnen') {
-              // Convert fmt-* to quill format key
               var convertMap = { 'fmt-dialog': 'dialog', 'fmt-regie': 'regieanweisung', 'fmt-szenen-titel': 'szeneTitel', 'fmt-akt-titel': 'aktTitel', 'fmt-lied': 'lied', 'fmt-vers': 'vers', 'fmt-pause': 'pause', 'fmt-figurenname': 'figurenname' };
               fmt = convertMap[fmt] || 'standard';
             }
-            setBlockFormat(quillInstance, fmt);
-          } else if (inOrdnen) {
+            setBlockFormat(ctxQuill, fmt);
+          } else if (ctxInOrdnen && ctxActiveEl) {
             var cls = window.__copiedFormat.format;
             if (window.__copiedFormat.type === 'quill') {
               var convertMap2 = { dialog: 'fmt-dialog', regieanweisung: 'fmt-regie', szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied', vers: 'fmt-vers', pause: 'fmt-pause', figurenname: 'fmt-figurenname' };
@@ -316,7 +301,7 @@
             var sel = window.getSelection();
             if (sel && sel.rangeCount > 0) {
               var node = sel.anchorNode;
-              while (node && node !== activeEl && node.parentNode !== activeEl) node = node.parentNode;
+              while (node && node !== ctxActiveEl && node.parentNode !== ctxActiveEl) node = node.parentNode;
               if (node && node.classList) {
                 Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
                 if (cls) node.classList.add(cls);
