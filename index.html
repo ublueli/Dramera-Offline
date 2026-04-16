@@ -18574,7 +18574,7 @@ ZIEL DER SZENE: ${target.ziel || 'Nicht definiert'}
 WIDERSTAND: ${target.widerstand || 'Nicht definiert'}
 WENDEPUNKT: ${target.wendepunkt || 'Nicht definiert'}
 ZUSAMMENFASSUNG: ${target.zusammenfassung || 'Keine'}
-INHALT: ${target.inhalt?.replace(/<[^>]*>/g, ' ').substring(0, 500) || 'Kein Inhalt'}
+INHALT: ${(target.inhalt || data.schreibflaecheInhalte?.[target.id] || '').replace(/<[^>]*>/g, ' ').substring(0, 500) || 'Kein Inhalt'}
 
 Antworte mit KONKRETEN VORSCHLÄGEN (nicht nur Fragen):
 1. 🎯 **Stärkster Moment:** Was ist der dramatische Höhepunkt dieser Szene?
@@ -18633,7 +18633,7 @@ Antworte mit KONKRETEN VORSCHLÄGEN:
           .filter(Boolean);
         const spW = f.spannungswert !== undefined ? ` [Spannung: ${f.spannungswert}/10]` : '';
         const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
-        const dialogText = htmlToReadableText(f.inhalt);
+        const dialogText = htmlToReadableText(f.inhalt || data.schreibflaecheInhalte?.[f.id] || '');
         const zusammenfassung = f.zusammenfassung || '(keine)';
         let szeneBlock = `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${zusammenfassung}`;
         if (dialogText) {
@@ -18677,7 +18677,7 @@ Antworte mit KONKRETEN VORSCHLÄGEN:
             .filter(Boolean);
           const spW = f.spannungswert !== undefined ? ` [Spannung: ${f.spannungswert}/10]` : '';
           const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
-          let dialogText = htmlToReadableText(f.inhalt);
+          let dialogText = htmlToReadableText(f.inhalt || data.schreibflaecheInhalte?.[f.id] || '');
           if (dialogText.length > 1500) dialogText = dialogText.slice(0, 1500) + '\n[... gekürzt, Szene hat ' + dialogText.length + ' Zeichen insgesamt]';
           const zusammenfassung = f.zusammenfassung || '(keine)';
           let szeneBlock = `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${zusammenfassung}`;
@@ -18782,7 +18782,7 @@ SZENE ${szenenIndex + 1} von ${data.felder.length}:
 ID: ${szene.id}
 AKTUELLER TITEL: "${szene.titel}"
 AKTUELLE ZUSAMMENFASSUNG: ${szene.zusammenfassung || 'Keine'}
-INHALT/DIALOG: ${szene.inhalt ? szene.inhalt.substring(0, 500) + '...' : 'Kein Inhalt'}
+INHALT/DIALOG: ${(szene.inhalt || data.schreibflaecheInhalte?.[szene.id]) ? (szene.inhalt || data.schreibflaecheInhalte?.[szene.id]).substring(0, 500) + '...' : 'Kein Inhalt'}
 FIGUREN: ${szene.figuren?.map(id => data.figuren.find(fig => fig.id === id)?.name).filter(Boolean).join(', ') || 'Keine'}
 ZIEL: ${szene.ziel || 'Nicht definiert'}
 WIDERSTAND: ${szene.widerstand || 'Nicht definiert'}
