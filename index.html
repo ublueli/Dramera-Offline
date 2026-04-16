@@ -22648,7 +22648,7 @@ WICHTIGE REGELN:
         break;
         
       case 'docx':
-        // Echtes DOCX mit docx-Library (kompatibel mit Pages, Word, LibreOffice)
+        // Echtes DOCX mit docx-Library — nutzt THEATER_FORMATE für identische Formatierung
         try {
           if (!window.docx) {
             const cdnUrls = [
@@ -22672,156 +22672,292 @@ WICHTIGE REGELN:
             if (!window.docx) throw new Error('docx-Library konnte nicht geladen werden.');
           }
           const { Document: DocxDoc, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
-                  HeadingLevel, BorderStyle } = window.docx;
-          const docChildren = [];
+                  BorderStyle } = window.docx;
+          const dc = []; // docChildren
 
-          // HTML parsen
-          const parser = new DOMParser();
-          const htmlDoc = parser.parseFromString(`<div>${content}</div>`, 'text/html');
-
-          // Rekursiv alle Elemente durchgehen
-          const walkNodes = (parentEl) => {
-            parentEl.childNodes.forEach(node => {
-              if (node.nodeType === 3) {
-                // Textknoten
-                const txt = node.textContent.trim();
-                if (txt) docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
-                return;
-              }
-              if (node.nodeType !== 1) return;
-              const tag = node.tagName.toLowerCase();
-              const cls = node.className || '';
-              const txt = node.textContent.trim();
-              if (!txt && !['br', 'hr'].includes(tag)) { walkNodes(node); return; }
-
-              // Titelseite
-              if (cls.includes('titelseite')) {
-                walkNodes(node);
-                docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-                return;
-              }
-              // Figurenliste
-              if (cls.includes('figuren')) {
-                docChildren.push(new Paragraph({ children: [new PageBreak()] }));
-                walkNodes(node);
-                return;
-              }
-
-              // Überschriften
-              if (tag === 'h1') {
-                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
-                  new TextRun({ text: txt, font: 'Arial', size: 48, bold: true })
-                ]}));
-              } else if (tag === 'h2') {
-                docChildren.push(new Paragraph({ spacing: { before: 400, after: 100 }, children: [
-                  new TextRun({ text: txt, font: 'Arial', size: 28, bold: true, color: '6b4423' })
-                ]}));
-              } else if (tag === 'h3') {
-                docChildren.push(new Paragraph({ spacing: { before: 300, after: 100 }, children: [
-                  new TextRun({ text: txt, font: 'Arial', size: 24, bold: true })
-                ]}));
-              }
-              // Horizontale Linie
-              else if (tag === 'hr') {
-                docChildren.push(new Paragraph({ spacing: { before: 200, after: 200 }, border: {
-                  bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' }
-                }, children: [] }));
-              }
-              // Klassen-basiert
-              else if (cls.includes('akt-titel')) {
-                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600, after: 300 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 42, bold: true, allCaps: true })
-                ]}));
-              } else if (cls.includes('szenen-titel')) {
-                docChildren.push(new Paragraph({ spacing: { before: 400, after: 100 }, children: [
-                  new TextRun({ text: txt, font: 'Arial', size: 28, bold: true, underline: {} })
-                ]}));
-              } else if (cls.includes('dialog')) {
-                const figur = node.querySelector('.figur');
-                const text = node.querySelector('.text');
-                if (figur) {
-                  docChildren.push(new Paragraph({ spacing: { before: 120 }, children: [
-                    new TextRun({ text: figur.textContent.trim(), font: 'Courier New', size: 24, bold: true })
-                  ]}));
-                }
-                if (text) {
-                  docChildren.push(new Paragraph({ indent: { left: 1134 }, children: [
-                    new TextRun({ text: text.textContent.trim(), font: 'Courier New', size: 24 })
-                  ]}));
-                }
-                if (!figur && !text) {
-                  docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
-                }
-              } else if (cls.includes('regie')) {
-                docChildren.push(new Paragraph({ indent: { left: 2268 }, spacing: { before: 60, after: 60 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true })
-                ]}));
-              } else if (cls.includes('lied')) {
-                const figur = node.querySelector('.figur');
-                const text = node.querySelector('.text');
-                docChildren.push(new Paragraph({ indent: { left: 1134 }, spacing: { before: 60 }, children: [
-                  new TextRun({ text: figur ? figur.textContent.trim() + '\t' : '', font: 'Courier New', size: 24, bold: true }),
-                  new TextRun({ text: text ? text.textContent.trim() : txt, font: 'Courier New', size: 24, italics: true })
-                ]}));
-              } else if (cls.includes('musik') || cls.includes('sound')) {
-                docChildren.push(new Paragraph({ indent: { left: 1700 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true, color: cls.includes('musik') ? '7c3aed' : '059669' })
-                ]}));
-              } else if (cls.includes('autor') || cls.includes('untertitel') || cls.includes('fassung')) {
-                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: cls.includes('autor') ? 400 : 100 }, children: [
-                  new TextRun({ text: txt, font: cls.includes('fassung') ? 'Courier New' : 'Arial',
-                    size: cls.includes('autor') ? 34 : cls.includes('untertitel') ? 28 : 20,
-                    italics: cls.includes('fassung') })
-                ]}));
-              } else if (cls.includes('praemisse')) {
-                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 300, after: 300 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 24, bold: true })
-                ]}));
-              } else if (cls.includes('copyright')) {
-                docChildren.push(new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 600 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 20 })
-                ]}));
-              } else if (cls.includes('figur-eintrag') || cls.includes('figur-name')) {
-                docChildren.push(new Paragraph({ spacing: { after: 60 }, children: [
-                  new TextRun({ text: txt, font: 'Courier New', size: 24, bold: cls.includes('figur-name') })
-                ]}));
-              }
-              // Standard-Tags
-              else if (tag === 'p' || tag === 'div') {
-                if (node.children.length > 0 && !txt.includes('\n')) {
-                  walkNodes(node);
+          // Hilfsfunktionen für THEATER_FORMATE → DOCX
+          const TF = THEATER_FORMATE;
+          const alignMap = { center: AlignmentType.CENTER, right: AlignmentType.RIGHT, left: AlignmentType.LEFT };
+          const fmtPara = (fmt, text, extraOpts = {}) => {
+            const runs = [];
+            // Inline-Regie erkennen: (Text in Klammern)
+            if (fmt !== TF.regieanweisung && /\([^)]{2,}\)/.test(text)) {
+              text.split(/(\([^)]{2,}\))/g).filter(Boolean).forEach(part => {
+                if (/^\([^)]{2,}\)$/.test(part)) {
+                  const ir = TF.inlineRegie;
+                  runs.push(new TextRun({ text: part, font: ir.font, size: ir.size * 2, italics: true, color: ir.color }));
                 } else {
-                  docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
+                  runs.push(new TextRun({ text: part, font: fmt.font, size: fmt.size * 2, bold: !!fmt.bold, italics: !!fmt.italic, allCaps: !!fmt.allCaps, characterSpacing: fmt.letterSpacing ? Math.round(fmt.letterSpacing * 100) : undefined, color: fmt.color }));
                 }
-              } else if (tag === 'strong' || tag === 'b') {
-                docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24, bold: true })] }));
-              } else if (tag === 'em' || tag === 'i') {
-                docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true })] }));
-              } else if (tag === 'ul' || tag === 'ol') {
-                node.querySelectorAll('li').forEach(li => {
-                  docChildren.push(new Paragraph({ indent: { left: 567 }, children: [
-                    new TextRun({ text: '• ' + li.textContent.trim(), font: 'Courier New', size: 24 })
-                  ]}));
-                });
-              } else if (tag === 'br') {
-                docChildren.push(new Paragraph({ children: [] }));
-              } else {
-                // Fallback: rekursiv oder Text
-                if (node.children.length > 0) walkNodes(node);
-                else if (txt) docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
-              }
+              });
+            } else {
+              runs.push(new TextRun({ text, font: fmt.font, size: fmt.size * 2, bold: !!fmt.bold, italics: !!fmt.italic, allCaps: !!fmt.allCaps, characterSpacing: fmt.letterSpacing ? Math.round(fmt.letterSpacing * 100) : undefined, color: fmt.color }));
+            }
+            return new Paragraph({
+              alignment: alignMap[fmt.align] || AlignmentType.LEFT,
+              indent: fmt.indent ? { left: Math.round(fmt.indent * 567) } : undefined,
+              spacing: { before: (fmt.spacingBefore || 0) * 20, after: (fmt.spacingAfter || 0) * 20, line: fmt.lineHeight ? Math.round(fmt.lineHeight * 240) : undefined },
+              ...extraOpts,
+              children: runs
             });
           };
-          walkNodes(htmlDoc.body.firstChild);
 
-          if (docChildren.length === 0) {
-            docChildren.push(new Paragraph({ children: [new TextRun({ text: '(Kein Inhalt)', font: 'Courier New', size: 24 })] }));
+          if (type === 'stuecktext') {
+            // ====== STÜCKTEXT: direkt aus Daten mit THEATER_FORMATE ======
+
+            // Titelseite
+            const titelObj = data.fundament?.titel || {};
+            const stTitel = typeof titelObj === 'string' ? titelObj : (titelObj.titel || data.projektName || 'TITEL');
+            const stUntertitel = titelObj.untertitel || '';
+            const stTagline = titelObj.tagline || '';
+            const stAutor = data.autor?.name || '';
+            const stCopyright = data.autor?.copyright || '';
+            const stEmail = data.autor?.email || '';
+            const stWebsite = data.autor?.website || '';
+            const stAdresse = data.autor?.adresse || '';
+
+            dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 4000 }, children: [
+              new TextRun({ text: stTitel, font: 'Trebuchet MS', size: 56, bold: true })
+            ]}));
+            if (stUntertitel) {
+              dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [
+                new TextRun({ text: stUntertitel, font: 'Georgia', size: 28, italics: true })
+              ]}));
+            }
+            if (stTagline) {
+              dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 400 }, children: [
+                new TextRun({ text: `"${stTagline}"`, font: 'Georgia', size: 24, italics: true })
+              ]}));
+            }
+            dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400 }, children: [
+              new TextRun({ text: 'von', font: 'Georgia', size: 22 })
+            ]}));
+            if (stAutor) {
+              dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 100, after: 600 }, children: [
+                new TextRun({ text: stAutor, font: 'Trebuchet MS', size: 34 })
+              ]}));
+            }
+            dc.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [
+              new TextRun({ text: `Fassung vom: ${new Date().toLocaleDateString('de-CH')}`, font: 'Trebuchet MS', size: 20, italics: true })
+            ]}));
+            // Copyright
+            if (stAutor || stAdresse || stEmail || stWebsite) {
+              dc.push(new Paragraph({ spacing: { before: 2000 }, children: [] }));
+              dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: 'Alle Rechte bei:', font: 'Trebuchet MS', size: 18 })] }));
+              dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: stAutor, font: 'Trebuchet MS', size: 18 })] }));
+              if (stAdresse) dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: stAdresse, font: 'Trebuchet MS', size: 18 })] }));
+              if (stEmail) dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: stEmail, font: 'Trebuchet MS', size: 18 })] }));
+              if (stWebsite) dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: stWebsite, font: 'Trebuchet MS', size: 18 })] }));
+              dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `© ${new Date().getFullYear()} ${stAutor}`, font: 'Trebuchet MS', size: 18 })] }));
+            }
+
+            // Personenliste
+            if (data.figuren?.length > 0) {
+              dc.push(new Paragraph({ children: [new PageBreak()] }));
+              dc.push(new Paragraph({ spacing: { after: 300 }, children: [
+                new TextRun({ text: 'PERSONEN', font: 'Trebuchet MS', size: 28, bold: true })
+              ]}));
+              data.figuren.forEach(f => {
+                dc.push(new Paragraph({ spacing: { after: 80 }, children: [
+                  new TextRun({ text: f.name.toUpperCase(), font: TF.figurenname.font, size: TF.figurenname.size * 2, bold: true, characterSpacing: Math.round((TF.figurenname.letterSpacing || 0.03) * 100), color: TF.figurenname.color }),
+                  new TextRun({ text: f.beschreibung ? `  —  ${f.beschreibung}` : '', font: TF.standard.font, size: TF.standard.size * 2, color: TF.standard.color })
+                ]}));
+              });
+            }
+
+            // Schauplatz
+            if (data.schauplatz?.hauptort || data.schauplatz?.notizen) {
+              dc.push(new Paragraph({ spacing: { before: 600, after: 200 }, children: [
+                new TextRun({ text: 'SCHAUPLATZ', font: 'Trebuchet MS', size: 28, bold: true })
+              ]}));
+              if (data.schauplatz.hauptort) dc.push(new Paragraph({ children: [new TextRun({ text: data.schauplatz.hauptort, font: TF.standard.font, size: TF.standard.size * 2 })] }));
+              if (data.schauplatz.notizen) dc.push(new Paragraph({ children: [new TextRun({ text: data.schauplatz.notizen, font: TF.standard.font, size: TF.standard.size * 2, italics: true })] }));
+            }
+
+            // Szenen mit Originalformaten
+            if (data.felder?.length > 0) {
+              let currentAkt = '';
+              data.felder.forEach((feld, idx) => {
+                if (idx === 0) dc.push(new Paragraph({ children: [new PageBreak()] }));
+
+                // Akt-Wechsel
+                if (feld.akt && feld.akt !== currentAkt) {
+                  currentAkt = feld.akt;
+                  dc.push(fmtPara(TF.aktTitel, feld.akt.toUpperCase()));
+                }
+
+                // Szenen-Titel
+                dc.push(fmtPara(TF.szeneTitel, `${feld.nummer || (idx + 1)}. ${feld.titel || 'Szene'}`));
+
+                // Ort/Zeit
+                if (feld.ort || feld.zeit) {
+                  dc.push(fmtPara(TF.regieanweisung, `(${[feld.ort, feld.zeit].filter(Boolean).join(' – ')})`));
+                }
+
+                // Inhalt mit fmt-Klassen parsen → THEATER_FORMATE
+                const inhalt = feld.inhalt || '';
+                if (inhalt) {
+                  const tempDiv = document.createElement('div');
+                  tempDiv.innerHTML = inhalt;
+                  for (const el of tempDiv.children) {
+                    const cls = el.className || '';
+                    const txt = el.textContent?.trim() || '';
+                    if (!txt) continue;
+
+                    if (cls.includes('fmt-akt-titel')) {
+                      dc.push(fmtPara(TF.aktTitel, txt));
+                    } else if (cls.includes('fmt-szenen-titel')) {
+                      dc.push(fmtPara(TF.szeneTitel, txt));
+                    } else if (cls.includes('fmt-figurenname')) {
+                      dc.push(fmtPara(TF.figurenname, txt));
+                    } else if (cls.includes('fmt-dialog')) {
+                      // Dialog: Figurenname + Text
+                      const figurSpan = el.querySelector('.figur');
+                      const textSpan = el.querySelector('.text');
+                      if (figurSpan) {
+                        dc.push(fmtPara(TF.figurenname, figurSpan.textContent.trim()));
+                      }
+                      if (textSpan) {
+                        dc.push(fmtPara(TF.dialog, textSpan.textContent.trim()));
+                      } else if (!figurSpan) {
+                        dc.push(fmtPara(TF.dialog, txt));
+                      }
+                    } else if (cls.includes('fmt-regie')) {
+                      dc.push(fmtPara(TF.regieanweisung, txt));
+                    } else if (cls.includes('fmt-lied')) {
+                      dc.push(fmtPara(TF.lied, txt));
+                    } else if (cls.includes('fmt-vers')) {
+                      dc.push(fmtPara(TF.vers, txt));
+                    } else if (cls.includes('fmt-pause')) {
+                      dc.push(fmtPara(TF.pause, txt));
+                    } else if (cls.includes('fmt-musik')) {
+                      dc.push(fmtPara(TF.musik, txt));
+                    } else if (cls.includes('fmt-sound')) {
+                      dc.push(fmtPara(TF.sound, txt));
+                    } else if (cls.includes('fmt-nebentext')) {
+                      dc.push(fmtPara(TF.nebentext, txt));
+                    } else {
+                      dc.push(fmtPara(TF.standard, txt));
+                    }
+                  }
+                } else if (feld.zusammenfassung) {
+                  dc.push(new Paragraph({ children: [
+                    new TextRun({ text: `[${feld.zusammenfassung}]`, font: 'Georgia', size: 20, italics: true, color: '999999' })
+                  ]}));
+                }
+              });
+            }
+            dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600 }, children: [
+              new TextRun({ text: 'ENDE', font: TF.aktTitel.font, size: TF.aktTitel.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((TF.aktTitel.letterSpacing || 0.2) * 100) })
+            ]}));
+
+          } else {
+            // ====== ARCHIV / TREATMENT / MATERIALIEN: HTML → DOCX ======
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(`<div>${content}</div>`, 'text/html');
+            const walkNodes = (parentEl) => {
+              parentEl.childNodes.forEach(node => {
+                if (node.nodeType === 3) {
+                  const txt = node.textContent.trim();
+                  if (txt) dc.push(new Paragraph({ children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2, color: TF.standard.color })] }));
+                  return;
+                }
+                if (node.nodeType !== 1) return;
+                const tag = node.tagName.toLowerCase();
+                const cls = node.className || '';
+                const txt = node.textContent.trim();
+                if (!txt && !['br', 'hr'].includes(tag)) { walkNodes(node); return; }
+
+                if (cls.includes('titelseite')) { walkNodes(node); dc.push(new Paragraph({ children: [new PageBreak()] })); return; }
+                if (cls.includes('figuren')) { dc.push(new Paragraph({ children: [new PageBreak()] })); walkNodes(node); return; }
+
+                if (tag === 'h1') {
+                  dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
+                    new TextRun({ text: txt, font: 'Trebuchet MS', size: 48, bold: true })
+                  ]}));
+                } else if (tag === 'h2') {
+                  dc.push(new Paragraph({ spacing: { before: 400, after: 100 }, children: [
+                    new TextRun({ text: txt, font: 'Trebuchet MS', size: 28, bold: true, color: '6b4423' })
+                  ]}));
+                } else if (tag === 'h3') {
+                  dc.push(new Paragraph({ spacing: { before: 300, after: 100 }, children: [
+                    new TextRun({ text: txt, font: 'Trebuchet MS', size: 24, bold: true })
+                  ]}));
+                } else if (tag === 'hr') {
+                  dc.push(new Paragraph({ spacing: { before: 200, after: 200 }, border: { bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' } }, children: [] }));
+                } else if (cls.includes('akt-titel')) {
+                  dc.push(fmtPara(TF.aktTitel, txt));
+                } else if (cls.includes('szenen-titel')) {
+                  dc.push(fmtPara(TF.szeneTitel, txt));
+                } else if (cls.includes('dialog')) {
+                  const figur = node.querySelector('.figur');
+                  const text = node.querySelector('.text');
+                  if (figur) dc.push(fmtPara(TF.figurenname, figur.textContent.trim()));
+                  if (text) dc.push(fmtPara(TF.dialog, text.textContent.trim()));
+                  if (!figur && !text) dc.push(fmtPara(TF.dialog, txt));
+                } else if (cls.includes('regie')) {
+                  dc.push(fmtPara(TF.regieanweisung, txt));
+                } else if (cls.includes('lied')) {
+                  dc.push(fmtPara(TF.lied, txt));
+                } else if (cls.includes('musik')) {
+                  dc.push(fmtPara(TF.musik, txt));
+                } else if (cls.includes('sound')) {
+                  dc.push(fmtPara(TF.sound, txt));
+                } else if (cls.includes('autor') || cls.includes('untertitel') || cls.includes('fassung')) {
+                  dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: cls.includes('autor') ? 400 : 100 }, children: [
+                    new TextRun({ text: txt, font: cls.includes('fassung') ? 'Trebuchet MS' : 'Trebuchet MS',
+                      size: cls.includes('autor') ? 34 : cls.includes('untertitel') ? 28 : 20,
+                      italics: cls.includes('fassung') })
+                  ]}));
+                } else if (cls.includes('praemisse')) {
+                  dc.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 300, after: 300 }, children: [
+                    new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2, bold: true })
+                  ]}));
+                } else if (cls.includes('copyright')) {
+                  dc.push(new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 600 }, children: [
+                    new TextRun({ text: txt, font: TF.standard.font, size: 20 })
+                  ]}));
+                } else if (cls.includes('figur-eintrag')) {
+                  const fn = node.querySelector('.figur-name');
+                  if (fn) {
+                    dc.push(new Paragraph({ spacing: { after: 60 }, children: [
+                      new TextRun({ text: fn.textContent.trim(), font: TF.figurenname.font, size: TF.figurenname.size * 2, bold: true, color: TF.figurenname.color }),
+                      new TextRun({ text: txt.replace(fn.textContent.trim(), ''), font: TF.standard.font, size: TF.standard.size * 2, color: TF.standard.color })
+                    ]}));
+                  } else {
+                    dc.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2 })] }));
+                  }
+                } else if (tag === 'p' || tag === 'div') {
+                  if (node.children.length > 0 && node.children.length === node.childElementCount) { walkNodes(node); }
+                  else { dc.push(new Paragraph({ children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2, color: TF.standard.color })] })); }
+                } else if (tag === 'strong' || tag === 'b') {
+                  dc.push(new Paragraph({ children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2, bold: true })] }));
+                } else if (tag === 'em' || tag === 'i') {
+                  dc.push(new Paragraph({ children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2, italics: true })] }));
+                } else if (tag === 'ul' || tag === 'ol') {
+                  node.querySelectorAll('li').forEach(li => {
+                    dc.push(new Paragraph({ indent: { left: 567 }, children: [
+                      new TextRun({ text: '• ' + li.textContent.trim(), font: TF.standard.font, size: TF.standard.size * 2, color: TF.standard.color })
+                    ]}));
+                  });
+                } else if (tag === 'br') {
+                  dc.push(new Paragraph({ children: [] }));
+                } else {
+                  if (node.children.length > 0) walkNodes(node);
+                  else if (txt) dc.push(new Paragraph({ children: [new TextRun({ text: txt, font: TF.standard.font, size: TF.standard.size * 2 })] }));
+                }
+              });
+            };
+            walkNodes(htmlDoc.body.firstChild);
           }
 
+          if (dc.length === 0) {
+            dc.push(new Paragraph({ children: [new TextRun({ text: '(Kein Inhalt)', font: TF.standard.font, size: TF.standard.size * 2 })] }));
+          }
           const docxDoc = new DocxDoc({
             sections: [{ properties: {
               page: { margin: { top: 1440, right: 1440, bottom: 1728, left: 1440 } }
-            }, children: docChildren }]
+            }, children: dc }]
           });
           const blob = await Packer.toBlob(docxDoc);
           const url = URL.createObjectURL(blob);
