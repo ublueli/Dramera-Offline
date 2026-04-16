@@ -179,11 +179,13 @@
     // === GLOBALER LEADER-KEY HANDLER (capture phase) ===
     document.addEventListener('keydown', function(e) {
       var activeEl = document.activeElement;
+      console.log('[LEADER-DBG] KEYDOWN:', e.key, 'keyCode:', e.keyCode, 'target:', (activeEl ? activeEl.tagName + '.' + activeEl.className.substring(0, 40) : 'null'), 'leaderActive:', window.__leaderActive);
 
       // Check if we're in any kind of editor
       var inQuill = activeEl && activeEl.closest && activeEl.closest('.ql-editor');
       var inOrdnen = activeEl && activeEl.isContentEditable && !inQuill;
       var inEditor = !!(inQuill || inOrdnen);
+      console.log('[LEADER-DBG] inQuill:', !!inQuill, 'inOrdnen:', !!inOrdnen, 'inEditor:', inEditor);
 
       // Find Quill instance if in Quill editor
       var quillInstance = null;
@@ -196,20 +198,24 @@
       // ESC key
       if (e.key === 'Escape') {
         if (window.__leaderActive) {
+          console.log('[LEADER-DBG] ESC → cancel leader');
           e.preventDefault();
           e.stopPropagation();
           window.__cancelLeader();
           return;
         }
         if (inEditor) {
-          // Don't start if a modal/dialog is open
           var modal = document.querySelector('.overlay, .modal.show, .sparring-dialog, .twin-modal');
+          console.log('[LEADER-DBG] ESC in editor, modal found:', modal ? modal.className : 'NONE');
           if (!modal) {
+            console.log('[LEADER-DBG] ESC → START LEADER');
             e.preventDefault();
             e.stopPropagation();
             window.__startLeader();
             return;
           }
+        } else {
+          console.log('[LEADER-DBG] ESC but NOT in editor');
         }
         return;
       }
