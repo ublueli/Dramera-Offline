@@ -176,29 +176,24 @@
       }, 1500);
     };
 
-    // === Document-level Leader-Key Handler für Quill-Editoren (Schreibtisch) ===
+    // === GLOBALER LEADER-KEY HANDLER (capture phase) ===
     document.addEventListener('keydown', function(e) {
-      // Nur reagieren wenn ein Quill-Editor fokussiert ist
       var activeEl = document.activeElement;
-      var inQuill = activeEl && activeEl.closest && activeEl.closest('.ql-editor');
-      if (!inQuill) return;
 
-      // Finde die zugehörige Quill-Instanz über das Editor-DOM
-      var quillContainer = inQuill.parentNode;
+      // Check if we're in any kind of editor
+      var inQuill = activeEl && activeEl.closest && activeEl.closest('.ql-editor');
+      var inOrdnen = activeEl && activeEl.isContentEditable && !inQuill;
+      var inEditor = !!(inQuill || inOrdnen);
+
+      // Find Quill instance if in Quill editor
       var quillInstance = null;
-      if (quillContainer && quillContainer.__quill) {
-        quillInstance = quillContainer.__quill;
-      } else {
-        // Fallback: Quill speichert sich auf dem Scroll-Container
-        var containers = document.querySelectorAll('.ql-container');
-        for (var ci = 0; ci < containers.length; ci++) {
-          if (containers[ci].contains(inQuill)) {
-            quillInstance = containers[ci].__quill || (containers[ci].querySelector('.ql-editor') && containers[ci].querySelector('.ql-editor').__quill);
-            break;
-          }
-        }
+      if (inQuill) {
+        var qc = inQuill.parentNode;
+        if (qc && qc.__quill) quillInstance = qc.__quill;
+        else if (inQuill.__quill) quillInstance = inQuill.__quill;
       }
 
+      // ESC key
       if (e.key === 'Escape') {
         if (window.__leaderActive) {
           e.preventDefault();
@@ -206,54 +201,106 @@
           window.__cancelLeader();
           return;
         }
-        // Prüfe ob ein Modal offen ist
-        var openModal = document.querySelector('.modal.show');
-        if (!openModal) {
-          e.preventDefault();
-          window.__startLeader();
+        if (inEditor) {
+          // Don't start if a modal/dialog is open
+          var modal = document.querySelector('.overlay, .modal.show, .sparring-dialog, .twin-modal');
+          if (!modal) {
+            e.preventDefault();
+            e.stopPropagation();
+            window.__startLeader();
+            return;
+          }
         }
         return;
       }
 
+      // Follow-up key when leader active
       if (window.__leaderActive) {
         e.preventDefault();
         e.stopPropagation();
-        var letter = e.key.toLowerCase();
-
-        if (letter in LEADER_QUILL_MAP && quillInstance) {
-          setBlockFormat(quillInstance, LEADER_QUILL_MAP[letter]);
-          var toastName = FORMAT_NAMEN[LEADER_QUILL_MAP[letter]] || LEADER_QUILL_MAP[letter];
-          window.__showFormatToast(toastName);
-        } else if (letter === 'k' && quillInstance) {
-          // Format kopieren
-          var fmt = quillInstance.getFormatAtCursor ? quillInstance.getFormatAtCursor() : 'standard';
-          window.__copiedFormat = { type: 'quill', format: fmt || 'standard' };
-          var copyName = FORMAT_NAMEN[fmt] || fmt || 'Standard';
-          window.__showFormatToast('Formatvorlage kopiert: ' + copyName);
-        } else if (letter === 'e' && quillInstance) {
-          // Format einfügen
-          if (!window.__copiedFormat) {
-            window.__showFormatToast('Keine Formatvorlage kopiert');
-          } else {
-            var cf = window.__copiedFormat;
-            var fmtKey = cf.format;
-            if (cf.type === 'fmt') {
-              // Aus Ordnen-Modus: fmt-xxx → Quill-Key konvertieren
-              var fmtToQuill = { 'fmt-figurenname': 'figurenname', 'fmt-dialog': 'dialog', 'fmt-regie': 'regieanweisung',
-                'fmt-szenen-titel': 'szeneTitel', 'fmt-akt-titel': 'aktTitel', 'fmt-lied': 'lied',
-                'fmt-vers': 'vers', 'fmt-pause': 'pause' };
-              fmtKey = fmtToQuill[cf.format] || 'standard';
-            }
-            setBlockFormat(quillInstance, fmtKey);
-            var pasteName = FORMAT_NAMEN[fmtKey] || fmtKey || 'Standard';
-            window.__showFormatToast('Formatvorlage angewendet: ' + pasteName);
-          }
-        }
-        // Immer Leader beenden nach Tastendruck
+        var lkey = e.key.toLowerCase();
         window.__cancelLeader();
+
+        // Format keys
+        if (lkey in LEADER_QUILL_MAP) {
+          if (inQuill && quillInstance) {
+            setBlockFormat(quillInstance, LEADER_QUILL_MAP[lkey]);
+          } else if (inOrdnen) {
+            // Ordnen mode: direct CSS class manipulation
+            var ordnenMap = {
+              'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
+              't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
+              'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
+            };
+            var sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              var node = sel.anchorNode;
+              var container = activeEl;
+              while (node && node !== container && node.parentNode !== container) node = node.parentNode;
+              if (node && node.classList) {
+                Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
+                if (ordnenMap[lkey]) node.classList.add(ordnenMap[lkey]);
+              }
+            }
+          }
+          window.__showFormatToast(FORMAT_NAMEN[LEADER_QUILL_MAP[lkey]] || lkey);
+          return;
+        }
+
+        // K = copy format
+        if (lkey === 'k') {
+          if (inQuill && quillInstance && quillInstance.getFormatAtCursor) {
+            var fmt = quillInstance.getFormatAtCursor();
+            window.__copiedFormat = { type: 'quill', format: fmt || 'standard' };
+            window.__showFormatToast('Format kopiert: ' + (FORMAT_NAMEN[fmt] || fmt || 'Standard'));
+          } else if (inOrdnen) {
+            var sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              var node = sel.anchorNode;
+              while (node && node !== activeEl && node.parentNode !== activeEl) node = node.parentNode;
+              if (node && node.classList) {
+                var cls = Array.from(node.classList).find(function(c) { return c.startsWith('fmt-'); });
+                window.__copiedFormat = { type: 'ordnen', format: cls || null };
+                window.__showFormatToast('Format kopiert: ' + (cls ? cls.replace('fmt-', '') : 'Standard'));
+              }
+            }
+          }
+          return;
+        }
+
+        // E = paste format
+        if (lkey === 'e') {
+          if (!window.__copiedFormat) { window.__showFormatToast('Kein Format kopiert'); return; }
+          if (inQuill && quillInstance) {
+            var fmt = window.__copiedFormat.format;
+            if (window.__copiedFormat.type === 'ordnen') {
+              // Convert fmt-* to quill format key
+              var convertMap = { 'fmt-dialog': 'dialog', 'fmt-regie': 'regieanweisung', 'fmt-szenen-titel': 'szeneTitel', 'fmt-akt-titel': 'aktTitel', 'fmt-lied': 'lied', 'fmt-vers': 'vers', 'fmt-pause': 'pause', 'fmt-figurenname': 'figurenname' };
+              fmt = convertMap[fmt] || 'standard';
+            }
+            setBlockFormat(quillInstance, fmt);
+          } else if (inOrdnen) {
+            var cls = window.__copiedFormat.format;
+            if (window.__copiedFormat.type === 'quill') {
+              var convertMap2 = { dialog: 'fmt-dialog', regieanweisung: 'fmt-regie', szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied', vers: 'fmt-vers', pause: 'fmt-pause', figurenname: 'fmt-figurenname' };
+              cls = convertMap2[cls] || null;
+            }
+            var sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+              var node = sel.anchorNode;
+              while (node && node !== activeEl && node.parentNode !== activeEl) node = node.parentNode;
+              if (node && node.classList) {
+                Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
+                if (cls) node.classList.add(cls);
+              }
+            }
+          }
+          window.__showFormatToast('Format angewendet');
+          return;
+        }
         return;
       }
-    });
+    }, true);  // CAPTURE phase!
 
     // Keine Quill-Bindings für Formatvorlagen mehr — alles über Leader-Key
     var formatBindings = {};
@@ -992,100 +1039,6 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
     if ((e.metaKey || e.ctrlKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
       e.preventDefault();
       redo();
-      return;
-    }
-
-    // === Leader-Key: Esc → Buchstabe für Formatvorlagen ===
-    if (e.key === 'Escape') {
-      if (window.__leaderActive) {
-        e.preventDefault();
-        e.stopPropagation();
-        window.__cancelLeader();
-        return;
-      }
-      // Kein Modal offen? → Leader starten
-      const openModal = document.querySelector('.modal.show');
-      if (!openModal) {
-        e.preventDefault();
-        window.__startLeader();
-        return;
-      }
-    }
-
-    if (window.__leaderActive) {
-      e.preventDefault();
-      e.stopPropagation();
-      const letter = e.key.toLowerCase();
-      const LEADER_ORDNEN_MAP = {
-        'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
-        't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
-        'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
-      };
-
-      if (letter in LEADER_ORDNEN_MAP) {
-        if (LEADER_ORDNEN_MAP[letter] === null) {
-          // N = Normal: alle fmt-Klassen entfernen
-          const sel = window.getSelection();
-          if (sel && sel.rangeCount > 0) {
-            let node = sel.anchorNode;
-            while (node && node.parentNode !== editorRef.current) node = node.parentNode;
-            if (node && node.classList) {
-              Array.from(node.classList).filter(c => c.startsWith('fmt-')).forEach(c => node.classList.remove(c));
-              saveToHistory(); handleSave(); onFormatChange(null);
-            }
-          }
-          window.__showFormatToast('Standard');
-        } else {
-          applyFormatToCurrentLine(LEADER_ORDNEN_MAP[letter]);
-          window.__showFormatToast(LEADER_ORDNEN_MAP[letter].replace('fmt-', ''));
-        }
-      } else if (letter === 'k') {
-        // Format kopieren
-        const sel = window.getSelection();
-        if (sel && sel.rangeCount > 0) {
-          let node = sel.anchorNode;
-          while (node && node.parentNode !== editorRef.current) node = node.parentNode;
-          if (node && node.classList) {
-            const fmtClass = Array.from(node.classList).find(c => c.startsWith('fmt-'));
-            window.__copiedFormat = { type: 'fmt', format: fmtClass || null };
-            const name = fmtClass ? fmtClass.replace('fmt-', '') : 'Standard';
-            window.__showFormatToast('Formatvorlage kopiert: ' + name);
-          }
-        }
-      } else if (letter === 'e') {
-        // Format einfügen
-        if (!window.__copiedFormat) {
-          window.__showFormatToast('Keine Formatvorlage kopiert');
-        } else {
-          const cf = window.__copiedFormat;
-          if (cf.type === 'fmt' && cf.format) {
-            applyFormatToCurrentLine(cf.format);
-            window.__showFormatToast('Formatvorlage angewendet: ' + cf.format.replace('fmt-', ''));
-          } else if (cf.type === 'quill') {
-            const map = { figurenname: 'fmt-figurenname', dialog: 'fmt-dialog', regieanweisung: 'fmt-regie',
-              szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied',
-              vers: 'fmt-vers', pause: 'fmt-pause', standard: null };
-            const fmtClass = map[cf.format];
-            if (fmtClass) {
-              applyFormatToCurrentLine(fmtClass);
-              window.__showFormatToast('Formatvorlage angewendet: ' + cf.format);
-            } else {
-              const sel = window.getSelection();
-              if (sel && sel.rangeCount > 0) {
-                let node = sel.anchorNode;
-                while (node && node.parentNode !== editorRef.current) node = node.parentNode;
-                if (node && node.classList) {
-                  Array.from(node.classList).filter(c => c.startsWith('fmt-')).forEach(c => node.classList.remove(c));
-                  saveToHistory(); handleSave(); onFormatChange(null);
-                }
-              }
-              window.__showFormatToast('Formatvorlage angewendet: Standard');
-            }
-          }
-        }
-      }
-      // Leader immer beenden nach Tastendruck
-      window.__cancelLeader();
       return;
     }
 
@@ -18585,138 +18538,88 @@ Antworte mit KONKRETEN VORSCHLÄGEN:
     }
     
     else if (type === 'struktur') {
-      const szenenListe = data.felder?.map((f, i) => {
-        const zuordnung = data.szenenStrukturZuordnung?.[f.id];
-        const abschnitt = zuordnung !== undefined 
-          ? aktuelleRasterDef.abschnitte[zuordnung]?.name 
-          : getAbschnittForSzene(f, i, data.felder.length)?.abschnitt?.name;
-        return `${i+1}. ${f.titel} [${abschnitt || '?'}] – ${f.zusammenfassung || 'Keine Zusammenfassung'}`;
-      }).join('\n') || 'Keine Szenen';
-      
-      // Strukturspezifische Regeln
-      let strukturRegeln = '';
-      if (aktuellesRaster === 'offen' || aktuellesRaster === 'frei') {
-        strukturRegeln = `
-OFFENE FORM - BESONDERE REGELN:
-- Keine lineare Handlung erforderlich
-- Episodische Struktur, Fragmente, Collagen sind gewollt
-- Nebeneinander statt Nacheinander
-- Fragen stellen statt beantworten
-- Mehrere gleichberechtigte Perspektiven möglich
-- Rhythmus und Kontraste wichtiger als Kausalität
-- Thematische Verknüpfungen statt Plot-Wendepunkte
-- Offene Enden sind kein Mangel, sondern Absicht
+      // Szenen mit Inhalt, Figuren, Spannungswert sammeln
+      const szenenDetails = data.felder?.map((f, i) => {
+        const figuren = (f.figuren || [])
+          .map(fid => data.figuren?.find(fig => fig.id === fid)?.name)
+          .filter(Boolean);
+        const spW = f.spannungswert !== undefined ? ` [Spannung: ${f.spannungswert}/10]` : '';
+        const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
+        const inhaltPreview = (f.inhalt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+        return `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${f.zusammenfassung || '(keine)'}\n   Inhalt (Auszug): ${inhaltPreview || '(leer)'}`;
+      }).join('\n\n') || 'Keine Szenen vorhanden';
 
-Analysiere NICHT nach klassischer Dramaturgie! Frage stattdessen:
-- Entstehen interessante Kontraste zwischen den Szenen?
-- Gibt es thematische Echos und Variationen?
-- Funktioniert der Rhythmus (lang/kurz, laut/leise)?
-- Werden verschiedene Perspektiven auf das Thema gezeigt?`;
-      } else if (aktuellesRaster === 'sequenz-8') {
-        strukturRegeln = `
-8-SEQUENZEN-MODELL - BESONDERE REGELN:
-Jede Sequenz ist ein "Mini-Film" mit eigenem Setup, Konflikt, Auflösung.
+      // Figurenliste mit Beziehungen
+      const figurenInfo = data.figuren?.map(f => {
+        let info = `- ${f.name}`;
+        if (f.beschreibung) info += `: ${f.beschreibung}`;
+        if (f.want) info += ` | Will: ${f.want}`;
+        if (f.need) info += ` | Braucht: ${f.need}`;
+        if (f.ghost) info += ` | Ghost: ${f.ghost}`;
+        return info;
+      }).join('\n') || 'Keine Figuren';
 
-A (12.5%) - STATUS QUO: Welt und Held einführen
-B (12.5%) - DILEMMA: Problem wird klar, Ende Akt I
-C (12.5%) - ERSTE HINDERNISSE: Einsatz steigt
-D (12.5%) - MIDPOINT: Grosse Wendung, alles ändert sich
-E (12.5%) - SUBPLOT: Nebenhandlung, Beziehungen vertiefen
-F (12.5%) - KRISE: Alles geht schief, Ende Akt II
-G (12.5%) - TWIST: Neue Hoffnung oder letzte Eskalation
-H (12.5%) - AUFLÖSUNG: Klimax und neues Gleichgewicht
+      // Themen
+      const themenInfo = data.themen?.map(t => `- ${t.name}${t.beschreibung ? ': ' + t.beschreibung : ''}`).join('\n') || 'Keine Themen definiert';
 
-Prüfe: Hat jede Sequenz ihren eigenen Mini-Bogen?`;
-      } else if (aktuellesRaster === '5-akt') {
-        strukturRegeln = `
-5-AKT-STRUKTUR (FREYTAG) - BESONDERE REGELN:
-Klassisches Dramenmodell mit pyramidalem Aufbau.
+      // Aktuell gewähltes Modell (nur als Info, nicht als Zwang)
+      const aktuellesModell = aktuelleRasterDef?.name || aktuellesRaster || 'keines';
 
-AKT I - EXPOSITION (20%): Ausgangssituation, Figuren, Ort, Zeit
-AKT II - STEIGERUNG (20%): Erregendes Moment, Konflikte entwickeln sich
-AKT III - HÖHEPUNKT (20%): Peripetie, Umschlag des Geschehens
-AKT IV - FALL (20%): Retardierendes Moment, tragische Konsequenzen
-AKT V - KATASTROPHE (20%): Lösung, oft tragisch, neues Gleichgewicht
+      // Alle verfügbaren Modelle auflisten
+      const verfuegbareModelle = Object.entries(raster).map(([key, r]) => `- ${key}: ${r.name}`).join('\n');
 
-Prüfe: Gibt es einen klaren Peripetie-Moment? Ist der Fall spürbar?`;
-      } else if (aktuellesRaster === '3-akt') {
-        strukturRegeln = `
-3-AKT-STRUKTUR - BESONDERE REGELN:
-Das Arbeitstier der Dramaturgie.
+      prompt = `Du bist ein erfahrener Dramaturg und Theatermensch. Lies das folgende Stück sorgfältig und analysiere seine TATSÄCHLICHE Dramaturgie — unabhängig von jedem theoretischen Modell.
 
-AKT I - SETUP (25%): Status Quo, Inciting Incident, Plot Point 1
-AKT II - KONFRONTATION (50%): Hindernisse, Midpoint, Plot Point 2  
-AKT III - AUFLÖSUNG (25%): Klimax, Konsequenzen, neues Gleichgewicht
-
-Wichtige Wendepunkte:
-- Inciting Incident (10%): Das auslösende Ereignis
-- Plot Point 1 (25%): Keine Rückkehr möglich
-- Midpoint (50%): Alles ändert sich
-- Plot Point 2 (75%): Alles scheint verloren
-- Klimax (90%): Die entscheidende Konfrontation`;
-      } else if (aktuellesRaster === 'heldenreise') {
-        strukturRegeln = `
-HELDENREISE (Campbell/Vogler) - 12 STUFEN:
-Die mythische Struktur der Transformation.
-
-1. GEWOHNTE WELT: Alltag des Helden zeigen
-2. RUF ZUM ABENTEUER: Problem/Chance taucht auf
-3. WEIGERUNG: Held zögert, hat Angst
-4. BEGEGNUNG MIT DEM MENTOR: Hilfe, Rat, Ausrüstung
-5. ÜBERSCHREITEN DER SCHWELLE: Point of no Return
-6. PRÜFUNGEN, VERBÜNDETE, FEINDE: Tests, neue Welt lernen
-7. VORDRINGEN ZUR TIEFSTEN HÖHLE: Grösste Gefahr naht
-8. ENTSCHEIDENDE PRÜFUNG: Tod und Wiedergeburt (symbolisch)
-9. BELOHNUNG: Den Schatz ergreifen
-10. RÜCKWEG: Verfolgung, Flucht
-11. AUFERSTEHUNG: Finale Prüfung, Transformation zeigen
-12. RÜCKKEHR MIT DEM ELIXIER: Verwandelt in die alte Welt
-
-Prüfe: Durchläuft der Held eine echte Transformation? Gibt es einen Mentor?`;
-      } else if (aktuellesRaster === 'episch') {
-        strukturRegeln = `
-EPISCHES THEATER (Brecht) - BESONDERE REGELN:
-Verfremdung statt Einfühlung. Denken statt Fühlen.
-
-PRINZIPIEN:
-- Zeigen, nicht einfühlen lassen
-- Unterbrechungen (Songs, Tafeln, direkte Ansprache)
-- Episodische Struktur statt durchgehender Handlung
-- Gesellschaftliche Widersprüche aufzeigen
-- Das Publikum zum Denken bringen, nicht zum Weinen
-- Figuren als soziale Typen, nicht als Individuen
-- Offenes Ende, Fragen statt Antworten
-
-STRUKTUR:
-- Prolog: Thema direkt ankündigen
-- Episoden: Lose verbundene Situationen
-- Kommentare: Songs, Projektionen zwischen Szenen
-- Epilog: Fragen ans Publikum
-
-Prüfe: Gibt es genug Verfremdungseffekte? Wird das Publikum zum Nachdenken gebracht?`;
-      } else {
-        strukturRegeln = `
-ANFANG-MITTE-ENDE - GRUNDSTRUKTUR:
-- ANFANG (25%): Ruhender Zustand, Exposition
-- MITTE (50%): Veränderung, Konflikt, Entwicklung
-- ENDE (25%): Neuer ruhender Zustand, Auflösung`;
-      }
-      
-      prompt = `Du bist ein erfahrener Dramaturg. Analysiere die Struktur nach dem GEWÄHLTEN MODELL!
 ${projektKontext}
 
-GEWÄHLTES STRUKTURMODELL: ${aktuelleRasterDef?.name || aktuellesRaster}
-${strukturRegeln}
+FIGUREN:
+${figurenInfo}
+
+THEMEN:
+${themenInfo}
 
 ANZAHL SZENEN: ${data.felder?.length || 0}
-SZENEN-ÜBERSICHT (mit Strukturabschnitt):
-${szenenListe}
 
-Antworte mit KONKRETEN VORSCHLÄGEN passend zum gewählten Modell:
-1. 📍 **Strukturanalyse:** Wie gut passt die Szenenfolge zum ${aktuelleRasterDef?.name || aktuellesRaster}-Modell?
-2. ⚠️ **Problemstellen:** Was fehlt oder stimmt nicht nach den Regeln dieses Modells?
-3. ➕ **Konkrete Empfehlung:** Was würde die Struktur verbessern?
-4. 🔄 **Alternative:** Würde ein anderes Modell besser passen? Warum?
+VOLLSTÄNDIGE SZENEN-ÜBERSICHT:
+${szenenDetails}
+
+---
+
+DEINE AUFGABE: Analysiere die Dramaturgie dieses Stücks so, wie ein erfahrener Dramaturg bei einer Stückentwicklung Feedback geben würde. Vergiss alle Modelle — lies das Stück und urteile mit deiner Erfahrung.
+
+Strukturiere deine Antwort so:
+
+1. 🎭 **Was erzählt dieses Stück?**
+   Fasse in 2-3 Sätzen zusammen, was die zentrale Geschichte/das zentrale Thema ist — so wie du es als Zuschauer verstehen würdest.
+
+2. ✅ **Was funktioniert dramaturgisch?**
+   Konkrete Stärken: Welche Szenen tragen? Wo entsteht Spannung? Wo gibt es gelungene Wendepunkte, Überraschungen, emotionale Momente? Wo funktioniert der Rhythmus?
+
+3. ⚠️ **Was funktioniert (noch) nicht?**
+   Konkrete Schwächen: Wo hängt es durch? Wo fehlt ein Wendepunkt? Wo ist der Konflikt unklar? Wo gehen Figuren verloren? Wo wiederholt sich etwas? Wo stimmt das Tempo nicht?
+   Sei ehrlich und konkret — sag nicht "es könnte besser sein", sondern "Szene 5 bremst, weil..."
+
+4. 💡 **Konkrete Empfehlungen**
+   Was würdest du dem Autor raten? Maximal 3-5 konkrete, umsetzbare Vorschläge.
+   Z.B.: "Szene 3 und 4 zusammenlegen", "Zwischen Szene 7 und 8 fehlt ein Moment wo X begreift dass...", "Der Schluss kommt zu abrupt — es fehlt eine Szene die..."
+
+5. 📐 **Modell-Empfehlung** (optional)
+   Das Stück muss nicht in ein Modell passen. Aber wenn es einem nahekommt, sage welchem — und warum das nützlich sein könnte (oder auch nicht).
+   Aktuell gewählt: "${aktuellesModell}"
+   Verfügbare Modelle:
+${verfuegbareModelle}
+
+   Mögliche Antworten:
+   - "Dein Stück folgt am ehesten einer X-Struktur — das Modell könnte dir helfen, Y zu schärfen"
+   - "Kein klassisches Modell passt wirklich, aber das ist kein Problem — die Dramaturgie funktioniert aus sich heraus"
+   - "Das Stück versucht sich an einer X-Struktur, bricht sie aber bei Y — entscheide dich: entweder konsequent X oder bewusst dagegen"
+
+WICHTIG:
+- Analysiere das TATSÄCHLICHE Stück, nicht ein theoretisches Ideal
+- Kein Modell aufzwingen — die Dramaturgie muss aus der Geschichte kommen
+- Denke in Figuren, Konflikten, Wendepunkten, Rhythmus — nicht in Prozentzahlen
+- Sei ein kollegialer Sparringspartner, kein Schulmeister
+- Wenn das Stück noch am Anfang steht (wenige/leere Szenen), sag das ehrlich und gib Hinweise für die weitere Entwicklung
 
 Wenn du eine NEUE SZENE vorschlägst, füge einen AKTION-Block hinzu:
 ===AKTION===
@@ -18724,24 +18627,24 @@ Wenn du eine NEUE SZENE vorschlägst, füge einen AKTION-Block hinzu:
   "type": "szene_hinzufuegen",
   "daten": {
     "titel": "[Titel]",
-    "zusammenfassung": "[Beschreibung]",
+    "zusammenfassung": "[Beschreibung — was passiert und warum es dramaturgisch wichtig ist]",
     "in_zeitstrahl": true
   }
 }
 ===ENDE===
 
-Wenn du vorschlägst das STRUKTURMODELL zu wechseln (z.B. auf episodisch, episch, heldenreise), füge diesen Block hinzu:
+Wenn du ein anderes Strukturmodell empfiehlst, füge diesen Block hinzu:
 ===AKTION===
 {
   "type": "struktur_wechseln",
   "daten": {
-    "neues_raster": "[3-akt|5-akt|aristotelisch|sequenz-8|heldenreise|episch|episodisch|offen|frei]",
-    "begruendung": "[Warum dieses Modell besser passt]"
+    "neues_raster": "[3-akt|5-akt|sequenz-8|heldenreise|episch|episodisch|offen|frei|anfang-mitte-ende]",
+    "begruendung": "[Warum dieses Modell dem Stück helfen könnte]"
   }
 }
 ===ENDE===
 
-WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
+Verwende Schweizer Schreibweise (ss statt ß). Antworte auf Deutsch.`;
     }
     
     // NEU: Szenentitel EINZELN generieren (schrittweise)
@@ -18905,7 +18808,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 3000,
+          max_tokens: 4500,
           system: 'Du bist ein erfahrener Dramaturg und dramaturgischer Sparringspartner. Du analysierst Szenen, Figurenkonstellationen und Spannungsverläufe mit professionellem Blick. Du denkst in Want/Need/Ghost, in Subtext und dramatischer Ironie. Wenn du Dialoge schreibst, haben die Figuren eigene Stimmen und verfolgen verborgene Ziele. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
         })
@@ -34784,9 +34687,9 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                           <button 
                             onClick={() => sparringWithAI('struktur', { name: data.projektName })} 
                             className="struktur-check-btn"
-                            title="Struktur mit KI prüfen"
+                            title="Dramaturgie analysieren — KI gibt Feedback zu Stärken, Schwächen und Struktur"
                           >
-                            🔍 Struktur
+                            🎭 Dramaturgie
                           </button>
                         </>
                       )}
@@ -37256,7 +37159,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 <h2>
                   {sparringType === 'szene' && '🎬 Szenen-Analyse'}
                   {sparringType === 'figur' && '👤 Figuren-Vertiefung'}
-                  {sparringType === 'struktur' && '📐 Struktur-Check'}
+                  {sparringType === 'struktur' && '🎭 Dramaturgie-Analyse'}
                   {sparringType === 'szenentitel' && '✨ Szenentitel generieren'}
                   {sparringType === 'dialog' && '💬 Dialogentwurf'}
                 </h2>
