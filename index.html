@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="app-build" content="dramera-2026-04-16T2">
+  <meta name="app-build" content="dramera-2026-04-16T3">
   <title>N!NA Dramera v2.2 Stand-alone – Werkbank für Dramaturg:innen (NINA-Exchange v3.0)</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100' height='100' fill='%231e3a5f' rx='12'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-family='Arial Black' font-size='40' font-weight='bold' fill='white'%3EN!%3C/text%3E%3C/svg%3E">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -210,12 +210,20 @@
           if (!modal) {
             e.preventDefault();
             e.stopPropagation();
-            // Save editor context so follow-up key can use it even if focus shifts
+            // Save editor context + selection so follow-up works in Chrome
+            // (Chrome clears selection when Esc blurs contentEditable)
+            var savedNode = null;
+            var sel0 = window.getSelection();
+            if (sel0 && sel0.rangeCount > 0) {
+              savedNode = sel0.anchorNode;
+              while (savedNode && savedNode !== activeEl && savedNode.parentNode !== activeEl) savedNode = savedNode.parentNode;
+            }
             window.__startLeader({
               inQuill: !!inQuill,
               inOrdnen: !!inOrdnen,
               quillInstance: quillInstance,
-              activeEl: activeEl
+              activeEl: activeEl,
+              savedNode: savedNode
             });
             return;
           }
@@ -233,29 +241,22 @@
         var ctxInOrdnen = ctx.inOrdnen;
         var ctxQuill = ctx.quillInstance;
         var ctxActiveEl = ctx.activeEl;
+        var ctxNode = ctx.savedNode;
         window.__cancelLeader();
 
         // Format keys
         if (lkey in LEADER_QUILL_MAP) {
           if (ctxInQuill && ctxQuill) {
             setBlockFormat(ctxQuill, LEADER_QUILL_MAP[lkey]);
-          } else if (ctxInOrdnen && ctxActiveEl) {
-            // Ordnen mode: direct CSS class manipulation
+          } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
+            // Ordnen mode: use saved node (Chrome clears selection on Esc blur)
             var ordnenMap = {
               'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
               't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
               'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
             };
-            var sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-              var node = sel.anchorNode;
-              var container = ctxActiveEl;
-              while (node && node !== container && node.parentNode !== container) node = node.parentNode;
-              if (node && node.classList) {
-                Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
-                if (ordnenMap[lkey]) node.classList.add(ordnenMap[lkey]);
-              }
-            }
+            Array.from(ctxNode.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { ctxNode.classList.remove(c); });
+            if (ordnenMap[lkey]) ctxNode.classList.add(ordnenMap[lkey]);
           }
           window.__showFormatToast(FORMAT_NAMEN[LEADER_QUILL_MAP[lkey]] || lkey);
           return;
@@ -267,17 +268,10 @@
             var fmt = ctxQuill.getFormatAtCursor();
             window.__copiedFormat = { type: 'quill', format: fmt || 'standard' };
             window.__showFormatToast('Format kopiert: ' + (FORMAT_NAMEN[fmt] || fmt || 'Standard'));
-          } else if (ctxInOrdnen && ctxActiveEl) {
-            var sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-              var node = sel.anchorNode;
-              while (node && node !== ctxActiveEl && node.parentNode !== ctxActiveEl) node = node.parentNode;
-              if (node && node.classList) {
-                var cls = Array.from(node.classList).find(function(c) { return c.startsWith('fmt-'); });
-                window.__copiedFormat = { type: 'ordnen', format: cls || null };
-                window.__showFormatToast('Format kopiert: ' + (cls ? cls.replace('fmt-', '') : 'Standard'));
-              }
-            }
+          } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
+            var cls = Array.from(ctxNode.classList).find(function(c) { return c.startsWith('fmt-'); });
+            window.__copiedFormat = { type: 'ordnen', format: cls || null };
+            window.__showFormatToast('Format kopiert: ' + (cls ? cls.replace('fmt-', '') : 'Standard'));
           }
           return;
         }
@@ -292,21 +286,14 @@
               fmt = convertMap[fmt] || 'standard';
             }
             setBlockFormat(ctxQuill, fmt);
-          } else if (ctxInOrdnen && ctxActiveEl) {
+          } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
             var cls = window.__copiedFormat.format;
             if (window.__copiedFormat.type === 'quill') {
               var convertMap2 = { dialog: 'fmt-dialog', regieanweisung: 'fmt-regie', szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied', vers: 'fmt-vers', pause: 'fmt-pause', figurenname: 'fmt-figurenname' };
               cls = convertMap2[cls] || null;
             }
-            var sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-              var node = sel.anchorNode;
-              while (node && node !== ctxActiveEl && node.parentNode !== ctxActiveEl) node = node.parentNode;
-              if (node && node.classList) {
-                Array.from(node.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { node.classList.remove(c); });
-                if (cls) node.classList.add(cls);
-              }
-            }
+            Array.from(ctxNode.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { ctxNode.classList.remove(c); });
+            if (cls) ctxNode.classList.add(cls);
           }
           window.__showFormatToast('Format angewendet');
           return;
