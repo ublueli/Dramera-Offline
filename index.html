@@ -16672,6 +16672,10 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const convertFmtToFormat = useCallback((html) => {
     if (!html) return '';
     let c = html
+      // Datenmodell verwendet <div>, Quill TheaterBlock erwartet <p>
+      .replace(/<div\b/g, '<p')
+      .replace(/<\/div>/g, '</p>')
+      // fmt-* Klassen → format-* Klassen
       .replace(/\bfmt-dialog\b/g, 'format-dialog')
       .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
       .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
@@ -16679,6 +16683,8 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bfmt-vers\b/g, 'format-vers')
       .replace(/\bfmt-lied\b/g, 'format-lied')
       .replace(/\bfmt-figurenname\b/g, 'format-figurenname')
+      .replace(/\bfmt-pause\b/g, 'format-pause')
+      .replace(/\bfmt-standard\b/g, 'format-standard')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
     return wrapInlineRegie(c);
@@ -16701,6 +16707,10 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     });
     cleaned = temp.innerHTML;
     return cleaned
+      // Quill erzeugt <p>, Datenmodell erwartet <div>
+      .replace(/<p\b/g, '<div')
+      .replace(/<\/p>/g, '</div>')
+      // format-* Klassen → fmt-* Klassen
       .replace(/\bformat-dialog\b/g, 'fmt-dialog')
       .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
       .replace(/\bformat-szene-titel\b/g, 'fmt-szenen-titel')
@@ -16708,6 +16718,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bformat-vers\b/g, 'fmt-vers')
       .replace(/\bformat-lied\b/g, 'fmt-lied')
       .replace(/\bformat-figurenname\b/g, 'fmt-figurenname')
+      .replace(/\bformat-pause\b/g, 'fmt-pause')
       .replace(/\bformat-standard\b/g, '')
       .replace(/class="figur-name"/g, 'class="figur"')
       .replace(/class="dialog-text"/g, 'class="text"');
