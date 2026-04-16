@@ -179,13 +179,11 @@
     // === GLOBALER LEADER-KEY HANDLER (capture phase) ===
     document.addEventListener('keydown', function(e) {
       var activeEl = document.activeElement;
-      console.log('[LEADER-DBG] KEYDOWN:', e.key, 'keyCode:', e.keyCode, 'target:', (activeEl ? activeEl.tagName + '.' + activeEl.className.substring(0, 40) : 'null'), 'leaderActive:', window.__leaderActive);
 
       // Check if we're in any kind of editor
       var inQuill = activeEl && activeEl.closest && activeEl.closest('.ql-editor');
       var inOrdnen = activeEl && activeEl.isContentEditable && !inQuill;
       var inEditor = !!(inQuill || inOrdnen);
-      console.log('[LEADER-DBG] inQuill:', !!inQuill, 'inOrdnen:', !!inOrdnen, 'inEditor:', inEditor);
 
       // Find Quill instance if in Quill editor
       var quillInstance = null;
@@ -198,7 +196,6 @@
       // ESC key
       if (e.key === 'Escape') {
         if (window.__leaderActive) {
-          console.log('[LEADER-DBG] ESC → cancel leader');
           e.preventDefault();
           e.stopPropagation();
           window.__cancelLeader();
@@ -206,23 +203,19 @@
         }
         if (inEditor) {
           var modal = document.querySelector('.overlay, .modal.show, .sparring-dialog, .twin-modal');
-          console.log('[LEADER-DBG] ESC in editor, modal found:', modal ? modal.className : 'NONE');
           if (!modal) {
-            console.log('[LEADER-DBG] ESC → START LEADER');
             e.preventDefault();
             e.stopPropagation();
             window.__startLeader();
             return;
           }
         } else {
-          console.log('[LEADER-DBG] ESC but NOT in editor');
         }
         return;
       }
 
       // Follow-up key when leader active
       if (window.__leaderActive) {
-        console.log('[LEADER-DBG] Follow-up key:', e.key, 'lkey:', e.key.toLowerCase(), 'inQuill:', !!inQuill, 'inOrdnen:', !!inOrdnen, 'quillInstance:', !!quillInstance);
         e.preventDefault();
         e.stopPropagation();
         var lkey = e.key.toLowerCase();
@@ -230,13 +223,9 @@
 
         // Format keys
         if (lkey in LEADER_QUILL_MAP) {
-          console.log('[LEADER-DBG] Applying format:', lkey, '→', LEADER_QUILL_MAP[lkey]);
           if (inQuill && quillInstance) {
-            console.log('[LEADER-DBG] Using setBlockFormat on Quill');
             setBlockFormat(quillInstance, LEADER_QUILL_MAP[lkey]);
-            console.log('[LEADER-DBG] Format applied successfully via Quill');
           } else if (inOrdnen) {
-            console.log('[LEADER-DBG] Using Ordnen CSS class manipulation');
             // Ordnen mode: direct CSS class manipulation
             var ordnenMap = {
               'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
@@ -599,7 +588,7 @@
         // Upload backup
         const now = new Date();
         const timestamp = now.toISOString().replace(/T/, '_').replace(/:/g, '-').slice(0, 16);
-        const fileName = `Projekt_${timestamp}.json`;
+        const fileName = `Dramera_${projectName}_${timestamp}.dramera.json`;
         const jsonStr = JSON.stringify(projectData, null, 2);
 
         // Multipart upload
@@ -17530,6 +17519,7 @@ function DrameraWerkbank() {
       const currentHash = JSON.stringify(data).length + '_' + (data.projektName || '');
       if (currentHash === _lastGdriveAutoBackupHash && lastGdriveBackupRef.current) return;
       const exportData = {
+        _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
         data,
@@ -20646,6 +20636,7 @@ WICHTIGE REGELN:
 
       // 1. Current project as .dramera.json
       const exportData = {
+        _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
         data,
@@ -20677,7 +20668,7 @@ WICHTIGE REGELN:
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${projectName}_Komplett-Backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `Dramera_Backup_${projectName}_${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -20698,6 +20689,7 @@ WICHTIGE REGELN:
 
     try {
       const exportData = {
+        _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
         data,
@@ -20737,11 +20729,13 @@ WICHTIGE REGELN:
       // No handle — show picker (or download fallback)
       if (window.showSaveFilePicker) {
         try {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
           const handle = await window.showSaveFilePicker({
-            suggestedName: (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '') + '.dramera.json',
+            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
             types: [{
               description: 'Dramera Projekt',
-              accept: { 'application/json': ['.json'] }
+              accept: { 'application/json': ['.dramera.json', '.json'] }
             }]
           });
           fileHandleRef.current = handle;
@@ -20759,7 +20753,9 @@ WICHTIGE REGELN:
         }
       } else {
         // Fallback: browser download
-        downloadFile(jsonStr, (data.projektName || 'Projekt') + '.dramera.json', 'application/json');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
         setFileIsDirty(false);
         setLastFileSaveTime(new Date());
         setSaveStatus('saved');
@@ -20779,6 +20775,7 @@ WICHTIGE REGELN:
 
     try {
       const exportData = {
+        _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
         data,
@@ -20795,11 +20792,13 @@ WICHTIGE REGELN:
 
       if (window.showSaveFilePicker) {
         try {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
           const handle = await window.showSaveFilePicker({
-            suggestedName: (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '') + '.dramera.json',
+            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
             types: [{
               description: 'Dramera Projekt',
-              accept: { 'application/json': ['.json'] }
+              accept: { 'application/json': ['.dramera.json', '.json'] }
             }]
           });
           fileHandleRef.current = handle;
@@ -20816,7 +20815,9 @@ WICHTIGE REGELN:
           throw err;
         }
       } else {
-        downloadFile(jsonStr, (data.projektName || 'Projekt') + '.dramera.json', 'application/json');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
         setFileIsDirty(false);
         setLastFileSaveTime(new Date());
         setSaveStatus('saved');
@@ -20839,7 +20840,7 @@ WICHTIGE REGELN:
         const [handle] = await window.showOpenFilePicker({
           types: [{
             description: 'Dramera Projekt',
-            accept: { 'application/json': ['.json'] }
+            accept: { 'application/json': ['.dramera.json', '.json'] }
           }]
         });
         const file = await handle.getFile();
@@ -20849,6 +20850,10 @@ WICHTIGE REGELN:
           content = content.slice(1);
         }
         const imported = JSON.parse(content);
+
+        if (imported._app === 'rebu') {
+          if (!confirm('Diese Datei stammt aus Rebu. Möchtest du sie über das Exchange-Format importieren?')) return;
+        }
 
         if (imported.version && imported.data) {
           skipNextChangeRef.current = true;
@@ -23585,7 +23590,11 @@ STIL:
         }
         
         const imported = JSON.parse(content);
-        
+
+        if (imported._app === 'rebu') {
+          if (!confirm('Diese Datei stammt aus Rebu. Möchtest du sie über das Exchange-Format importieren?')) return;
+        }
+
         // Neues Format (mit version) oder altes Format (direkt data)?
         if (imported.version && imported.data) {
           const newData = imported.data;
@@ -36799,6 +36808,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     className="save-download-btn"
                     onClick={() => {
                       const exportData = {
+                        _app: 'dramera',
                         version: '4.15',
                         exportDate: new Date().toISOString(),
                         data: data,
@@ -36831,6 +36841,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                         style={{ background: '#a09080', marginBottom: '1rem' }}
                         onClick={async () => {
                           const exportData = {
+                            _app: 'dramera',
                             version: '4.15',
                             exportDate: new Date().toISOString(),
                             data: data,
