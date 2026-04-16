@@ -22603,7 +22603,7 @@ WICHTIGE REGELN:
   };
   
   // Export ausführen
-  const executeExport = (type, format) => {
+  const executeExport = async (type, format) => {
     setShowExportDialog(false);
     
     let content, filename, title;
@@ -22648,108 +22648,192 @@ WICHTIGE REGELN:
         break;
         
       case 'docx':
-        // DOCX als HTML mit Word-spezifischer Formatierung (kein Flexbox!)
-        // Word versteht Flexbox nicht, also verwenden wir Tabs
-        
-        // Konvertiere HTML-Content für Word
-        let wordContent = content;
-        
-        // Entferne das eingebettete <style> Tag komplett (enthält Flexbox etc.)
-        wordContent = wordContent.replace(/<style>[\s\S]*?<\/style>/g, '');
-        
-        // Entferne alle page-break Styles
-        wordContent = wordContent.replace(/page-break-before:\s*always;?/g, '');
-        wordContent = wordContent.replace(/page-break-after:\s*always;?/g, '');
-        
-        // Entferne die .figuren Klasse (die verursacht den Seitenumbruch)
-        wordContent = wordContent.replace(/class="figuren"/g, 'class="figuren-section"');
-        wordContent = wordContent.replace(/class="titelseite"/g, 'class="titelseite-section"');
-        
-        // Entferne min-height und Flexbox von titelseite
-        wordContent = wordContent.replace(/min-height:\s*100vh;?/g, '');
-        wordContent = wordContent.replace(/display:\s*flex;?/g, '');
-        wordContent = wordContent.replace(/flex-direction:\s*column;?/g, '');
-        
-        // Ersetze Flexbox-Dialoge durch Tab-Formatierung mit Courier-Schrift
-        // <p class="dialog"><span class="figur">NAME</span> <span class="text">TEXT</span></p>
-        wordContent = wordContent.replace(
-          /<p class="dialog"><span class="figur">([^<]*)<\/span>\s*<span class="text">([^<]*)<\/span><\/p>/g,
-          '<p class="dialog-word"><span class="dialog-figur">$1</span>\t$2</p>'
-        );
-        
-        // Ersetze Lied-Dialoge
-        wordContent = wordContent.replace(
-          /<p class="lied"><span class="figur">([^<]*)<\/span>\s*<span class="text">([^<]*)<\/span><\/p>/g,
-          '<p class="lied-word"><span class="dialog-figur">$1</span>\t$2</p>'
-        );
-        
-        const docxHtml = `
-          <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-          <head>
-            <meta charset="utf-8">
-            <!--[if gte mso 9]>
-            <xml>
-              <w:WordDocument>
-                <w:View>Print</w:View>
-                <w:Zoom>100</w:Zoom>
-              </w:WordDocument>
-            </xml>
-            <![endif]-->
-            <style>
-              /* Basis: Courier New 12pt */
-              body { font-family: 'Courier New', Courier, monospace; font-size: 12pt; line-height: 1.5; }
-              
-              /* Stücktitel: Arial 24pt */
-              h1 { font-family: Arial, sans-serif; font-size: 24pt; font-weight: bold; text-align: center; }
-              
-              /* Überschriften: Arial 14pt */
-              h2 { font-family: Arial, sans-serif; font-size: 14pt; color: #6b4423; border-bottom: 1pt solid #d4c4a8; margin-top: 24pt; }
-              h3 { font-family: Arial, sans-serif; font-size: 14pt; }
-              
-              p { margin: 0; padding: 0; }
-              
-              /* Untertitel: Arial 14pt */
-              .untertitel { font-family: Arial, sans-serif; font-size: 14pt; text-align: center; }
-              
-              /* Autor: Arial 17pt */
-              .autor { font-family: Arial, sans-serif; font-size: 17pt; text-align: center; margin-top: 24pt; }
-              
-              .fassung { font-family: 'Courier New', monospace; font-size: 10pt; text-align: center; margin-top: 36pt; }
-              .copyright-block { font-family: 'Courier New', monospace; text-align: right; font-size: 10pt; margin-top: 48pt; }
-              
-              /* Figuren: Courier New 12pt */
-              .figur-eintrag { font-family: 'Courier New', monospace; font-size: 12pt; margin-bottom: 6pt; }
-              .figur-name { font-weight: bold; text-transform: uppercase; }
-              
-              /* Akt-Titel: Courier New 21pt */
-              .akt-titel { font-family: 'Courier New', monospace; font-size: 21pt; text-align: center; margin: 48pt 0 24pt 0; letter-spacing: 0.5pt; }
-              
-              /* Szenen-Titel: Arial 14pt */
-              .szenen-titel { font-family: Arial, sans-serif; font-size: 14pt; margin: 30pt 0 8pt 0; text-decoration: underline; }
-              
-              /* Dialog: Courier 12pt (NICHT Courier New!) */
-              .dialog-word { font-family: Courier, 'Courier New', monospace; font-size: 12pt; margin-bottom: 10pt; }
-              .dialog-figur { font-weight: bold; }
-              
-              /* Lied: Courier 12pt mit Hintergrund */
-              .lied-word { font-family: Courier, 'Courier New', monospace; font-size: 12pt; background: #e8e8e8; padding: 6pt; margin-bottom: 4pt; border: 1pt solid #999; }
-              
-              /* Regie: Courier New 12pt, kursiv */
-              .regie { font-family: 'Courier New', monospace; font-size: 12pt; font-style: italic; margin-left: 170pt; margin-bottom: 10pt; }
-              
-              /* Musik & Sound: Courier New 12pt */
-              .musik { font-family: 'Courier New', monospace; font-size: 12pt; margin-left: 113pt; font-style: italic; color: #7c3aed; }
-              .sound { font-family: 'Courier New', monospace; font-size: 12pt; margin-left: 113pt; font-style: italic; color: #059669; }
-              
-              .praemisse { font-family: 'Courier New', monospace; text-align: center; font-weight: bold; margin: 24pt 0; }
-              .titelseite-section { text-align: center; margin-bottom: 48pt; }
-              .figuren-section { margin-top: 24pt; }
-            </style>
-          </head>
-          <body>${wordContent}</body>
-          </html>
-        `;
-        downloadFile(docxHtml, `${filename}.doc`, 'application/msword');
+        // Echtes DOCX mit docx-Library (kompatibel mit Pages, Word, LibreOffice)
+        try {
+          if (!window.docx) {
+            const cdnUrls = [
+              'https://unpkg.com/docx@8.5.0/build/index.umd.js',
+              'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'
+            ];
+            let loaded = false;
+            for (const url of cdnUrls) {
+              if (loaded) break;
+              try {
+                const s = document.createElement('script');
+                s.src = url;
+                document.head.appendChild(s);
+                await new Promise((resolve, reject) => {
+                  s.onload = () => { loaded = true; resolve(); };
+                  s.onerror = reject;
+                  setTimeout(() => reject(new Error('Timeout')), 5000);
+                });
+              } catch (e) { console.log('CDN fehlgeschlagen:', url); }
+            }
+            if (!window.docx) throw new Error('docx-Library konnte nicht geladen werden.');
+          }
+          const { Document: DocxDoc, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
+                  HeadingLevel, BorderStyle } = window.docx;
+          const docChildren = [];
+
+          // HTML parsen
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(`<div>${content}</div>`, 'text/html');
+
+          // Rekursiv alle Elemente durchgehen
+          const walkNodes = (parentEl) => {
+            parentEl.childNodes.forEach(node => {
+              if (node.nodeType === 3) {
+                // Textknoten
+                const txt = node.textContent.trim();
+                if (txt) docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
+                return;
+              }
+              if (node.nodeType !== 1) return;
+              const tag = node.tagName.toLowerCase();
+              const cls = node.className || '';
+              const txt = node.textContent.trim();
+              if (!txt && !['br', 'hr'].includes(tag)) { walkNodes(node); return; }
+
+              // Titelseite
+              if (cls.includes('titelseite')) {
+                walkNodes(node);
+                docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+                return;
+              }
+              // Figurenliste
+              if (cls.includes('figuren')) {
+                docChildren.push(new Paragraph({ children: [new PageBreak()] }));
+                walkNodes(node);
+                return;
+              }
+
+              // Überschriften
+              if (tag === 'h1') {
+                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
+                  new TextRun({ text: txt, font: 'Arial', size: 48, bold: true })
+                ]}));
+              } else if (tag === 'h2') {
+                docChildren.push(new Paragraph({ spacing: { before: 400, after: 100 }, children: [
+                  new TextRun({ text: txt, font: 'Arial', size: 28, bold: true, color: '6b4423' })
+                ]}));
+              } else if (tag === 'h3') {
+                docChildren.push(new Paragraph({ spacing: { before: 300, after: 100 }, children: [
+                  new TextRun({ text: txt, font: 'Arial', size: 24, bold: true })
+                ]}));
+              }
+              // Horizontale Linie
+              else if (tag === 'hr') {
+                docChildren.push(new Paragraph({ spacing: { before: 200, after: 200 }, border: {
+                  bottom: { style: BorderStyle.SINGLE, size: 1, color: 'CCCCCC' }
+                }, children: [] }));
+              }
+              // Klassen-basiert
+              else if (cls.includes('akt-titel')) {
+                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 600, after: 300 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 42, bold: true, allCaps: true })
+                ]}));
+              } else if (cls.includes('szenen-titel')) {
+                docChildren.push(new Paragraph({ spacing: { before: 400, after: 100 }, children: [
+                  new TextRun({ text: txt, font: 'Arial', size: 28, bold: true, underline: {} })
+                ]}));
+              } else if (cls.includes('dialog')) {
+                const figur = node.querySelector('.figur');
+                const text = node.querySelector('.text');
+                if (figur) {
+                  docChildren.push(new Paragraph({ spacing: { before: 120 }, children: [
+                    new TextRun({ text: figur.textContent.trim(), font: 'Courier New', size: 24, bold: true })
+                  ]}));
+                }
+                if (text) {
+                  docChildren.push(new Paragraph({ indent: { left: 1134 }, children: [
+                    new TextRun({ text: text.textContent.trim(), font: 'Courier New', size: 24 })
+                  ]}));
+                }
+                if (!figur && !text) {
+                  docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
+                }
+              } else if (cls.includes('regie')) {
+                docChildren.push(new Paragraph({ indent: { left: 2268 }, spacing: { before: 60, after: 60 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true })
+                ]}));
+              } else if (cls.includes('lied')) {
+                const figur = node.querySelector('.figur');
+                const text = node.querySelector('.text');
+                docChildren.push(new Paragraph({ indent: { left: 1134 }, spacing: { before: 60 }, children: [
+                  new TextRun({ text: figur ? figur.textContent.trim() + '\t' : '', font: 'Courier New', size: 24, bold: true }),
+                  new TextRun({ text: text ? text.textContent.trim() : txt, font: 'Courier New', size: 24, italics: true })
+                ]}));
+              } else if (cls.includes('musik') || cls.includes('sound')) {
+                docChildren.push(new Paragraph({ indent: { left: 1700 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true, color: cls.includes('musik') ? '7c3aed' : '059669' })
+                ]}));
+              } else if (cls.includes('autor') || cls.includes('untertitel') || cls.includes('fassung')) {
+                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: cls.includes('autor') ? 400 : 100 }, children: [
+                  new TextRun({ text: txt, font: cls.includes('fassung') ? 'Courier New' : 'Arial',
+                    size: cls.includes('autor') ? 34 : cls.includes('untertitel') ? 28 : 20,
+                    italics: cls.includes('fassung') })
+                ]}));
+              } else if (cls.includes('praemisse')) {
+                docChildren.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 300, after: 300 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 24, bold: true })
+                ]}));
+              } else if (cls.includes('copyright')) {
+                docChildren.push(new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { before: 600 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 20 })
+                ]}));
+              } else if (cls.includes('figur-eintrag') || cls.includes('figur-name')) {
+                docChildren.push(new Paragraph({ spacing: { after: 60 }, children: [
+                  new TextRun({ text: txt, font: 'Courier New', size: 24, bold: cls.includes('figur-name') })
+                ]}));
+              }
+              // Standard-Tags
+              else if (tag === 'p' || tag === 'div') {
+                if (node.children.length > 0 && !txt.includes('\n')) {
+                  walkNodes(node);
+                } else {
+                  docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
+                }
+              } else if (tag === 'strong' || tag === 'b') {
+                docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24, bold: true })] }));
+              } else if (tag === 'em' || tag === 'i') {
+                docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24, italics: true })] }));
+              } else if (tag === 'ul' || tag === 'ol') {
+                node.querySelectorAll('li').forEach(li => {
+                  docChildren.push(new Paragraph({ indent: { left: 567 }, children: [
+                    new TextRun({ text: '• ' + li.textContent.trim(), font: 'Courier New', size: 24 })
+                  ]}));
+                });
+              } else if (tag === 'br') {
+                docChildren.push(new Paragraph({ children: [] }));
+              } else {
+                // Fallback: rekursiv oder Text
+                if (node.children.length > 0) walkNodes(node);
+                else if (txt) docChildren.push(new Paragraph({ children: [new TextRun({ text: txt, font: 'Courier New', size: 24 })] }));
+              }
+            });
+          };
+          walkNodes(htmlDoc.body.firstChild);
+
+          if (docChildren.length === 0) {
+            docChildren.push(new Paragraph({ children: [new TextRun({ text: '(Kein Inhalt)', font: 'Courier New', size: 24 })] }));
+          }
+
+          const docxDoc = new DocxDoc({
+            sections: [{ properties: {
+              page: { margin: { top: 1440, right: 1440, bottom: 1728, left: 1440 } }
+            }, children: docChildren }]
+          });
+          const blob = await Packer.toBlob(docxDoc);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${filename}.docx`;
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          console.error('DOCX-Export fehlgeschlagen:', err);
+          alert('DOCX-Export fehlgeschlagen: ' + err.message);
+        }
         break;
     }
   };
@@ -36935,7 +37019,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                   >
                     <span className="format-icon">📝</span>
                     <div className="format-info">
-                      <span className="format-title">Word (.doc)</span>
+                      <span className="format-title">Word (.docx)</span>
                       <span className="format-desc">Bearbeitbar, für Stiftungen</span>
                     </div>
                   </button>
