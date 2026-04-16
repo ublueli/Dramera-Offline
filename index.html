@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="app-build" content="dramera-2026-04-16T5">
+  <meta name="app-build" content="dramera-2026-04-16T6">
   <title>N!NA Dramera v2.2 Stand-alone – Werkbank für Dramaturg:innen (NINA-Exchange v3.0)</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100' height='100' fill='%231e3a5f' rx='12'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-family='Arial Black' font-size='40' font-weight='bold' fill='white'%3EN!%3C/text%3E%3C/svg%3E">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -18606,16 +18606,47 @@ Antworte mit KONKRETEN VORSCHLÄGEN:
     }
     
     else if (type === 'struktur') {
-      // Szenen mit Inhalt, Figuren, Spannungswert sammeln
+      // Vollständigen Dialogtext pro Szene extrahieren (HTML → lesbarer Text)
+      const htmlToReadableText = (html) => {
+        if (!html) return '';
+        return html
+          // Figurennamen hervorheben
+          .replace(/<[^>]*class="[^"]*figur[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '\n$1: ')
+          .replace(/<[^>]*class="[^"]*figur-name[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '\n$1: ')
+          // Regieanweisungen in Klammern
+          .replace(/<[^>]*class="[^"]*regie[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '($1) ')
+          // Absätze/Divs als Zeilenumbrüche
+          .replace(/<\/?(p|div|br)[^>]*>/gi, '\n')
+          // Restliche Tags entfernen
+          .replace(/<[^>]+>/g, '')
+          // HTML-Entities
+          .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          // Mehrfache Leerzeilen komprimieren
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      };
+
+      // Szenen mit VOLLSTÄNDIGEM Dialogtext, Figuren, Spannungswert sammeln
       const szenenDetails = data.felder?.map((f, i) => {
         const figuren = (f.figuren || [])
           .map(fid => data.figuren?.find(fig => fig.id === fid)?.name)
           .filter(Boolean);
         const spW = f.spannungswert !== undefined ? ` [Spannung: ${f.spannungswert}/10]` : '';
         const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
-        const inhaltPreview = (f.inhalt || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
-        return `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${f.zusammenfassung || '(keine)'}\n   Inhalt (Auszug): ${inhaltPreview || '(leer)'}`;
+        const dialogText = htmlToReadableText(f.inhalt);
+        const zusammenfassung = f.zusammenfassung || '(keine)';
+        let szeneBlock = `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${zusammenfassung}`;
+        if (dialogText) {
+          szeneBlock += `\n\n   --- SZENENTEXT ---\n${dialogText}\n   --- ENDE SZENE ${i+1} ---`;
+        } else {
+          szeneBlock += `\n   (Kein Dialogtext vorhanden)`;
+        }
+        return szeneBlock;
       }).join('\n\n') || 'Keine Szenen vorhanden';
+
+      // Gesamtlänge prüfen — bei sehr langen Stücken warnen
+      const totalChars = szenenDetails.length;
+      const tooLong = totalChars > 80000; // ~20K Tokens
 
       // Figurenliste mit Beziehungen
       const figurenInfo = data.figuren?.map(f => {
@@ -18636,7 +18667,28 @@ Antworte mit KONKRETEN VORSCHLÄGEN:
       // Alle verfügbaren Modelle auflisten
       const verfuegbareModelle = Object.entries(raster).map(([key, r]) => `- ${key}: ${r.name}`).join('\n');
 
-      prompt = `Du bist ein erfahrener Dramaturg und Theatermensch. Lies das folgende Stück sorgfältig und analysiere seine TATSÄCHLICHE Dramaturgie — unabhängig von jedem theoretischen Modell.
+      // Bei sehr langen Stücken: gekürzte Version mit Warnung
+      let szenenBlock = szenenDetails;
+      if (tooLong) {
+        // Gekürzte Version: max 1500 Zeichen Dialogtext pro Szene
+        szenenBlock = data.felder?.map((f, i) => {
+          const figuren = (f.figuren || [])
+            .map(fid => data.figuren?.find(fig => fig.id === fid)?.name)
+            .filter(Boolean);
+          const spW = f.spannungswert !== undefined ? ` [Spannung: ${f.spannungswert}/10]` : '';
+          const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
+          let dialogText = htmlToReadableText(f.inhalt);
+          if (dialogText.length > 1500) dialogText = dialogText.slice(0, 1500) + '\n[... gekürzt, Szene hat ' + dialogText.length + ' Zeichen insgesamt]';
+          const zusammenfassung = f.zusammenfassung || '(keine)';
+          let szeneBlock = `${i+1}. "${f.titel}"${figurenStr}${spW}\n   Ort: ${f.ort || '(kein Ort)'}\n   Zusammenfassung: ${zusammenfassung}`;
+          if (dialogText) {
+            szeneBlock += `\n\n   --- SZENENTEXT ---\n${dialogText}\n   --- ENDE SZENE ${i+1} ---`;
+          }
+          return szeneBlock;
+        }).join('\n\n') || 'Keine Szenen vorhanden';
+      }
+
+      prompt = `Du bist ein erfahrener Dramaturg und Theatermensch. Lies das folgende Stück MIT ALLEN DIALOGEN sorgfältig und analysiere seine TATSÄCHLICHE Dramaturgie — unabhängig von jedem theoretischen Modell.
 
 ${projektKontext}
 
@@ -18647,13 +18699,14 @@ THEMEN:
 ${themenInfo}
 
 ANZAHL SZENEN: ${data.felder?.length || 0}
+${tooLong ? '\n(HINWEIS: Das Stück ist sehr lang. Die Dialoge wurden pro Szene auf max. 1500 Zeichen gekürzt. Trotzdem: Analysiere den Text so gut wie möglich.)\n' : ''}
 
-VOLLSTÄNDIGE SZENEN-ÜBERSICHT:
-${szenenDetails}
+VOLLSTÄNDIGES STÜCK MIT DIALOGEN:
+${szenenBlock}
 
 ---
 
-DEINE AUFGABE: Analysiere die Dramaturgie dieses Stücks so, wie ein erfahrener Dramaturg bei einer Stückentwicklung Feedback geben würde. Vergiss alle Modelle — lies das Stück und urteile mit deiner Erfahrung.
+DEINE AUFGABE: Du hast oben den VOLLSTÄNDIGEN DIALOGTEXT jeder Szene erhalten. Lies ihn sorgfältig. Analysiere die Dramaturgie dieses Stücks so, wie ein erfahrener Dramaturg bei einer Stückentwicklung Feedback geben würde. Vergiss alle Modelle — lies das Stück und urteile mit deiner Erfahrung.
 
 Strukturiere deine Antwort so:
 
@@ -18661,15 +18714,15 @@ Strukturiere deine Antwort so:
    Fasse in 2-3 Sätzen zusammen, was die zentrale Geschichte/das zentrale Thema ist — so wie du es als Zuschauer verstehen würdest.
 
 2. ✅ **Was funktioniert dramaturgisch?**
-   Konkrete Stärken: Welche Szenen tragen? Wo entsteht Spannung? Wo gibt es gelungene Wendepunkte, Überraschungen, emotionale Momente? Wo funktioniert der Rhythmus?
+   Konkrete Stärken benennen — mit Bezug auf die DIALOGE: Welche Szenen tragen? Wo entsteht Spannung durch das Gesagte? Wo gibt es gelungene Wendepunkte, Überraschungen, emotionale Momente? Wo funktioniert der Rhythmus? Zitiere wenn möglich kurz aus dem Text.
 
 3. ⚠️ **Was funktioniert (noch) nicht?**
-   Konkrete Schwächen: Wo hängt es durch? Wo fehlt ein Wendepunkt? Wo ist der Konflikt unklar? Wo gehen Figuren verloren? Wo wiederholt sich etwas? Wo stimmt das Tempo nicht?
-   Sei ehrlich und konkret — sag nicht "es könnte besser sein", sondern "Szene 5 bremst, weil..."
+   Konkrete Schwächen benennen — mit Bezug auf die DIALOGE: Wo hängt es durch? Wo fehlt ein Wendepunkt? Wo ist der Konflikt unklar? Wo gehen Figuren verloren? Wo wiederholt sich etwas? Wo stimmt das Tempo nicht? Wo sind Dialoge zu lang, zu erklärend, zu gleichförmig?
+   Sei ehrlich und konkret — sag nicht "es könnte besser sein", sondern "In Szene 5 sagt X '...', das bremst, weil..."
 
 4. 💡 **Konkrete Empfehlungen**
    Was würdest du dem Autor raten? Maximal 3-5 konkrete, umsetzbare Vorschläge.
-   Z.B.: "Szene 3 und 4 zusammenlegen", "Zwischen Szene 7 und 8 fehlt ein Moment wo X begreift dass...", "Der Schluss kommt zu abrupt — es fehlt eine Szene die..."
+   Z.B.: "Szene 3 und 4 zusammenlegen", "Der Dialog in Szene 7 dreht sich im Kreis — kürze ihn auf die Hälfte", "Zwischen Szene 7 und 8 fehlt ein Moment wo X begreift dass...", "Der Schluss kommt zu abrupt"
 
 5. 📐 **Modell-Empfehlung** (optional)
    Das Stück muss nicht in ein Modell passen. Aber wenn es einem nahekommt, sage welchem — und warum das nützlich sein könnte (oder auch nicht).
@@ -18683,9 +18736,11 @@ ${verfuegbareModelle}
    - "Das Stück versucht sich an einer X-Struktur, bricht sie aber bei Y — entscheide dich: entweder konsequent X oder bewusst dagegen"
 
 WICHTIG:
+- Du hast die VOLLSTÄNDIGEN DIALOGE erhalten — nutze sie! Beziehe dich konkret auf den Text, zitiere Stellen
 - Analysiere das TATSÄCHLICHE Stück, nicht ein theoretisches Ideal
 - Kein Modell aufzwingen — die Dramaturgie muss aus der Geschichte kommen
 - Denke in Figuren, Konflikten, Wendepunkten, Rhythmus — nicht in Prozentzahlen
+- Beurteile auch die DIALOG-QUALITÄT: Sprechen die Figuren unterscheidbar? Gibt es Subtext? Sind die Dialoge bühnentauglich?
 - Sei ein kollegialer Sparringspartner, kein Schulmeister
 - Wenn das Stück noch am Anfang steht (wenige/leere Szenen), sag das ehrlich und gib Hinweise für die weitere Entwicklung
 
