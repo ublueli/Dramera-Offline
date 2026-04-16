@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="app-build" content="dramera-2026-04-16T4">
+  <meta name="app-build" content="dramera-2026-04-16T5">
   <title>N!NA Dramera v2.2 Stand-alone – Werkbank für Dramaturg:innen (NINA-Exchange v3.0)</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100' height='100' fill='%231e3a5f' rx='12'/%3E%3Ctext x='50' y='65' text-anchor='middle' font-family='Arial Black' font-size='40' font-weight='bold' fill='white'%3EN!%3C/text%3E%3C/svg%3E">
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -16358,6 +16358,69 @@ const isLocalStorageAvailable = () => {
   }
 };
 
+// Speicherplatz-Info
+function getStorageUsage() {
+  var total = 0;
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    total += k.length + (localStorage.getItem(k) || '').length;
+  }
+  return total * 2; // UTF-16 = 2 bytes per char
+}
+function getStorageUsageMB() { return (getStorageUsage() / (1024 * 1024)).toFixed(1); }
+
+// Verwaiste/überflüssige Daten aufräumen
+function cleanupDrameraStorage() {
+  var removed = 0;
+  // Twin-Bridge Daten aufräumen (können sehr gross sein)
+  try {
+    var bridge = localStorage.getItem('nina-twin-bridge');
+    if (bridge && bridge.length > 1000) {
+      localStorage.removeItem('nina-twin-bridge');
+      removed++;
+    }
+  } catch(e) {}
+  // Versionshistorie kürzen (max 10 statt 20, jeder Snapshot ist gross)
+  try {
+    var vh = localStorage.getItem('nina_version_history');
+    if (vh && vh.length > 500000) { // >500KB
+      var parsed = JSON.parse(vh);
+      if (parsed.length > 5) {
+        var trimmed = parsed.slice(-5);
+        localStorage.setItem('nina_version_history', JSON.stringify(trimmed));
+        removed += parsed.length - 5;
+      }
+    }
+  } catch(e) {}
+  if (removed > 0) console.log('🧹 Storage Cleanup: ' + removed + ' Einträge bereinigt, jetzt ' + getStorageUsageMB() + ' MB');
+  return removed;
+}
+
+// Safe localStorage write mit Auto-Cleanup bei QuotaExceededError
+function safeSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch(e) {
+    if (e.name === 'QuotaExceededError') {
+      console.warn('⚠️ localStorage voll! Versuche Cleanup...');
+      cleanupDrameraStorage();
+      try {
+        localStorage.setItem(key, value);
+        return true;
+      } catch(e2) {
+        console.error('⚠️ localStorage immer noch voll! Key:', key, 'Grösse:', value.length);
+        return false;
+      }
+    }
+    console.error('localStorage Fehler:', e);
+    return false;
+  }
+}
+
+// Cleanup beim Start
+cleanupDrameraStorage();
+
 const HAS_LOCAL_STORAGE = isLocalStorageAvailable();
 
 // Default-Daten für neues Projekt
@@ -17446,14 +17509,18 @@ function DrameraWerkbank() {
           werkzeugSidebarWidth,
           bearbeitenSidebarWidth
         };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+        if (!safeSetItem(STORAGE_KEY, JSON.stringify(saveData))) {
+          console.error('Auto-Save fehlgeschlagen: localStorage voll');
+          setSaveStatus('error');
+          return;
+        }
 
         // === VERSIONSHISTORIE: Snapshot speichern ===
         try {
           const snapshot = { timestamp: new Date().toISOString(), source: 'browser', data: JSON.parse(JSON.stringify(data)) };
           setVersionHistory(prev => {
-            const updated = [...prev, snapshot].slice(-20);
-            localStorage.setItem('nina_version_history', JSON.stringify(updated));
+            const updated = [...prev, snapshot].slice(-10); // Max 10 (nicht 20) — spart Platz
+            try { safeSetItem('nina_version_history', JSON.stringify(updated)); } catch(e) {}
             return updated;
           });
         } catch (vhErr) {
@@ -17462,7 +17529,7 @@ function DrameraWerkbank() {
 
         setSaveStatus('saved');
         setHasUnsavedChanges(false);
-        console.log('Auto-Save: Projekt gespeichert');
+        console.log('Auto-Save: Projekt gespeichert (' + getStorageUsageMB() + ' MB)');
       } catch (e) {
         console.error('Auto-Save fehlgeschlagen:', e);
         setSaveStatus('error');
@@ -20571,13 +20638,16 @@ WICHTIGE REGELN:
         werkzeugSidebarWidth,
         bearbeitenSidebarWidth
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+      if (!safeSetItem(STORAGE_KEY, JSON.stringify(saveData))) {
+        alert('⚠️ Speicher voll! Bitte Backup exportieren und Browser-Daten bereinigen.');
+        return;
+      }
       setSaveStatus('saved');
       setHasUnsavedChanges(false);
     } catch (e) {
       console.error('Lokales Speichern fehlgeschlagen:', e);
     }
-    
+
     alert('💾 Gespeichert!');
   };
 
@@ -21573,6 +21643,9 @@ WICHTIGE REGELN:
         `(Bestehende Felder werden NICHT überschrieben)`
       );
 
+      // Bridge-Daten IMMER bereinigen (auch bei Ablehnung — sie sind riesig)
+      localStorage.removeItem(TWIN_BRIDGE_KEY);
+
       if (accept) {
         // Direkt die Import-Logik aufrufen (nicht über File-Input simulieren)
         processNinaExchangeData(incoming);
@@ -21581,9 +21654,6 @@ WICHTIGE REGELN:
         localStorage.setItem(TWIN_SYNC_KEY, new Date().toISOString());
         localStorage.setItem(TWIN_DIR_KEY, 'rebu-to-dramera');
         setTwinSyncStatus({ lastSync: new Date().toISOString(), direction: 'rebu-to-dramera' });
-
-        // Bridge-Daten bereinigen
-        localStorage.removeItem(TWIN_BRIDGE_KEY);
       }
     }
   }, []);
@@ -34166,7 +34236,13 @@ STIL:
                 <span style={{color: '#999'}}>Nur im Browser{fileIsDirty ? ' \u25cf Nicht gesichert' : ''}</span>
               )}
             </span>
-            {/* Projektstatus-Indikator */}
+            {/* Speicherplatz-Warnung */}
+            {(() => {
+              const mb = parseFloat(getStorageUsageMB());
+              if (mb > 4.0) return <span style={{fontSize:'10px',color:'#dc2626',marginLeft:'8px'}} title="localStorage fast voll! Bitte Backup exportieren.">{'\ud83d\udcbe'} {mb}/5 MB</span>;
+              if (mb > 3.0) return <span style={{fontSize:'10px',color:'#e8a838',marginLeft:'8px'}} title="localStorage-Verbrauch">{'\ud83d\udcbe'} {mb} MB</span>;
+              return null;
+            })()}
           </div>
           <div className="header-right">
             <div className="phase-tabs">
