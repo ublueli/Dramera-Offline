@@ -699,6 +699,27 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
     }
   };
   
+  // Formatvorlage auf aktuellen Absatz anwenden (Ordnen-Modus)
+  const applyFormatToCurrentLine = (fmtClass) => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !editorRef.current) return;
+    let node = sel.anchorNode;
+    while (node && node.parentNode !== editorRef.current) node = node.parentNode;
+    if (!node || node === editorRef.current) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      const wrapper = document.createElement('div');
+      node.parentNode.replaceChild(wrapper, node);
+      wrapper.appendChild(node);
+      node = wrapper;
+    }
+    const oldClasses = Array.from(node.classList || []).filter(c => c.startsWith('fmt-'));
+    oldClasses.forEach(c => node.classList.remove(c));
+    node.classList.add(fmtClass);
+    saveToHistory();
+    handleSave();
+    onFormatChange(fmtClass);
+  };
+
   const handleKeyDown = (e) => {
     // Undo: Cmd+Z (Mac) oder Ctrl+Z (Windows)
     if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
@@ -706,26 +727,50 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
       undo();
       return;
     }
-    
+
     // Redo: Cmd+Shift+Z (Mac) oder Ctrl+Y (Windows)
     if ((e.metaKey || e.ctrlKey) && ((e.key === 'z' && e.shiftKey) || e.key === 'y')) {
       e.preventDefault();
       redo();
       return;
     }
-    
+
+    // Formatvorlagen-Kürzel: Ctrl/Cmd+Shift+Buchstabe
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
+      const fmtMap = {
+        'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
+        't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
+        'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
+      };
+      const key = e.key.toLowerCase();
+      if (key in fmtMap) {
+        e.preventDefault();
+        if (fmtMap[key] === null) {
+          // N = Normal: alle fmt-Klassen entfernen
+          const sel = window.getSelection();
+          if (sel && sel.rangeCount > 0) {
+            let node = sel.anchorNode;
+            while (node && node.parentNode !== editorRef.current) node = node.parentNode;
+            if (node && node.classList) {
+              Array.from(node.classList).filter(c => c.startsWith('fmt-')).forEach(c => node.classList.remove(c));
+              saveToHistory(); handleSave(); onFormatChange(null);
+            }
+          }
+        } else {
+          applyFormatToCurrentLine(fmtMap[key]);
+        }
+        return;
+      }
+    }
+
     // Placeholder entfernen
     if (editorRef.current && editorRef.current.querySelector('.placeholder')) {
       editorRef.current.innerHTML = '';
     }
-    
-    // Enter-Taste: Standard-Verhalten (Browser macht neuen Absatz)
-    // Wir überschreiben es NICHT mehr, damit es wie in Pages/Word funktioniert
+
+    // Enter-Taste
     if (e.key === 'Enter' && !e.shiftKey) {
-      // History speichern vor Änderung
       saveToHistory();
-      // Standard-Verhalten erlauben - Browser erstellt neuen <div>
-      // Nach kurzer Verzögerung Format-Anzeige aktualisieren
       setTimeout(() => {
         onFormatChange(null);
         saveToHistory();
@@ -16733,15 +16778,15 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           </div>
         </div>
 
-        {/* Format-Shortcuts Overlay */}
-        <div className="schreibtisch-format-overlay">
-          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).slice(0, 8).map(([key, v]) => (
-            <span key={key}
-              className={`schreibtisch-format-tag ${currentFormat === key ? 'active' : ''}`}
-              onClick={() => applyFormat(key)}
-              title={`${v.name} (Ctrl+Shift+${v.shortcut})`}>
-              <strong>{v.shortcut}</strong> {v.name}
-            </span>
+        {/* Format-Shortcuts Box — fixed unten rechts */}
+        <div className="format-shortcut-box">
+          <div className="fbox-title">Ctrl+Shift+…</div>
+          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).filter(([,v]) => v.shortcut).map(([key, v]) => (
+            <div key={key}
+              className={`format-shortcut-item ${currentFormat === key ? 'active' : ''}`}
+              onClick={() => applyFormat(key)}>
+              <span className="fbox-key">{v.shortcut}</span>{v.name}
+            </div>
           ))}
         </div>
 
@@ -29695,15 +29740,14 @@ STIL:
           min-height: 3cm;
           padding: 0.3cm;
           outline: none;
-          font-family: 'Courier New', Courier, monospace;
-          font-size: 12pt;
-          line-height: 1.3;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 11pt;
+          line-height: 1.1;
           border: 1px solid transparent;
           border-radius: 0.25rem;
           transition: border-color 0.2s;
-          text-decoration: none;
+          color: #212121;
         }
-        .szene-editor * { text-decoration: inherit; }
         .szene-editor mark { background: none; color: inherit; }
         .szene-editor:focus {
           border-color: #c9a96e;
@@ -29716,174 +29760,174 @@ STIL:
         .szene-editor > div {
           margin-bottom: 0;
         }
-        
-        /* Formatvorlagen im Editor */
+
+        /* ================================================
+           Formatvorlagen Ordnen — Pages "Die Vollmacht"
+           (identisch mit Schreibtisch)
+           ================================================ */
         .szene-editor .fmt-akt-titel {
-          font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
-          font-size: 18pt !important;
-          font-weight: 600;
-          margin: 24pt 0 12pt 0;
-          color: #1a1a1a !important;
-          text-decoration: none;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 18pt;
+          font-weight: bold;
+          text-align: center;
+          text-transform: uppercase;
+          letter-spacing: 0.2em;
+          margin: 2.5rem 0 1rem;
+          padding: 0.8rem 0;
+          border-top: 2px solid #374151;
+          border-bottom: 2px solid #374151;
+          color: #212121;
         }
         .szene-editor .fmt-akt-titel:first-child { margin-top: 0; }
-        
+
         .szene-editor .fmt-szenen-titel {
-          font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
-          font-size: 14pt !important;
-          font-weight: 500;
-          margin: 12pt 0 6pt 0;
-          color: #1a1a1a !important;
-          text-decoration: underline;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 12pt;
+          font-weight: bold;
+          text-align: center;
+          margin: 2rem 0 1rem 0;
+          color: #212121;
         }
-        
-        .szene-editor .fmt-vers {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
-          margin-left: 3cm;
-          margin-top: 6pt;
-          margin-bottom: 6pt;
-          line-height: 1.3 !important;
-          color: #1a1a1a !important;
-          text-decoration: none !important;
+
+        .szene-editor .fmt-figurenname {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 10pt;
+          font-weight: bold;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          color: #212121;
+          margin: 5pt 0 1pt 0;
+          padding: 0;
         }
-        .szene-editor .fmt-vers * { text-decoration: none !important; }
-        
-        .szene-editor .fmt-regie {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
-          font-style: italic !important;
-          margin-left: 6cm;
-          margin-top: 0;
-          margin-bottom: 10pt;
-          line-height: 1.3 !important;
-          color: #1a1a1a !important;
-          text-decoration: none;
-        }
-        
-        /* Dialog: Flexbox Layout - Figurenname in fester Spalte, Text daneben */
-        /* Dialog: FIGURENNAME oben fett, Text darunter eingerückt (wie Rebu) */
+
         .szene-editor .fmt-dialog {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 11pt;
+          font-weight: normal;
           display: block;
-          margin-top: 0.6rem;
-          margin-bottom: 0.2rem;
-          line-height: 1.5 !important;
-          color: #1a1a1a !important;
-          text-decoration: none;
+          line-height: 1.1;
+          margin: 0 0 6pt 0.5cm;
+          color: #212121;
         }
+        .szene-editor .fmt-figurenname + .fmt-dialog { margin-top: 0; }
+        .szene-editor .fmt-dialog + .fmt-dialog { margin-top: 0; }
+        .szene-editor .fmt-dialog + .fmt-figurenname { margin-top: 5pt; }
         .szene-editor .fmt-dialog .figur {
           display: block;
           font-weight: bold;
-          white-space: nowrap;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 10.5pt !important;
-          margin-bottom: 0.1rem;
+          letter-spacing: 0.03em;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 10pt;
+          margin: 5pt 0 1pt -0.5cm;
         }
         .szene-editor .fmt-dialog .text {
           display: block;
           font-weight: normal;
-          margin-left: 0.5cm;
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 11pt;
         }
-        .szene-editor .fmt-figurenname {
-          font-family: 'Courier New', Courier, monospace;
-          font-size: 12pt;
-          margin-top: 12pt;
-          margin-bottom: 0;
-          margin-left: 0;
-          text-indent: 0;
-          line-height: 1.5;
-          color: #1a1a1a;
-          font-weight: normal;
+
+        .szene-editor .fmt-regie {
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 10pt;
+          font-style: italic;
+          color: #414141;
+          margin: 3pt 0 7pt 4cm;
+          padding: 0;
         }
+
         .szene-editor .inline-regie,
         .szene-editor em.inline-regie {
+          font-family: Georgia, 'Times New Roman', serif !important;
+          font-style: italic !important;
+          color: #414141 !important;
+          font-size: 10pt !important;
+        }
+
+        .szene-editor .fmt-vers {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-style: italic;
-          color: #6b7280;
+          font-size: 11pt;
+          margin: 0 0 3pt 0.5cm;
+          color: #212121;
+          white-space: pre-wrap;
+          line-height: 1.3;
+        }
+
+        .szene-editor .fmt-lied {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-style: italic;
+          font-size: 11pt;
+          margin: 0 0 3pt 0.5cm;
+          color: #212121;
+          line-height: 1.3;
         }
         
-        /* Lied: Flexbox wie Dialog, mit Rahmen und Hintergrund */
-        /* Lied: kursiv, eingerückt (wie Rebu) */
-        .szene-editor .fmt-lied {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
-          display: block;
-          margin-top: 0;
-          margin-bottom: 2pt;
-          margin-left: 2cm;
-          line-height: 1.3 !important;
-          font-style: italic !important;
-          color: #1a1a1a !important;
-          text-decoration: none;
-        }
         .szene-editor .fmt-lied .figur {
           display: inline;
           font-weight: bold;
           font-style: normal;
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
         }
         .szene-editor .fmt-lied .text {
           display: inline;
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
         }
-        
-        /* Musik-Einsatz */
+
         .szene-editor .fmt-musik {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
-          margin-left: 4cm;
-          margin-top: 6pt;
-          margin-bottom: 6pt;
-          padding: 6pt 10pt;
-          line-height: 1.3 !important;
-          color: #7c3aed !important;
-          font-style: italic !important;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 10pt;
+          font-style: italic;
+          margin: 3pt 0 7pt 4cm;
+          padding: 4pt 8pt;
+          line-height: 1.4;
+          color: #7c3aed;
           border-left: 3px solid #7c3aed;
           background: #f5f3ff;
         }
-        
-        /* Sound-Effekt */
+
         .szene-editor .fmt-sound {
-          font-family: 'Courier New', Courier, monospace !important;
-          font-size: 12pt !important;
-          margin-left: 4cm;
-          margin-top: 6pt;
-          margin-bottom: 6pt;
-          padding: 6pt 10pt;
-          line-height: 1.3 !important;
-          color: #059669 !important;
-          font-style: italic !important;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: 10pt;
+          font-style: italic;
+          margin: 3pt 0 7pt 4cm;
+          padding: 4pt 8pt;
+          line-height: 1.4;
+          color: #059669;
           border-left: 3px solid #059669;
           background: #ecfdf5;
         }
-        
+
         .szene-editor .fmt-nebentext {
-          font-family: 'Courier New', Courier, monospace;
-          font-size: 11pt;
-          font-style: italic;
-          margin-top: 6pt;
-          margin-bottom: 6pt;
-          line-height: 1.4;
-          color: #555;
-        }
-        
-        .szene-editor .fmt-notiz {
-          font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+          font-family: Georgia, 'Times New Roman', serif;
           font-size: 10pt;
           font-style: italic;
-          color: #888;
-          background: #fffde7;
-          padding: 8pt 12pt;
-          border-left: 3px solid #ffd600;
-          margin: 12pt 0;
+          margin: 3pt 0 6pt 0;
+          line-height: 1.4;
+          color: #6b7280;
+        }
+
+        .szene-editor .fmt-notiz {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          font-size: 10pt;
+          font-style: italic;
+          color: #92400e;
+          background: #fef3c7;
+          padding: 6pt 10pt;
+          border-left: 3px solid #fbbf24;
+          margin: 6pt 0;
           border-radius: 0 4px 4px 0;
+        }
+
+        .szene-editor .fmt-pause {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 12pt;
+          font-weight: bold;
+          text-align: center;
+          text-transform: uppercase;
+          letter-spacing: 0.3em;
+          margin: 2rem 0;
+          padding: 0.5rem 0;
+          color: #888888;
         }
         
         /* Bearbeiten Sidebar */
@@ -33117,40 +33161,56 @@ STIL:
           display: none !important;
         }
 
-        /* Format-Shortcuts Overlay */
-        .schreibtisch-format-overlay {
-          display: flex;
-          gap: 4px;
-          padding: 4px 12px;
-          background: #f8f7f4;
-          border-bottom: 1px solid #e8e4df;
-          flex-wrap: wrap;
-          position: sticky;
-          top: 41px;
-          z-index: 10;
-        }
-        .schreibtisch-format-tag {
+        /* Format-Shortcuts Box — fixed unten rechts (beide Modi) */
+        .format-shortcut-box {
+          position: fixed;
+          bottom: 16px;
+          right: 16px;
+          z-index: 1000;
+          background: rgba(30, 30, 30, 0.92);
+          color: #d1d5db;
+          border-radius: 8px;
+          padding: 8px 12px;
           font-size: 11px;
-          color: #6b7280;
-          padding: 2px 8px;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          pointer-events: auto;
+          user-select: none;
+        }
+        .format-shortcut-box .fbox-title {
+          font-size: 9px;
+          text-transform: uppercase;
+          letter-spacing: 0.1em;
+          color: #9ca3af;
+          margin-bottom: 2px;
+        }
+        .format-shortcut-item {
+          padding: 2px 6px;
           border-radius: 3px;
           cursor: pointer;
-          transition: all 0.15s ease;
+          transition: background 0.15s ease;
           white-space: nowrap;
         }
-        .schreibtisch-format-tag:hover {
-          background: #e5e7eb;
+        .format-shortcut-item:hover {
+          background: rgba(255,255,255,0.1);
         }
-        .schreibtisch-format-tag.active {
+        .format-shortcut-item.active {
           background: #1e40af;
           color: white;
         }
-        .schreibtisch-format-tag.active strong {
+        .format-shortcut-item.active .fbox-key {
           color: #93c5fd;
         }
-        .schreibtisch-format-tag strong {
-          color: #3b82f6;
-          margin-right: 2px;
+        .format-shortcut-item .fbox-key {
+          color: #60a5fa;
+          font-weight: 700;
+          margin-right: 4px;
+          display: inline-block;
+          width: 12px;
+          text-align: center;
         }
 
         /* Szenentitel im Schreibtisch-Header (editierbar) */
@@ -34779,6 +34839,46 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* Format-Shortcuts Box — fixed unten rechts (Ordnen-Modus) */}
+                <div className="format-shortcut-box">
+                  <div className="fbox-title">Ctrl+Shift+…</div>
+                  {[
+                    ['F', 'Figurenname', 'fmt-figurenname'],
+                    ['D', 'Dialog', 'fmt-dialog'],
+                    ['R', 'Regieanweisung', 'fmt-regie'],
+                    ['T', 'Szenen-Titel', 'fmt-szenen-titel'],
+                    ['A', 'Akt-Titel', 'fmt-akt-titel'],
+                    ['L', 'Lied', 'fmt-lied'],
+                    ['V', 'Vers', 'fmt-vers'],
+                    ['P', 'Pause', 'fmt-pause'],
+                    ['N', 'Normal', null],
+                  ].map(([key, name, fmt]) => (
+                    <div key={key}
+                      className={`format-shortcut-item ${currentFormat === fmt ? 'active' : ''}`}
+                      onClick={() => {
+                        if (fmt) {
+                          applyFormat(fmt);
+                        } else {
+                          // Normal: Format entfernen
+                          const sel = window.getSelection();
+                          if (sel && sel.rangeCount > 0) {
+                            let node = sel.anchorNode;
+                            while (node && !node.classList?.contains('szene-editor')) {
+                              if (node.parentNode?.classList?.contains('szene-editor')) break;
+                              node = node.parentNode;
+                            }
+                            if (node && node.classList) {
+                              Array.from(node.classList).filter(c => c.startsWith('fmt-')).forEach(c => node.classList.remove(c));
+                            }
+                          }
+                          setCurrentFormat(null);
+                        }
+                      }}>
+                      <span className="fbox-key">{key}</span>{name}
+                    </div>
+                  ))}
                 </div>
               </div>
 
