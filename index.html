@@ -22675,7 +22675,7 @@ WICHTIGE REGELN:
             if (!window.docx) throw new Error('docx-Library konnte nicht geladen werden.');
           }
           const { Document: DocxDoc, Packer, Paragraph, TextRun, AlignmentType, PageBreak,
-                  BorderStyle } = window.docx;
+                  BorderStyle, LineRuleType } = window.docx;
           const dc = []; // docChildren
 
           // Hilfsfunktionen für THEATER_FORMATE → DOCX
@@ -22712,7 +22712,7 @@ WICHTIGE REGELN:
             return new Paragraph({
               alignment: alignMap[fmt.align] || AlignmentType.LEFT,
               indent: fmt.indent ? { left: Math.round(fmt.indent * 567) } : undefined,
-              spacing: { before: collapsedBefore * 20, after: curAfterPt * 20, line: fmt.lineHeight ? Math.round(fmt.lineHeight * 240) : undefined },
+              spacing: { before: collapsedBefore * 20, after: curAfterPt * 20, line: fmt.lineHeight ? Math.round(fmt.lineHeight * fmt.size * 20) : undefined, lineRule: fmt.lineHeight ? 'atLeast' : undefined },
               ...extraOpts,
               children: runs
             });
