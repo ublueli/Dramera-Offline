@@ -26,9 +26,9 @@
 
     // camelCase-Keys (SCHREIBTISCH_FORMATVORLAGEN) → CSS-Suffix
     var KEY_TO_CSS = {
-      standard: 'standard', dialog: 'dialog', regieanweisung: 'regieanweisung',
-      szeneTitel: 'szene-titel', aktTitel: 'akt-titel', vers: 'vers',
-      lied: 'lied', pause: 'pause', musik: 'musik', sound: 'sound',
+      standard: 'standard', figurenname: 'figurenname', dialog: 'dialog',
+      regieanweisung: 'regieanweisung', szeneTitel: 'szene-titel', aktTitel: 'akt-titel',
+      vers: 'vers', lied: 'lied', pause: 'pause', musik: 'musik', sound: 'sound',
       notiz: 'notiz', nebentext: 'nebentext'
     };
     var CSS_TO_KEY = {};
@@ -104,6 +104,7 @@
 
     // Keyboard-Bindings für Formatvorlagen
     var formatBindings = {
+      theaterFigur:      { key: 'F', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'figurenname'); } },
       theaterDialog:     { key: 'D', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'dialog'); } },
       theaterRegie:      { key: 'R', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'regieanweisung'); } },
       theaterSzeneTitel: { key: 'T', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'szeneTitel'); } },
@@ -113,6 +114,24 @@
       theaterPause:      { key: 'P', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'pause'); } },
       theaterStandard:   { key: 'N', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'standard'); } }
     };
+
+    // Inline-Regie: Klammertexte in Dialog-Absätzen automatisch formatieren
+    // Arbeitet über Quills Text-API (kein DOM-Hack), debounced
+    function applyInlineRegie(quill) {
+      var text = quill.getText();
+      var len = text.length;
+      // Erst alle bestehenden inlineRegie-Formate entfernen
+      quill.formatText(0, len, 'inlineRegie', false, 'silent');
+      // Dann alle Klammertexte (2+ Zeichen) in Dialog-Absätzen formatieren
+      var regex = /\([^)]{2,}\)/g;
+      var match;
+      while ((match = regex.exec(text)) !== null) {
+        var fmt = quill.getFormat(match.index);
+        if (fmt.theaterBlock === 'dialog' || fmt.theaterBlock === 'figurenname') {
+          quill.formatText(match.index, match[0].length, 'inlineRegie', true, 'silent');
+        }
+      }
+    }
 
     // Factory-Funktion für Theater-Editor-Instanzen
     window.createTheaterEditor = function(element, options) {
@@ -134,15 +153,26 @@
         ]
       });
 
-      // Initialen Inhalt setzen
+      // Initialen Inhalt setzen (über Quills Clipboard-API für korrektes Delta-Model)
       if (options.content) {
-        quill.root.innerHTML = options.content;
+        var initDelta = quill.clipboard.convert(options.content);
+        quill.setContents(initDelta, 'silent');
+      }
+
+      // Inline-Regie Timer
+      var _inlineRegieTimer = null;
+      function scheduleInlineRegie() {
+        clearTimeout(_inlineRegieTimer);
+        _inlineRegieTimer = setTimeout(function() { applyInlineRegie(quill); }, 800);
       }
 
       // Callbacks
       if (options.onUpdate) {
         quill.on('text-change', function(delta, oldDelta, source) {
-          if (source === 'user') options.onUpdate({ editor: quill });
+          if (source === 'user') {
+            options.onUpdate({ editor: quill });
+            scheduleInlineRegie();
+          }
         });
       }
       if (options.onSelectionUpdate) {
@@ -156,7 +186,10 @@
 
       // API-Kompatibilitäts-Methoden
       quill.getHTML = function() { return quill.root.innerHTML; };
-      quill.setHTML = function(html) { quill.root.innerHTML = html; };
+      quill.setHTML = function(html) {
+        var delta = quill.clipboard.convert(html);
+        quill.setContents(delta, 'silent');
+      };
       quill.setFormatType = function(key) { setBlockFormat(quill, key); };
       quill.getFormatAtCursor = function() {
         var r = quill.getSelection();
@@ -165,6 +198,10 @@
         return f.theaterBlock || 'standard';
       };
       quill._syncTimer = null;
+      quill._inlineRegieTimer = _inlineRegieTimer;
+
+      // Initial inline-regie nach kurzer Verzögerung anwenden
+      setTimeout(function() { applyInlineRegie(quill); }, 100);
 
       return quill;
     };
@@ -16103,7 +16140,8 @@ const savedState = loadSavedState();
 // =====================================================
 const SCHREIBTISCH_FORMATVORLAGEN = {
   standard: { name: 'Standard', class: 'format-standard', description: 'Normaler Text', icon: '¶', shortcut: 'N' },
-  dialog: { name: 'Dialog', class: 'format-dialog', description: 'FIGUR: Sprechtext', icon: '💬', shortcut: 'D' },
+  figurenname: { name: 'Figurenname', class: 'format-figurenname', description: 'FIGUR:', icon: '👤', shortcut: 'F' },
+  dialog: { name: 'Dialog', class: 'format-dialog', description: 'Sprechtext', icon: '💬', shortcut: 'D' },
   regieanweisung: { name: 'Regieanweisung', class: 'format-regieanweisung', description: '(Handlungsanweisung)', icon: '🎬', shortcut: 'R' },
   szeneTitel: { name: 'Szenen-Titel', class: 'format-szene-titel', description: 'Überschrift', icon: '🔍', shortcut: 'T' },
   aktTitel: { name: 'Akt-Titel', class: 'format-akt-titel', description: 'ERSTER AKT', icon: '🏛️', shortcut: 'A' },
@@ -16248,7 +16286,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bfmt-akt-titel\b/g, 'format-akt-titel')
       .replace(/\bfmt-vers\b/g, 'format-vers')
       .replace(/\bfmt-lied\b/g, 'format-lied')
-      .replace(/\bfmt-figurenname\b/g, 'format-standard')
+      .replace(/\bfmt-figurenname\b/g, 'format-figurenname')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
     return wrapInlineRegie(c);
@@ -16277,6 +16315,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       .replace(/\bformat-akt-titel\b/g, 'fmt-akt-titel')
       .replace(/\bformat-vers\b/g, 'fmt-vers')
       .replace(/\bformat-lied\b/g, 'fmt-lied')
+      .replace(/\bformat-figurenname\b/g, 'fmt-figurenname')
       .replace(/\bformat-standard\b/g, '')
       .replace(/class="figur-name"/g, 'class="figur"')
       .replace(/class="dialog-text"/g, 'class="text"');
@@ -16306,6 +16345,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       if (!currentIds.has(id)) {
         const ed = quillEditors.current[id];
         clearTimeout(ed._syncTimer);
+        clearTimeout(ed._inlineRegieTimer);
         if (ed.root && ed.root.parentElement) ed.root.parentElement.remove();
         delete quillEditors.current[id];
         delete lastSyncedContent.current[id];
@@ -16367,6 +16407,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     return () => {
       Object.values(quillEditors.current).forEach(e => {
         clearTimeout(e._syncTimer);
+        clearTimeout(e._inlineRegieTimer);
         if (e.root && e.root.parentElement) e.root.parentElement.remove();
       });
       quillEditors.current = {};
@@ -32849,79 +32890,117 @@ STIL:
           color: #555;
         }
 
-        /* Rebu-kompatible Formatvorlagen im Schreibtisch */
+        /* ================================================
+           Formatvorlagen Schreibtisch — Pages "Die Vollmacht"
+           ================================================ */
+
+        /* STANDARD */
         .schreibtisch-page .format-standard {
-          margin: 0.35rem 0;
+          margin: 0 0 6pt 0;
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
-          font-size: 12pt;
+          font-size: 11pt;
+          line-height: 1.3;
           color: #212121;
         }
+
+        /* FIGURENNAME — Trebuchet MS, Fett, 10pt, GROSSBUCHSTABEN */
+        .schreibtisch-page .format-figurenname {
+          font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+          font-size: 10pt;
+          font-weight: bold;
+          text-transform: uppercase;
+          letter-spacing: 0.03em;
+          color: #212121;
+          margin: 5pt 0 1pt 0;
+          padding: 0;
+        }
+
+        /* DIALOG — Trebuchet MS, 11pt, 0.5cm Einzug, Zeilenabstand 1.1 */
         .schreibtisch-page .format-dialog {
-          margin: 0.3rem 0 0;
           display: block;
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
-          font-size: 12pt;
+          font-size: 11pt;
+          font-weight: normal;
+          line-height: 1.1;
           color: #212121;
+          margin: 0 0 6pt 0.5cm;
+          padding: 0;
           border: none;
         }
+        /* KEINE Leerzeilen zwischen aufeinanderfolgenden Dialogen/Figurnamen */
+        .schreibtisch-page .format-figurenname + .format-dialog {
+          margin-top: 0;
+        }
         .schreibtisch-page .format-dialog + .format-dialog {
-          margin-top: 0.15rem;
+          margin-top: 0;
         }
-        .schreibtisch-page .format-dialog,
-        .schreibtisch-page .format-dialog * {
-          border-top: none !important;
-          border-bottom: none !important;
+        .schreibtisch-page .format-dialog + .format-figurenname {
+          margin-top: 5pt;
         }
+        /* Legacy: figur-name/dialog-text Spans in alten Dialog-Blöcken */
         .schreibtisch-page .format-dialog .figur-name {
           display: block;
           font-weight: bold;
-          white-space: nowrap;
           text-transform: uppercase;
-          letter-spacing: 0.05em;
-          font-size: 10.5pt;
-          margin-bottom: 0.1rem;
+          letter-spacing: 0.03em;
+          font-size: 10pt;
+          margin: 5pt 0 1pt -0.5cm;
         }
         .schreibtisch-page .format-dialog .dialog-text {
           display: block;
           font-weight: normal;
-          margin-left: 0.5cm;
         }
+
+        /* REGIEANWEISUNG — Georgia, Kursiv, 10pt, ca. 4cm Einzug */
         .schreibtisch-page .format-regieanweisung {
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: 11pt;
+          font-size: 10pt;
           font-style: italic;
           color: #414141;
-          margin: 0.4rem 0;
-          margin-left: 6cm;
+          margin: 3pt 0 7pt 4cm;
+          padding: 0;
         }
+
+        /* INLINE-REGIE — Georgia, Kursiv, 10pt (im Dialog-Absatz) */
+        .schreibtisch-page .inline-regie {
+          font-family: Georgia, 'Times New Roman', serif !important;
+          font-style: italic !important;
+          color: #414141 !important;
+          font-size: 10pt !important;
+        }
+
+        /* SZENEN-TITEL */
         .schreibtisch-page .format-szene-titel {
           font-family: Georgia, 'Times New Roman', serif;
           font-weight: bold;
           font-size: 12pt;
           text-align: center;
-          margin-top: 2rem;
-          margin-bottom: 2rem;
+          margin: 2rem 0 1rem 0;
           color: #212121;
         }
+
+        /* LIED — Trebuchet MS, Kursiv, 11pt, 0.5cm Einzug */
         .schreibtisch-page .format-lied {
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-style: italic;
           font-size: 11pt;
-          margin: 0.15rem 0;
-          margin-left: 2cm;
+          margin: 0 0 3pt 0.5cm;
           color: #212121;
           line-height: 1.3;
         }
+
+        /* VERS */
         .schreibtisch-page .format-vers {
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-style: italic;
           font-size: 11pt;
-          margin: 0.15rem 0;
-          margin-left: 0.5cm;
+          margin: 0 0 3pt 0.5cm;
           color: #212121;
           white-space: pre-wrap;
           line-height: 1.3;
         }
+
+        /* AKT-TITEL */
         .schreibtisch-page .format-akt-titel {
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-size: 11pt;
@@ -32935,6 +33014,8 @@ STIL:
           border-bottom: 2px solid #374151;
           color: #212121;
         }
+
+        /* PAUSE */
         .schreibtisch-page .format-pause {
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
           font-size: 12pt;
@@ -32942,53 +33023,60 @@ STIL:
           text-align: center;
           text-transform: uppercase;
           letter-spacing: 0.3em;
-          margin: 2.5rem 0;
-          padding: 0.75rem 0;
+          margin: 2rem 0;
+          padding: 0.5rem 0;
           color: #888888;
         }
+
+        /* MUSIK */
         .schreibtisch-page .format-musik {
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: 11pt;
+          font-size: 10pt;
           font-style: italic;
-          margin: 0.6rem 0;
-          margin-left: 8.5rem;
-          padding: 6pt 10pt;
+          margin: 3pt 0 7pt 4cm;
+          padding: 4pt 8pt;
           line-height: 1.4;
           color: #7c3aed;
           border-left: 3px solid #7c3aed;
           background: #f5f3ff;
         }
+
+        /* SOUND */
         .schreibtisch-page .format-sound {
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: 11pt;
+          font-size: 10pt;
           font-style: italic;
-          margin: 0.6rem 0;
-          margin-left: 8.5rem;
-          padding: 6pt 10pt;
+          margin: 3pt 0 7pt 4cm;
+          padding: 4pt 8pt;
           line-height: 1.4;
           color: #059669;
           border-left: 3px solid #059669;
           background: #ecfdf5;
         }
+
+        /* NOTIZ */
         .schreibtisch-page .format-notiz {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           font-size: 10pt;
           font-style: italic;
           color: #92400e;
           background: #fef3c7;
-          padding: 8pt 12pt;
+          padding: 6pt 10pt;
           border-left: 3px solid #fbbf24;
-          margin: 0.75rem 0;
+          margin: 6pt 0;
           border-radius: 0 4px 4px 0;
         }
+
+        /* NEBENTEXT */
         .schreibtisch-page .format-nebentext {
           font-family: Georgia, 'Times New Roman', serif;
           font-size: 10pt;
           font-style: italic;
-          margin: 0.5rem 0;
-          line-height: 1.5;
+          margin: 3pt 0 6pt 0;
+          line-height: 1.4;
           color: #6b7280;
         }
+
         .schreibtisch-page .format-gestrichen {
           text-decoration: line-through;
           color: #9ca3af;
@@ -32999,12 +33087,6 @@ STIL:
           color: #1e40af;
           border-bottom: 2px solid #3b82f6;
         }
-        .schreibtisch-page .inline-regie {
-          font-family: Georgia, 'Times New Roman', serif;
-          font-style: italic;
-          color: #414141;
-          font-size: 0.92em;
-        }
 
         /* Quill Editor */
         .schreibtisch-page .ql-editor {
@@ -33012,20 +33094,24 @@ STIL:
           min-height: 3rem;
           padding: 0;
           font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
-          font-size: 12pt;
-          line-height: 1.5;
+          font-size: 11pt;
+          line-height: 1.1;
+          color: #212121;
         }
         .schreibtisch-page .ql-editor:focus {
           outline: none !important;
         }
-        .schreibtisch-page .ql-editor p:first-child,
-        .schreibtisch-page .ql-editor div:first-child {
-          margin-top: 0;
+        .schreibtisch-page .ql-editor > *:first-child {
+          margin-top: 0 !important;
         }
         .schreibtisch-page .ql-container {
           border: none !important;
           font-family: inherit;
           font-size: inherit;
+        }
+        /* Quill's leere Absätze: minimale Höhe statt Leerzeile */
+        .schreibtisch-page .ql-editor p br[class="ql-empty"] {
+          display: none;
         }
         [data-quill-mount] .ql-toolbar {
           display: none !important;
