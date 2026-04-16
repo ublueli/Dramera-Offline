@@ -11,9 +11,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- GIS wird lazy geladen bei Bedarf (vermeidet "message port closed" Fehler) -->
   <!-- Supabase entfernt für Stand-alone Version -->
   <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <!-- Quill Rich Text Editor -->
   <link rel="stylesheet" href="https://cdn.quilljs.com/1.3.7/quill.snow.css">
@@ -102,18 +103,160 @@
       return false;
     }
 
-    // Keyboard-Bindings für Formatvorlagen
-    var formatBindings = {
-      theaterFigur:      { key: 'F', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'figurenname'); } },
-      theaterDialog:     { key: 'D', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'dialog'); } },
-      theaterRegie:      { key: 'R', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'regieanweisung'); } },
-      theaterSzeneTitel: { key: 'T', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'szeneTitel'); } },
-      theaterAktTitel:   { key: 'A', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'aktTitel'); } },
-      theaterLied:       { key: 'L', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'lied'); } },
-      theaterVers:       { key: 'V', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'vers'); } },
-      theaterPause:      { key: 'P', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'pause'); } },
-      theaterStandard:   { key: 'N', shiftKey: true, shortKey: true, handler: function() { return setBlockFormat(this.quill, 'standard'); } }
+    // === LEADER-KEY SYSTEM für Formatvorlagen ===
+    // Esc → Buchstabe innerhalb 1.5s
+    // Globaler State (geteilt zwischen Schreibtisch + Ordnen)
+    window.__copiedFormat = null;
+    window.__leaderActive = false;
+    window.__leaderTimer = null;
+
+    // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname)
+    var LEADER_QUILL_MAP = {
+      'f': 'figurenname', 'd': 'dialog', 'r': 'regieanweisung',
+      't': 'szeneTitel', 'a': 'aktTitel', 'l': 'lied',
+      'v': 'vers', 'p': 'pause', 'n': 'standard'
     };
+
+    // Formatvorlagen-Namen für Toast
+    var FORMAT_NAMEN = {
+      figurenname: 'Figurenname', dialog: 'Dialog', regieanweisung: 'Regieanweisung',
+      szeneTitel: 'Szenen-Titel', aktTitel: 'Akt-Titel', lied: 'Lied',
+      vers: 'Vers', pause: 'Pause', standard: 'Standard'
+    };
+
+    // Toast-Meldung (app-weit)
+    window.__showFormatToast = function(text) {
+      var existing = document.getElementById('format-toast');
+      if (existing) existing.remove();
+      var toast = document.createElement('div');
+      toast.id = 'format-toast';
+      toast.textContent = text;
+      toast.style.cssText = 'position:fixed;bottom:80px;right:16px;background:rgba(30,30,30,0.92);color:#d1d5db;padding:8px 16px;border-radius:8px;font-size:12px;z-index:10000;box-shadow:0 4px 12px rgba(0,0,0,0.3);pointer-events:none;transition:opacity 0.3s;';
+      document.body.appendChild(toast);
+      setTimeout(function() { toast.style.opacity = '0'; }, 1500);
+      setTimeout(function() { toast.remove(); }, 1800);
+    };
+
+    // Leader-Popup anzeigen/verstecken
+    window.__showLeaderPopup = function() {
+      var existing = document.getElementById('leader-popup');
+      if (existing) existing.remove();
+      var popup = document.createElement('div');
+      popup.id = 'leader-popup';
+      popup.innerHTML = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:4px;">Format wählen…</div>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px 12px;">'
+        + '<span><b>F</b> Figurenname</span><span><b>D</b> Dialog</span>'
+        + '<span><b>R</b> Regieanweisung</span><span><b>T</b> Szenen-Titel</span>'
+        + '<span><b>A</b> Akt-Titel</span><span><b>L</b> Lied</span>'
+        + '<span><b>V</b> Versmaß</span><span><b>P</b> Pause</span>'
+        + '<span><b>N</b> Standard</span><span style="color:#9ca3af;">───</span>'
+        + '<span><b>K</b> Kopieren</span><span><b>E</b> Einfügen</span>'
+        + '</div>';
+      popup.style.cssText = 'position:fixed;bottom:80px;right:16px;background:rgba(20,20,20,0.95);color:#e5e7eb;padding:10px 14px;border-radius:8px;font-size:11px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;z-index:10001;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.15);pointer-events:none;';
+      document.body.appendChild(popup);
+    };
+
+    window.__hideLeaderPopup = function() {
+      var p = document.getElementById('leader-popup');
+      if (p) p.remove();
+    };
+
+    window.__cancelLeader = function() {
+      window.__leaderActive = false;
+      if (window.__leaderTimer) { clearTimeout(window.__leaderTimer); window.__leaderTimer = null; }
+      window.__hideLeaderPopup();
+    };
+
+    window.__startLeader = function() {
+      window.__cancelLeader();
+      window.__leaderActive = true;
+      window.__showLeaderPopup();
+      window.__leaderTimer = setTimeout(function() {
+        window.__cancelLeader();
+      }, 1500);
+    };
+
+    // === Document-level Leader-Key Handler für Quill-Editoren (Schreibtisch) ===
+    document.addEventListener('keydown', function(e) {
+      // Nur reagieren wenn ein Quill-Editor fokussiert ist
+      var activeEl = document.activeElement;
+      var inQuill = activeEl && activeEl.closest && activeEl.closest('.ql-editor');
+      if (!inQuill) return;
+
+      // Finde die zugehörige Quill-Instanz über das Editor-DOM
+      var quillContainer = inQuill.parentNode;
+      var quillInstance = null;
+      if (quillContainer && quillContainer.__quill) {
+        quillInstance = quillContainer.__quill;
+      } else {
+        // Fallback: Quill speichert sich auf dem Scroll-Container
+        var containers = document.querySelectorAll('.ql-container');
+        for (var ci = 0; ci < containers.length; ci++) {
+          if (containers[ci].contains(inQuill)) {
+            quillInstance = containers[ci].__quill || (containers[ci].querySelector('.ql-editor') && containers[ci].querySelector('.ql-editor').__quill);
+            break;
+          }
+        }
+      }
+
+      if (e.key === 'Escape') {
+        if (window.__leaderActive) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.__cancelLeader();
+          return;
+        }
+        // Prüfe ob ein Modal offen ist
+        var openModal = document.querySelector('.modal.show');
+        if (!openModal) {
+          e.preventDefault();
+          window.__startLeader();
+        }
+        return;
+      }
+
+      if (window.__leaderActive) {
+        e.preventDefault();
+        e.stopPropagation();
+        var letter = e.key.toLowerCase();
+
+        if (letter in LEADER_QUILL_MAP && quillInstance) {
+          setBlockFormat(quillInstance, LEADER_QUILL_MAP[letter]);
+          var toastName = FORMAT_NAMEN[LEADER_QUILL_MAP[letter]] || LEADER_QUILL_MAP[letter];
+          window.__showFormatToast(toastName);
+        } else if (letter === 'k' && quillInstance) {
+          // Format kopieren
+          var fmt = quillInstance.getFormatAtCursor ? quillInstance.getFormatAtCursor() : 'standard';
+          window.__copiedFormat = { type: 'quill', format: fmt || 'standard' };
+          var copyName = FORMAT_NAMEN[fmt] || fmt || 'Standard';
+          window.__showFormatToast('Formatvorlage kopiert: ' + copyName);
+        } else if (letter === 'e' && quillInstance) {
+          // Format einfügen
+          if (!window.__copiedFormat) {
+            window.__showFormatToast('Keine Formatvorlage kopiert');
+          } else {
+            var cf = window.__copiedFormat;
+            var fmtKey = cf.format;
+            if (cf.type === 'fmt') {
+              // Aus Ordnen-Modus: fmt-xxx → Quill-Key konvertieren
+              var fmtToQuill = { 'fmt-figurenname': 'figurenname', 'fmt-dialog': 'dialog', 'fmt-regie': 'regieanweisung',
+                'fmt-szenen-titel': 'szeneTitel', 'fmt-akt-titel': 'aktTitel', 'fmt-lied': 'lied',
+                'fmt-vers': 'vers', 'fmt-pause': 'pause' };
+              fmtKey = fmtToQuill[cf.format] || 'standard';
+            }
+            setBlockFormat(quillInstance, fmtKey);
+            var pasteName = FORMAT_NAMEN[fmtKey] || fmtKey || 'Standard';
+            window.__showFormatToast('Formatvorlage angewendet: ' + pasteName);
+          }
+        }
+        // Immer Leader beenden nach Tastendruck
+        window.__cancelLeader();
+        return;
+      }
+    });
+
+    // Keine Quill-Bindings für Formatvorlagen mehr — alles über Leader-Key
+    var formatBindings = {};
 
     // Inline-Regie: Klammertexte in Dialog-Absätzen automatisch formatieren
     // Arbeitet über Quills Text-API (kein DOM-Hack), debounced
@@ -200,6 +343,10 @@
       quill._syncTimer = null;
       quill._inlineRegieTimer = _inlineRegieTimer;
 
+      // Speichere Quill-Instanz auf dem Container und Editor-Element für Leader-Key-Handler
+      editorDiv.__quill = quill;
+      quill.root.__quill = quill;
+
       // Initial inline-regie nach kurzer Verzögerung anwenden
       setTimeout(function() { applyInlineRegie(quill); }, 100);
 
@@ -234,6 +381,32 @@
     let gdriveOnConnected = null;
     let gdriveRenderCallback = null;
     
+    let _gdriveScriptLoading = false;
+    function _loadGisScript() {
+      return new Promise((resolve, reject) => {
+        if (window.google?.accounts?.oauth2) { resolve(); return; }
+        if (_gdriveScriptLoading) {
+          // Warten bis das Script geladen ist
+          const check = setInterval(() => {
+            if (window.google?.accounts?.oauth2) { clearInterval(check); resolve(); }
+          }, 100);
+          setTimeout(() => { clearInterval(check); reject(new Error('GIS Timeout')); }, 15000);
+          return;
+        }
+        _gdriveScriptLoading = true;
+        const s = document.createElement('script');
+        s.src = 'https://accounts.google.com/gsi/client';
+        s.onload = () => {
+          // GIS braucht einen Moment nach dem Laden
+          const check = setInterval(() => {
+            if (window.google?.accounts?.oauth2) { clearInterval(check); resolve(); }
+          }, 50);
+          setTimeout(() => { clearInterval(check); reject(new Error('GIS init Timeout')); }, 5000);
+        };
+        s.onerror = () => { _gdriveScriptLoading = false; reject(new Error('GIS Script Ladefehler')); };
+        document.head.appendChild(s);
+      });
+    }
     function gdriveInitAuth() {
       if (!window.google?.accounts?.oauth2) { console.warn('GIS not loaded'); return false; }
       gdriveTokenClient = google.accounts.oauth2.initTokenClient({
@@ -254,7 +427,21 @@
       try { const cached = localStorage.getItem('nina_gdrive_user'); if (cached) gdriveUser = JSON.parse(cached); } catch(e) {}
       return true;
     }
-    function gdriveSignIn() { if (!gdriveTokenClient && !gdriveInitAuth()) { alert('⏳ Google-Dienst wird noch geladen.'); return; } gdriveTokenClient.requestAccessToken(); }
+    function gdriveSignIn() {
+      if (!gdriveTokenClient) {
+        if (window.google?.accounts?.oauth2) {
+          if (!gdriveInitAuth()) { alert('⏳ Google-Dienst wird noch geladen.'); return; }
+        } else {
+          // GIS lazy laden
+          _loadGisScript().then(() => {
+            gdriveInitAuth();
+            gdriveTokenClient.requestAccessToken();
+          }).catch(err => alert('❌ Google-Dienst konnte nicht geladen werden: ' + err.message));
+          return;
+        }
+      }
+      gdriveTokenClient.requestAccessToken();
+    }
     function gdriveSignOut() { if (gdriveToken) google.accounts.oauth2.revoke(gdriveToken); gdriveToken = null; gdriveUser = null; localStorage.removeItem('nina_gdrive_user'); if (gdriveRenderCallback) gdriveRenderCallback(); }
     function gdriveIsConnected() { return !!gdriveToken; }
     
@@ -318,7 +505,80 @@
       try { const folder = await gdriveCreateFolder(name); gdriveSetFolder(folder.id, name); const m = document.getElementById('gdriveFolderPickerModal'); if (m) m.remove(); alert('✅ Ordner "' + name + '" erstellt!'); }
       catch(e) { alert('❌ Fehler: ' + e.message); }
     }
-    window.addEventListener('load', () => { setTimeout(() => gdriveInitAuth(), 500); });
+    // GIS wird lazy geladen beim ersten gdriveSignIn() – kein eageres Laden mehr
+    // (vermeidet "The message port closed before a response was received" Fehler)
+    try { const cached = localStorage.getItem('nina_gdrive_user'); if (cached) gdriveUser = JSON.parse(cached); } catch(e) {}
+
+    // === AUTO BACKUP: Find or create folder by name under a parent ===
+    async function gdriveFindOrCreateFolder(name, parentId) {
+      const parentClause = parentId ? `'${parentId}' in parents` : `'root' in parents`;
+      const query = `name='${name}' and ${parentClause} and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+      const res = await gdriveFetch(GDRIVE_API + `/files?q=${encodeURIComponent(query)}&fields=files(id,name)`);
+      const data = await res.json();
+      if (data.files && data.files.length > 0) return data.files[0].id;
+      // Create folder
+      const metadata = { name, mimeType: 'application/vnd.google-apps.folder' };
+      if (parentId) metadata.parents = [parentId];
+      const createRes = await gdriveFetch(GDRIVE_API + '/files', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metadata)
+      });
+      const created = await createRes.json();
+      return created.id;
+    }
+
+    let _lastGdriveAutoBackupHash = '';
+    async function gdriveAutoBackup(projectData) {
+      if (!gdriveToken) return { success: false, error: 'Nicht angemeldet' };
+      try {
+        // Create folder structure: Dramera/Backups/ProjectName/
+        const drameraFolderId = await gdriveFindOrCreateFolder('Dramera', null);
+        const backupsFolderId = await gdriveFindOrCreateFolder('Backups', drameraFolderId);
+        const projectName = (projectData.data?.projektName || 'Projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß_\- ]/g, '');
+        const projectFolderId = await gdriveFindOrCreateFolder(projectName, backupsFolderId);
+
+        // Upload backup
+        const now = new Date();
+        const timestamp = now.toISOString().replace(/T/, '_').replace(/:/g, '-').slice(0, 16);
+        const fileName = `Projekt_${timestamp}.json`;
+        const jsonStr = JSON.stringify(projectData, null, 2);
+
+        // Multipart upload
+        const blob = new Blob([jsonStr], { type: 'application/json' });
+        const metadata = { name: fileName, parents: [projectFolderId] };
+        const form = new FormData();
+        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+        form.append('file', blob);
+        await fetch(GDRIVE_UPLOAD_API + '/files?uploadType=multipart', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + gdriveToken },
+          body: form
+        });
+
+        // Cleanup: keep only last 20 backups
+        const listQ = `'${projectFolderId}' in parents and trashed=false`;
+        const listRes = await gdriveFetch(GDRIVE_API + `/files?q=${encodeURIComponent(listQ)}&orderBy=createdTime&fields=files(id,name,createdTime)&pageSize=100`);
+        const listData = await listRes.json();
+        if (listData.files && listData.files.length > 20) {
+          const toDelete = listData.files.slice(0, listData.files.length - 20);
+          for (const file of toDelete) {
+            try {
+              await fetch(GDRIVE_API + '/files/' + file.id, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + gdriveToken }
+              });
+            } catch(delErr) { console.warn('Backup-Löschung fehlgeschlagen:', delErr); }
+          }
+        }
+
+        console.log('GDrive auto-backup completed:', fileName);
+        return { success: true, fileName, time: now };
+      } catch (err) {
+        console.error('GDrive auto-backup failed:', err);
+        return { success: false, error: err };
+      }
+    }
   </script>
 </head>
 <body>
@@ -735,17 +995,35 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
       return;
     }
 
-    // Formatvorlagen-Kürzel: Ctrl/Cmd+Shift+Buchstabe
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey) {
-      const fmtMap = {
+    // === Leader-Key: Esc → Buchstabe für Formatvorlagen ===
+    if (e.key === 'Escape') {
+      if (window.__leaderActive) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.__cancelLeader();
+        return;
+      }
+      // Kein Modal offen? → Leader starten
+      const openModal = document.querySelector('.modal.show');
+      if (!openModal) {
+        e.preventDefault();
+        window.__startLeader();
+        return;
+      }
+    }
+
+    if (window.__leaderActive) {
+      e.preventDefault();
+      e.stopPropagation();
+      const letter = e.key.toLowerCase();
+      const LEADER_ORDNEN_MAP = {
         'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
         't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
         'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
       };
-      const key = e.key.toLowerCase();
-      if (key in fmtMap) {
-        e.preventDefault();
-        if (fmtMap[key] === null) {
+
+      if (letter in LEADER_ORDNEN_MAP) {
+        if (LEADER_ORDNEN_MAP[letter] === null) {
           // N = Normal: alle fmt-Klassen entfernen
           const sel = window.getSelection();
           if (sel && sel.rangeCount > 0) {
@@ -756,11 +1034,59 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
               saveToHistory(); handleSave(); onFormatChange(null);
             }
           }
+          window.__showFormatToast('Standard');
         } else {
-          applyFormatToCurrentLine(fmtMap[key]);
+          applyFormatToCurrentLine(LEADER_ORDNEN_MAP[letter]);
+          window.__showFormatToast(LEADER_ORDNEN_MAP[letter].replace('fmt-', ''));
         }
-        return;
+      } else if (letter === 'k') {
+        // Format kopieren
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          let node = sel.anchorNode;
+          while (node && node.parentNode !== editorRef.current) node = node.parentNode;
+          if (node && node.classList) {
+            const fmtClass = Array.from(node.classList).find(c => c.startsWith('fmt-'));
+            window.__copiedFormat = { type: 'fmt', format: fmtClass || null };
+            const name = fmtClass ? fmtClass.replace('fmt-', '') : 'Standard';
+            window.__showFormatToast('Formatvorlage kopiert: ' + name);
+          }
+        }
+      } else if (letter === 'e') {
+        // Format einfügen
+        if (!window.__copiedFormat) {
+          window.__showFormatToast('Keine Formatvorlage kopiert');
+        } else {
+          const cf = window.__copiedFormat;
+          if (cf.type === 'fmt' && cf.format) {
+            applyFormatToCurrentLine(cf.format);
+            window.__showFormatToast('Formatvorlage angewendet: ' + cf.format.replace('fmt-', ''));
+          } else if (cf.type === 'quill') {
+            const map = { figurenname: 'fmt-figurenname', dialog: 'fmt-dialog', regieanweisung: 'fmt-regie',
+              szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied',
+              vers: 'fmt-vers', pause: 'fmt-pause', standard: null };
+            const fmtClass = map[cf.format];
+            if (fmtClass) {
+              applyFormatToCurrentLine(fmtClass);
+              window.__showFormatToast('Formatvorlage angewendet: ' + cf.format);
+            } else {
+              const sel = window.getSelection();
+              if (sel && sel.rangeCount > 0) {
+                let node = sel.anchorNode;
+                while (node && node.parentNode !== editorRef.current) node = node.parentNode;
+                if (node && node.classList) {
+                  Array.from(node.classList).filter(c => c.startsWith('fmt-')).forEach(c => node.classList.remove(c));
+                  saveToHistory(); handleSave(); onFormatChange(null);
+                }
+              }
+              window.__showFormatToast('Formatvorlage angewendet: Standard');
+            }
+          }
+        }
       }
+      // Leader immer beenden nach Tastendruck
+      window.__cancelLeader();
+      return;
     }
 
     // Placeholder entfernen
@@ -16181,6 +16507,27 @@ const loadSavedState = () => {
 const savedState = loadSavedState();
 
 // =====================================================
+// ZENTRALE FORMAT-DEFINITIONEN (Pages "Die Vollmacht")
+// Alle Modi und Exporte greifen auf diese Werte zu.
+// =====================================================
+const THEATER_FORMATE = {
+  figurenname: { font: 'Trebuchet MS', size: 10, bold: true, italic: false, allCaps: true, letterSpacing: 0.03, indent: 0, align: 'left', spacingBefore: 5, spacingAfter: 1, lineHeight: 1.2, color: '212121' },
+  dialog:      { font: 'Trebuchet MS', size: 11, bold: false, italic: false, allCaps: false, indent: 0.5, align: 'left', spacingBefore: 0, spacingAfter: 6, lineHeight: 1.1, color: '212121' },
+  regieanweisung: { font: 'Georgia', size: 10, bold: false, italic: true, allCaps: false, indent: 4, align: 'left', spacingBefore: 3, spacingAfter: 7, lineHeight: 1.3, color: '414141' },
+  inlineRegie: { font: 'Georgia', size: 10, bold: false, italic: true, color: '414141' },
+  szeneTitel:  { font: 'Georgia', size: 12, bold: true, italic: false, allCaps: false, indent: 0, align: 'center', spacingBefore: 24, spacingAfter: 12, lineHeight: 1.3, color: '212121' },
+  aktTitel:    { font: 'Trebuchet MS', size: 18, bold: true, italic: false, allCaps: true, letterSpacing: 0.2, indent: 0, align: 'center', spacingBefore: 30, spacingAfter: 12, lineHeight: 1.2, color: '212121' },
+  lied:        { font: 'Trebuchet MS', size: 11, bold: false, italic: true, allCaps: false, indent: 0.5, align: 'left', spacingBefore: 0, spacingAfter: 3, lineHeight: 1.3, color: '212121' },
+  vers:        { font: 'Trebuchet MS', size: 11, bold: false, italic: true, allCaps: false, indent: 0.5, align: 'left', spacingBefore: 0, spacingAfter: 3, lineHeight: 1.3, color: '212121' },
+  pause:       { font: 'Trebuchet MS', size: 12, bold: true, italic: false, allCaps: true, letterSpacing: 0.3, indent: 0, align: 'center', spacingBefore: 24, spacingAfter: 24, lineHeight: 1.2, color: '888888' },
+  musik:       { font: 'Georgia', size: 10, bold: false, italic: true, indent: 4, align: 'left', spacingBefore: 3, spacingAfter: 7, lineHeight: 1.4, color: '7c3aed' },
+  sound:       { font: 'Georgia', size: 10, bold: false, italic: true, indent: 4, align: 'left', spacingBefore: 3, spacingAfter: 7, lineHeight: 1.4, color: '059669' },
+  notiz:       { font: '-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', size: 10, bold: false, italic: true, color: '92400e' },
+  nebentext:   { font: 'Georgia', size: 10, bold: false, italic: true, indent: 0, align: 'left', spacingBefore: 3, spacingAfter: 6, lineHeight: 1.4, color: '6b7280' },
+  standard:    { font: 'Trebuchet MS', size: 11, bold: false, italic: false, indent: 0, align: 'left', spacingBefore: 0, spacingAfter: 6, lineHeight: 1.3, color: '212121' },
+};
+
+// =====================================================
 // SCHREIBTISCH-VIEW – Textverarbeitungs-Modus
 // =====================================================
 const SCHREIBTISCH_FORMATVORLAGEN = {
@@ -16592,43 +16939,70 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
             if (node.nodeType !== 1) return;
             const cls = node.className || '';
 
+            // Inline-Regie erkennen und als separate TextRuns rendern
+            const parseInlineRegie = (text, baseFmt) => {
+              if (!/\([^)]{2,}\)/.test(text)) return [new TextRun({ text, font: baseFmt.font, size: baseFmt.size * 2, bold: baseFmt.bold, italics: baseFmt.italic, color: baseFmt.color })];
+              return text.split(/(\([^)]{2,}\))/g).filter(Boolean).map(part => {
+                if (/^\([^)]{2,}\)$/.test(part)) {
+                  const ir = THEATER_FORMATE.inlineRegie;
+                  return new TextRun({ text: part, font: ir.font, size: ir.size * 2, italics: true, color: ir.color });
+                }
+                return new TextRun({ text: part, font: baseFmt.font, size: baseFmt.size * 2, bold: baseFmt.bold, italics: baseFmt.italic, color: baseFmt.color });
+              });
+            };
+
             if (cls.includes('format-akt-titel')) {
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 500, after: 200 }, children: [
-                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 22, bold: true, allCaps: true })
+              const f = THEATER_FORMATE.aktTitel;
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round(f.letterSpacing * 100), color: f.color })
               ]}));
             } else if (cls.includes('format-szene-titel')) {
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
-                new TextRun({ text: node.textContent, font: 'Georgia', size: 24, bold: true })
+              const f = THEATER_FORMATE.szeneTitel;
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, color: f.color })
               ]}));
             } else if (cls.includes('format-regieanweisung')) {
-              children.push(new Paragraph({ indent: { left: 3402 }, spacing: { before: 60, after: 60 }, children: [
-                new TextRun({ text: node.textContent, font: 'Georgia', size: 22, italics: true })
+              const f = THEATER_FORMATE.regieanweisung;
+              children.push(new Paragraph({ indent: { left: Math.round(f.indent * 567) }, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
+              ]}));
+            } else if (cls.includes('format-figurenname')) {
+              const f = THEATER_FORMATE.figurenname;
+              children.push(new Paragraph({ spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((f.letterSpacing || 0.03) * 100), color: f.color })
               ]}));
             } else if (cls.includes('format-dialog')) {
               const fn = node.querySelector('.figur-name');
               const dt = node.querySelector('.dialog-text');
-              children.push(new Paragraph({ spacing: { before: 100 }, children: [
-                new TextRun({ text: fn ? fn.textContent : '', font: 'Trebuchet MS', size: 21, bold: true })
+              const ff = THEATER_FORMATE.figurenname;
+              const fd = THEATER_FORMATE.dialog;
+              children.push(new Paragraph({ spacing: { before: ff.spacingBefore * 20, after: ff.spacingAfter * 20 }, children: [
+                new TextRun({ text: fn ? fn.textContent : '', font: ff.font, size: ff.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((ff.letterSpacing || 0.03) * 100), color: ff.color })
               ]}));
-              children.push(new Paragraph({ indent: { left: 284 }, children: [
-                new TextRun({ text: dt ? dt.textContent : '', font: 'Trebuchet MS', size: 22 })
-              ]}));
+              children.push(new Paragraph({ indent: { left: Math.round(fd.indent * 567) }, spacing: { before: fd.spacingBefore * 20, after: fd.spacingAfter * 20 }, children: parseInlineRegie(dt ? dt.textContent : '', fd) }));
             } else if (cls.includes('format-vers') || cls.includes('format-lied')) {
-              children.push(new Paragraph({ indent: { left: cls.includes('format-lied') ? 1134 : 284 }, children: [
-                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 22, italics: true })
+              const f = cls.includes('format-lied') ? THEATER_FORMATE.lied : THEATER_FORMATE.vers;
+              children.push(new Paragraph({ indent: { left: Math.round(f.indent * 567) }, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
               ]}));
             } else if (cls.includes('format-pause')) {
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 400 }, children: [
-                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 24, bold: true })
+              const f = THEATER_FORMATE.pause;
+              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((f.letterSpacing || 0.3) * 100), color: f.color })
               ]}));
             } else if (cls.includes('format-musik') || cls.includes('format-sound')) {
-              children.push(new Paragraph({ indent: { left: 2268 }, spacing: { before: 80, after: 80 }, children: [
-                new TextRun({ text: node.textContent, font: 'Georgia', size: 22, italics: true })
+              const f = cls.includes('format-musik') ? THEATER_FORMATE.musik : THEATER_FORMATE.sound;
+              children.push(new Paragraph({ indent: { left: Math.round((f.indent || 4) * 567) }, spacing: { before: (f.spacingBefore || 3) * 20, after: (f.spacingAfter || 7) * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
+              ]}));
+            } else if (cls.includes('format-nebentext')) {
+              const f = THEATER_FORMATE.nebentext;
+              children.push(new Paragraph({ spacing: { before: (f.spacingBefore || 3) * 20, after: (f.spacingAfter || 6) * 20 }, children: [
+                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
               ]}));
             } else if (node.textContent.trim()) {
-              children.push(new Paragraph({ children: [
-                new TextRun({ text: node.textContent, font: 'Trebuchet MS', size: 24 })
-              ]}));
+              const f = THEATER_FORMATE.standard;
+              children.push(new Paragraph({ children: parseInlineRegie(node.textContent, f) }));
             }
           });
         } else if (feld.zusammenfassung) {
@@ -16780,7 +17154,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
 
         {/* Format-Shortcuts Box — fixed unten rechts */}
         <div className="format-shortcut-box">
-          <div className="fbox-title">Ctrl+Shift+…</div>
+          <div className="fbox-title">Esc → …</div>
           {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).filter(([,v]) => v.shortcut).map(([key, v]) => (
             <div key={key}
               className={`format-shortcut-item ${currentFormat === key ? 'active' : ''}`}
@@ -16788,6 +17162,13 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
               <span className="fbox-key">{v.shortcut}</span>{v.name}
             </div>
           ))}
+          <div className="fbox-sep" style={{borderTop:'1px solid rgba(255,255,255,0.15)',margin:'3px 0'}} />
+          <div className="format-shortcut-item" style={{opacity:0.7}}>
+            <span className="fbox-key">K</span>Format kopieren
+          </div>
+          <div className="format-shortcut-item" style={{opacity:0.7}}>
+            <span className="fbox-key">E</span>Format einfügen
+          </div>
         </div>
 
         {/* A4-Seite */}
@@ -16895,7 +17276,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
               closeContextMenu();
             }}>
               {v.icon} {v.name}
-              {v.shortcut && <span className="schreibtisch-toolbar-shortcut">Ctrl+Shift+{v.shortcut}</span>}
+              {v.shortcut && <span className="schreibtisch-toolbar-shortcut">Esc → {v.shortcut}</span>}
             </div>
           ))}
 
@@ -17012,6 +17393,11 @@ function DrameraWerkbank() {
   const [isCloudMode, setIsCloudMode] = useState(false);
   const [currentCloudProjectId, setCurrentCloudProjectId] = useState(null);
   const [saveStatus, setSaveStatus] = useState('saved');
+  const fileHandleRef = useRef(null);
+  const [filePath, setFilePath] = useState(null);
+  const [fileIsDirty, setFileIsDirty] = useState(false);
+  const [lastFileSaveTime, setLastFileSaveTime] = useState(null);
+  const saveInProgressRef = useRef(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
   
   // === PANEL-BREITEN (Resizable) ===
@@ -17032,7 +17418,13 @@ function DrameraWerkbank() {
   const editorRefs = useRef({});
   const [currentFormat, setCurrentFormat] = useState(null);
   const autoSaveTimerRef = useRef(null); // Für Autosave-Debounce
-  
+
+  // === BACKUP SAFETY ===
+  const [showRecoveryDialog, setShowRecoveryDialog] = useState(false);
+  const [recoveryData, setRecoveryData] = useState(null);
+  const lastGdriveBackupRef = useRef(null);
+  const [lastGdriveBackupTime, setLastGdriveBackupTime] = useState(null);
+
   // === GEFÜHRTER MODUS (Schreibfläche) ===
   const [guidedMode, setGuidedMode] = useState(() => {
     const saved = savedState?.guidedMode;
@@ -17094,9 +17486,9 @@ function DrameraWerkbank() {
 
         // === VERSIONSHISTORIE: Snapshot speichern ===
         try {
-          const snapshot = { timestamp: new Date().toISOString(), data: JSON.parse(JSON.stringify(data)) };
+          const snapshot = { timestamp: new Date().toISOString(), source: 'browser', data: JSON.parse(JSON.stringify(data)) };
           setVersionHistory(prev => {
-            const updated = [...prev, snapshot].slice(-10);
+            const updated = [...prev, snapshot].slice(-20);
             localStorage.setItem('nina_version_history', JSON.stringify(updated));
             return updated;
           });
@@ -17115,6 +17507,7 @@ function DrameraWerkbank() {
     
     // Sofort als "speichernd" markieren
     setHasUnsavedChanges(true);
+    setFileIsDirty(true);
     setSaveStatus('saving');
     
     return () => {
@@ -17132,7 +17525,7 @@ function DrameraWerkbank() {
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
-          setVersionHistory(parsed.slice(-10));
+          setVersionHistory(parsed.slice(-20));
         }
       }
     } catch (e) {
@@ -17143,16 +17536,97 @@ function DrameraWerkbank() {
   // Warnung vor Tab-Schliessung bei ungespeicherten Änderungen
   useEffect(() => {
     const handleBeforeUnload = (e) => {
-      if (hasUnsavedChanges && data.projektName !== 'Neues Projekt') {
+      if ((hasUnsavedChanges && data.projektName !== 'Neues Projekt') || (fileIsDirty && filePath)) {
         e.preventDefault();
-        e.returnValue = 'Du hast ungespeicherte Änderungen. Wirklich schliessen?';
+        e.returnValue = 'Du hast ungesicherte Änderungen. Wirklich schliessen?';
         return e.returnValue;
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasUnsavedChanges, data.projektName]);
-  
+  }, [hasUnsavedChanges, data.projektName, fileIsDirty, filePath]);
+
+  // === AUTO GOOGLE DRIVE BACKUP (alle 5 Minuten) ===
+  useEffect(() => {
+    if (!gdriveIsConnected()) return;
+    const interval = setInterval(() => {
+      if (!gdriveIsConnected()) return;
+      // Skip if no changes since last backup
+      const currentHash = JSON.stringify(data).length + '_' + (data.projektName || '');
+      if (currentHash === _lastGdriveAutoBackupHash && lastGdriveBackupRef.current) return;
+      const exportData = {
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster
+      };
+      gdriveAutoBackup(exportData).then(result => {
+        if (result && result.success) {
+          lastGdriveBackupRef.current = result.time;
+          _lastGdriveAutoBackupHash = currentHash;
+          setLastGdriveBackupTime(new Date());
+        }
+      });
+    }, 300000); // 5 Minuten
+    return () => clearInterval(interval);
+  }, [gdriveRefresh, data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster]);
+
+  // === CRASH RECOVERY: Check for unsaved data on mount ===
+  useEffect(() => {
+    if (!HAS_LOCAL_STORAGE) return;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
+      const parsed = JSON.parse(saved);
+      const savedTime = parsed.savedAt || parsed.exportDate;
+      if (savedTime) {
+        const timeDiff = Date.now() - new Date(savedTime).getTime();
+        // Less than 24h old and has actual content
+        if (timeDiff < 86400000 && parsed.data && parsed.data.projektName) {
+          // Compare with currently loaded data
+          const savedScenes = (parsed.data.felder || []).length;
+          const currentScenes = (data.felder || []).length;
+          const savedFigures = (parsed.data.figuren || []).length;
+          const currentFigures = (data.figuren || []).length;
+          // If localStorage has more content, offer recovery
+          if ((savedScenes > currentScenes + 1) || (savedFigures > currentFigures + 1) ||
+              (parsed.data.projektName !== 'Neues Projekt' && data.projektName === 'Neues Projekt')) {
+            setRecoveryData(parsed);
+            setShowRecoveryDialog(true);
+          }
+        }
+      }
+    } catch(e) { console.warn('Recovery check failed:', e); }
+  }, []);
+
+  // Keyboard shortcuts: Cmd+S = Sichern, Cmd+Shift+S = Sichern unter
+  useEffect(() => {
+    const handleFileSaveKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          saveToFileAs();
+        } else {
+          saveToFile();
+        }
+      }
+    };
+    document.addEventListener('keydown', handleFileSaveKeyDown);
+    return () => document.removeEventListener('keydown', handleFileSaveKeyDown);
+  }, [saveToFile, saveToFileAs]);
+
+  // Auto-Save to file every 30 seconds when dirty and file handle exists
+  useEffect(() => {
+    if (!fileHandleRef.current || !fileIsDirty) return;
+    const timer = setTimeout(() => {
+      saveToFile();
+    }, 30000);
+    return () => clearTimeout(timer);
+  }, [fileIsDirty, saveToFile]);
+
   // === IMPORT & EINSTELLUNGEN ===
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
@@ -20210,6 +20684,288 @@ WICHTIGE REGELN:
     URL.revokeObjectURL(url);
     alert('💾 Backup gespeichert!\n\nDatei: ' + fileName);
   };
+
+  // =====================================================
+  // MANUELLEN VERSIONS-SNAPSHOT ERSTELLEN
+  // =====================================================
+  const createManualSnapshot = useCallback((source = 'browser') => {
+    try {
+      const snapshot = {
+        timestamp: new Date().toISOString(),
+        source: source,
+        data: JSON.parse(JSON.stringify(data))
+      };
+      setVersionHistory(prev => {
+        const updated = [...prev, snapshot].slice(-20);
+        localStorage.setItem('nina_version_history', JSON.stringify(updated));
+        return updated;
+      });
+      return true;
+    } catch(e) {
+      console.warn('Snapshot fehlgeschlagen:', e);
+      return false;
+    }
+  }, [data]);
+
+  // =====================================================
+  // KOMPLETT-BACKUP ALS ZIP EXPORTIEREN
+  // =====================================================
+  const exportAsZip = useCallback(async () => {
+    if (typeof JSZip === 'undefined') {
+      alert('ZIP-Bibliothek konnte nicht geladen werden. Bitte Seite neu laden.');
+      return;
+    }
+    try {
+      const zip = new JSZip();
+      const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß_\- ]/g, '');
+
+      // 1. Current project as .dramera.json
+      const exportData = {
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster
+      };
+      zip.file(`${projectName}.dramera.json`, JSON.stringify(exportData, null, 2));
+
+      // 2. All versions from history
+      if (versionHistory.length > 0) {
+        const versionsFolder = zip.folder('Versionsverlauf');
+        versionHistory.forEach((v, i) => {
+          const ts = new Date(v.timestamp).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const src = v.source === 'drive' ? '_Drive' : v.source === 'file' ? '_Datei' : '_Browser';
+          versionsFolder.file(`Version_${i + 1}${src}_${ts}.json`, JSON.stringify(v.data, null, 2));
+        });
+      }
+
+      // 3. NINA Exchange export
+      try {
+        const ninaExport = buildWebaExchangeData();
+        zip.file(`${projectName}_Exchange.nina.json`, JSON.stringify(ninaExport, null, 2));
+      } catch(e) { console.warn('Exchange-Export für ZIP fehlgeschlagen:', e); }
+
+      // Generate and download
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName}_Komplett-Backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert('📦 Komplett-Backup als ZIP gespeichert!');
+    } catch(e) {
+      console.error('ZIP-Export fehlgeschlagen:', e);
+      alert('❌ ZIP-Export fehlgeschlagen: ' + e.message);
+    }
+  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, versionHistory]);
+
+  // =====================================================
+  // DATEI-SICHERN (Desktop-App-Style)
+  // =====================================================
+  const saveToFile = React.useCallback(async () => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
+
+    try {
+      const exportData = {
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
+      };
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+
+      // Has existing file handle? Save silently.
+      if (fileHandleRef.current) {
+        try {
+          const writable = await fileHandleRef.current.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+          return;
+        } catch (err) {
+          // Permission revoked or handle invalid — fall through to picker
+          if (err.name === 'NotAllowedError') {
+            fileHandleRef.current = null;
+            setFilePath(null);
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // No handle — show picker (or download fallback)
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '') + '.dramera.json',
+            types: [{
+              description: 'Dramera Projekt',
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        } catch (err) {
+          if (err.name === 'AbortError') return; // User cancelled
+          throw err;
+        }
+      } else {
+        // Fallback: browser download
+        downloadFile(jsonStr, (data.projektName || 'Projekt') + '.dramera.json', 'application/json');
+        setFileIsDirty(false);
+        setLastFileSaveTime(new Date());
+        setSaveStatus('saved');
+        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+      }
+    } catch (err) {
+      console.error('Fehler beim Sichern:', err);
+      setSaveStatus('error');
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+
+  const saveToFileAs = React.useCallback(async () => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
+
+    try {
+      const exportData = {
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
+      };
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '') + '.dramera.json',
+            types: [{
+              description: 'Dramera Projekt',
+              accept: { 'application/json': ['.json'] }
+            }]
+          });
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          throw err;
+        }
+      } else {
+        downloadFile(jsonStr, (data.projektName || 'Projekt') + '.dramera.json', 'application/json');
+        setFileIsDirty(false);
+        setLastFileSaveTime(new Date());
+        setSaveStatus('saved');
+        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+      }
+    } catch (err) {
+      console.error('Fehler beim Sichern unter:', err);
+      setSaveStatus('error');
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+
+  // =====================================================
+  // DATEI ÖFFNEN (Desktop-App-Style mit File System Access API)
+  // =====================================================
+  const openFromFile = React.useCallback(async () => {
+    if (window.showOpenFilePicker) {
+      try {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{
+            description: 'Dramera Projekt',
+            accept: { 'application/json': ['.json'] }
+          }]
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        let content = text;
+        if (content.charCodeAt(0) === 0xFEFF) {
+          content = content.slice(1);
+        }
+        const imported = JSON.parse(content);
+
+        if (imported.version && imported.data) {
+          skipNextChangeRef.current = true;
+          setData(imported.data);
+          if (imported.guidedMode) setGuidedMode(imported.guidedMode);
+          if (imported.strukturAntworten) setStrukturAntworten(imported.strukturAntworten);
+          if (imported.offeneFormAbschnitte) setOffeneFormAbschnitte(imported.offeneFormAbschnitte);
+          if (imported.aktuellesRaster) setAktuellesRaster(imported.aktuellesRaster);
+          if (imported.materialSidebarWidth) setMaterialSidebarWidth(imported.materialSidebarWidth);
+          if (imported.werkzeugSidebarWidth) setWerkzeugSidebarWidth(imported.werkzeugSidebarWidth);
+          if (imported.bearbeitenSidebarWidth) setBearbeitenSidebarWidth(imported.bearbeitenSidebarWidth);
+          setHasUnsavedChanges(false);
+          setSaveStatus('saved');
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          setFileIsDirty(false);
+          setLastFileSaveTime(null);
+          window.__showFormatToast('Projekt ge\u00f6ffnet: ' + (imported.data.projektName || handle.name));
+        } else if (imported.projektName) {
+          skipNextChangeRef.current = true;
+          setData(imported);
+          setGuidedMode(DEFAULT_GUIDED_MODE);
+          setHasUnsavedChanges(false);
+          setSaveStatus('saved');
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          setFileIsDirty(false);
+          setLastFileSaveTime(null);
+          window.__showFormatToast('Projekt ge\u00f6ffnet: ' + (imported.projektName || handle.name));
+        } else {
+          alert('Unbekanntes Dateiformat. Die Datei enth\u00e4lt keine g\u00fcltigen Projektdaten.');
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Fehler beim \u00d6ffnen:', err);
+        alert('Datei konnte nicht gelesen werden:\n' + err.message);
+      }
+    } else {
+      // Fallback: trigger existing file input
+      fileInputRef.current?.click();
+    }
+  }, []);
 
   // =====================================================
   // GOOGLE DRIVE FUNCTIONS
@@ -23640,12 +24396,13 @@ STIL:
             {/* ===== PROJEKT ===== */}
             <div className="sidebar-menu-section">📁 PROJEKT</div>
             <button className="sidebar-menu-item" onClick={() => { newProject(); setShowMenu(false); }}>📄 Neu...</button>
-            <button className="sidebar-menu-item" onClick={() => { 
-              fileInputRef.current?.click();
-              setShowMenu(false); 
-            }}>📂 Öffnen...</button>
+            <button className="sidebar-menu-item" onClick={() => {
+              openFromFile();
+              setShowMenu(false);
+            }}>{'\ud83d\udcc2'} Öffnen...</button>
             <button className="sidebar-menu-item" onClick={() => { loadDemo(); setShowMenu(false); }}>🎭 Demo: Romeo & Julia</button>
-            <button className="sidebar-menu-item" onClick={() => { saveProject(); setShowMenu(false); }}>💾 Speichern</button>
+            <button className="sidebar-menu-item" onClick={() => { saveToFile(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318'}S</span></button>
+            <button className="sidebar-menu-item" onClick={() => { saveToFileAs(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern unter... <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318\u21e7'}S</span></button>
             
             <div className="sidebar-menu-divider" />
             
@@ -33141,9 +33898,11 @@ STIL:
           font-size: 11pt;
           line-height: 1.1;
           color: #212121;
+          background: transparent;
         }
         .schreibtisch-page .ql-editor:focus {
           outline: none !important;
+          background: transparent;
         }
         .schreibtisch-page .ql-editor > *:first-child {
           margin-top: 0 !important;
@@ -33152,6 +33911,7 @@ STIL:
           border: none !important;
           font-family: inherit;
           font-size: inherit;
+          background: transparent;
         }
         /* Quill's leere Absätze: minimale Höhe statt Leerzeile */
         .schreibtisch-page .ql-editor p br[class="ql-empty"] {
@@ -33301,23 +34061,22 @@ STIL:
         /* Editierbare Bereiche */
         .schreibtisch-szene-block {
           position: relative;
-          padding: 0.25rem 0;
+          padding: 0;
+          background: transparent;
         }
         .schreibtisch-szene-block [contenteditable]:focus {
           outline: none;
-          background: #fefcf8;
-          border-radius: 2px;
         }
         .schreibtisch-szene-block [contenteditable] {
           outline: none;
           min-height: 1em;
         }
 
-        /* Szenen-Trennlinie */
+        /* Szenen-Trennlinie — unsichtbar für nahtloses Dokument-Gefühl */
         .schreibtisch-szene-divider {
           border: none;
-          border-top: 1px solid #e8e4df;
-          margin: 1.5rem 0;
+          margin: 0;
+          height: 0;
         }
 
         /* Kontextmenü */
@@ -33455,9 +34214,23 @@ STIL:
               saveStatus === 'saving' ? 'Speichert...' :
               saveStatus === 'error' ? 'Speichern fehlgeschlagen' : ''
             }>
-              {saveStatus === 'saved' && '✓'}
-              {saveStatus === 'saving' && '⏳'}
-              {saveStatus === 'error' && '⚠️'}
+              {saveStatus === 'saved' && '\u2713'}
+              {saveStatus === 'saving' && '\u23f3'}
+              {saveStatus === 'error' && '\u26a0\ufe0f'}
+            </span>
+            <span className="file-status" style={{fontSize: '11px', color: '#888', marginLeft: '10px', whiteSpace: 'nowrap'}}>
+              {filePath ? (
+                <>
+                  <span style={{color: '#aaa'}}>{'\ud83d\udcc4'}</span> {filePath}
+                  {fileIsDirty ? (
+                    <span style={{color: '#e8a838'}}> {'\u25cf'} Bearbeitet</span>
+                  ) : (
+                    <span style={{color: '#4a9'}}> {'\u2713'} Gesichert{lastFileSaveTime ? (' ' + lastFileSaveTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})) : ''}</span>
+                  )}
+                </>
+              ) : (
+                <span style={{color: '#999'}}>Nur im Browser{fileIsDirty ? ' \u25cf Nicht gesichert' : ''}</span>
+              )}
             </span>
             {/* Projektstatus-Indikator */}
           </div>
@@ -34843,7 +35616,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
 
                 {/* Format-Shortcuts Box — fixed unten rechts (Ordnen-Modus) */}
                 <div className="format-shortcut-box">
-                  <div className="fbox-title">Ctrl+Shift+…</div>
+                  <div className="fbox-title">Esc → …</div>
                   {[
                     ['F', 'Figurenname', 'fmt-figurenname'],
                     ['D', 'Dialog', 'fmt-dialog'],
@@ -34879,6 +35652,13 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                       <span className="fbox-key">{key}</span>{name}
                     </div>
                   ))}
+                  <div style={{borderTop:'1px solid rgba(255,255,255,0.15)',margin:'3px 0'}} />
+                  <div className="format-shortcut-item" style={{opacity:0.7}}>
+                    <span className="fbox-key">K</span>Format kopieren
+                  </div>
+                  <div className="format-shortcut-item" style={{opacity:0.7}}>
+                    <span className="fbox-key">E</span>Format einfügen
+                  </div>
                 </div>
               </div>
 
@@ -35467,9 +36247,22 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 <h2 style={{margin:0,fontSize:'1.2rem',fontWeight:700}}>🕐 Versionshistorie</h2>
                 <button onClick={() => setShowVersionHistory(false)} style={{background:'none',border:'none',fontSize:'1.3rem',cursor:'pointer',color:'#6b7280'}}>✕</button>
               </div>
+
+              {/* Backup jetzt erstellen */}
+              <div style={{display:'flex',gap:'0.5rem',marginBottom:'1rem',flexWrap:'wrap'}}>
+                <button onClick={() => { if (createManualSnapshot('browser')) { window.__showFormatToast && window.__showFormatToast('Snapshot erstellt'); } }} style={{padding:'6px 14px',background:'#1e3a5f',color:'white',border:'none',borderRadius:'8px',fontSize:'0.78rem',cursor:'pointer',fontWeight:500}}>
+                  + Backup jetzt erstellen
+                </button>
+                {lastGdriveBackupTime && (
+                  <span style={{fontSize:'0.7rem',color:'#6b7280',alignSelf:'center'}}>
+                    Letztes Drive-Backup: {lastGdriveBackupTime.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'})}
+                  </span>
+                )}
+              </div>
+
               {versionHistory.length === 0 ? (
                 <div style={{color:'#9ca3af',textAlign:'center',padding:'2rem 0'}}>
-                  Noch keine Versionen gespeichert. Die letzten 10 Auto-Save-Punkte werden hier angezeigt.
+                  Noch keine Versionen gespeichert. Die letzten 20 Auto-Save-Punkte werden hier angezeigt.
                 </div>
               ) : (
                 <div className="version-history-list">
@@ -35478,23 +36271,40 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     const timeStr = d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
                     const figurenN = (v.data?.figuren || []).length;
                     const szenenN = (v.data?.felder || []).length;
+                    const sourceIcon = v.source === 'drive' ? '\u2601\uFE0F' : v.source === 'file' ? '\uD83D\uDCC1' : '\uD83D\uDCBB';
+                    const sourceLabel = v.source === 'drive' ? 'Drive' : v.source === 'file' ? 'Datei' : 'Browser';
+                    const approxSize = Math.round(JSON.stringify(v.data || {}).length / 1024);
                     return (
                       <div key={idx} className="version-history-entry">
                         <div className="version-history-info">
-                          <div style={{fontWeight:600,fontSize:'0.9rem'}}>{timeStr}</div>
-                          <div style={{fontSize:'0.8rem',color:'#6b7280'}}>
+                          <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
+                            <span title={sourceLabel} style={{fontSize:'1rem'}}>{sourceIcon}</span>
+                            <span style={{fontWeight:600,fontSize:'0.9rem'}}>{timeStr}</span>
+                            <span style={{fontSize:'0.65rem',color:'#9ca3af',background:'#f3f4f6',padding:'1px 6px',borderRadius:'4px'}}>~{approxSize} KB</span>
+                          </div>
+                          <div style={{fontSize:'0.8rem',color:'#6b7280',marginLeft:'1.5rem'}}>
                             {v.data?.projektName || 'Projekt'} — {figurenN} Figuren, {szenenN} Szenen
                           </div>
                         </div>
-                        <button
-                          className="version-restore-btn"
-                          onClick={() => {
-                            if (window.confirm('Version vom ' + timeStr + ' wiederherstellen? Aktuelle Daten werden überschrieben.')) {
-                              setData({...DEFAULT_DATA, ...v.data});
-                              setShowVersionHistory(false);
-                            }
-                          }}
-                        >Wiederherstellen</button>
+                        <div style={{display:'flex',gap:'0.3rem',flexShrink:0}}>
+                          <button
+                            title="Vorschau"
+                            onClick={() => {
+                              const info = `Projekt: ${v.data?.projektName || 'Projekt'}\nFiguren: ${figurenN}\nSzenen: ${szenenN}\nThemen: ${(v.data?.themen || []).length}\nBeziehungen: ${(v.data?.beziehungen || []).length}\nGrösse: ~${approxSize} KB`;
+                              alert('📋 Vorschau\n\n' + info);
+                            }}
+                            style={{padding:'4px 10px',background:'#f3f4f6',border:'1px solid #d1d5db',borderRadius:'6px',fontSize:'0.72rem',cursor:'pointer',color:'#374151'}}
+                          >Vorschau</button>
+                          <button
+                            className="version-restore-btn"
+                            onClick={() => {
+                              if (window.confirm('Version vom ' + timeStr + ' wiederherstellen? Aktuelle Daten werden überschrieben.')) {
+                                setData({...DEFAULT_DATA, ...v.data});
+                                setShowVersionHistory(false);
+                              }
+                            }}
+                          >Wiederherstellen</button>
+                        </div>
                       </div>
                     );
                   })}
@@ -35502,6 +36312,45 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
               )}
               <div style={{marginTop:'1rem',textAlign:'center'}}>
                 <button className="dashboard-version-btn" onClick={() => { setShowVersionHistory(false); setShowDashboard(true); }}>📊 Zurück zur Übersicht</button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ===== CRASH RECOVERY DIALOG ===== */}
+        {showRecoveryDialog && recoveryData && (
+          <>
+            <div className="overlay" onClick={() => setShowRecoveryDialog(false)} style={{zIndex:1300}} />
+            <div style={{position:'fixed',top:'50%',left:'50%',transform:'translate(-50%,-50%)',zIndex:1301,background:'white',borderRadius:'16px',padding:'1.5rem',maxWidth:'480px',width:'92%',boxShadow:'0 25px 60px rgba(0,0,0,0.35)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'1rem'}}>
+                <span style={{fontSize:'1.5rem'}}>🔄</span>
+                <h2 style={{margin:0,fontSize:'1.1rem',fontWeight:700,color:'#1e3a5f'}}>Nicht gespeicherte Daten gefunden</h2>
+              </div>
+              <div style={{fontSize:'0.82rem',color:'#374151',lineHeight:'1.6',marginBottom:'1rem'}}>
+                <p style={{margin:'0 0 0.5rem 0'}}>Im Browser wurden neuere Daten gefunden, die möglicherweise nicht gesichert wurden:</p>
+                <div style={{background:'#f0f4ff',borderRadius:'8px',padding:'0.6rem 0.8rem',fontSize:'0.78rem',color:'#1e3a5f'}}>
+                  <div><strong>Projekt:</strong> {recoveryData.data?.projektName || 'Unbekannt'}</div>
+                  <div><strong>Figuren:</strong> {(recoveryData.data?.figuren || []).length} | <strong>Szenen:</strong> {(recoveryData.data?.felder || []).length}</div>
+                  <div><strong>Gespeichert:</strong> {recoveryData.savedAt ? new Date(recoveryData.savedAt).toLocaleString('de-DE') : 'Unbekannt'}</div>
+                </div>
+              </div>
+              <div style={{display:'flex',gap:'0.5rem',justifyContent:'flex-end'}}>
+                <button onClick={() => { setShowRecoveryDialog(false); setRecoveryData(null); }} style={{padding:'8px 16px',background:'#f3f4f6',border:'1px solid #d1d5db',borderRadius:'8px',fontSize:'0.8rem',cursor:'pointer',color:'#374151'}}>
+                  Ignorieren
+                </button>
+                <button onClick={() => {
+                  if (recoveryData.data) {
+                    setData({...DEFAULT_DATA, ...recoveryData.data});
+                    if (recoveryData.guidedMode) setGuidedMode(prev => ({...prev, ...recoveryData.guidedMode}));
+                    if (recoveryData.strukturAntworten) setStrukturAntworten(recoveryData.strukturAntworten);
+                    if (recoveryData.offeneFormAbschnitte) setOffeneFormAbschnitte(recoveryData.offeneFormAbschnitte);
+                    if (recoveryData.aktuellesRaster) setAktuellesRaster(recoveryData.aktuellesRaster);
+                  }
+                  setShowRecoveryDialog(false);
+                  setRecoveryData(null);
+                }} style={{padding:'8px 16px',background:'#1e3a5f',color:'white',border:'none',borderRadius:'8px',fontSize:'0.8rem',cursor:'pointer',fontWeight:600}}>
+                  Wiederherstellen
+                </button>
               </div>
             </div>
           </>
@@ -35582,6 +36431,26 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                         <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Figuren, Szenen und Konzept teilen</div>
                       </div>
                       <span style={{fontSize:'0.8rem'}}>📤</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #f59e0b',background:'#fffbeb',cursor:'pointer'}} onClick={() => { exportAsZip(); setShowImportExportModal(false); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#92400e'}}>📦 Komplett-Backup exportieren (ZIP)</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Projekt + Versionshistorie + Exchange als ZIP-Archiv</div>
+                      </div>
+                      <span style={{padding:'2px 8px',background:'#f59e0b',color:'white',borderRadius:'4px',fontSize:'0.65rem',fontWeight:700}}>NEU</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #d1d5db',background:'#f9fafb',cursor:'pointer'}} onClick={() => { createManualSnapshot('browser'); setShowImportExportModal(false); window.__showFormatToast && window.__showFormatToast('Snapshot erstellt'); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#374151'}}>📸 Backup jetzt erstellen</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Manuellen Snapshot in der Versionshistorie speichern</div>
+                      </div>
+                      <span style={{fontSize:'0.8rem'}}>💾</span>
                     </div>
                   </div>
                 </div>
