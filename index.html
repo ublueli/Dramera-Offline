@@ -19432,6 +19432,41 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
       return lines.length > 0 ? lines.join('\n') : '';
     })();
     
+    // HTML → lesbarer Text (für Dialogtext-Extraktion)
+    const htmlToText = (html) => {
+      if (!html) return '';
+      return html
+        .replace(/<[^>]*class="[^"]*figur[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '\n$1: ')
+        .replace(/<[^>]*class="[^"]*figur-name[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '\n$1: ')
+        .replace(/<[^>]*class="[^"]*regie[^"]*"[^>]*>(.*?)<\/[^>]+>/gi, '($1) ')
+        .replace(/<\/?(p|div|br)[^>]*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/\n{3,}/g, '\n\n').trim();
+    };
+
+    // Szenen MIT Dialogtext aufbauen — intelligent kürzen bei langen Stücken
+    const szenenMitDialog = (() => {
+      const felder = data.felder || [];
+      if (felder.length === 0) return 'Keine Szenen';
+      // Gesamtlänge abschätzen für Kürzung
+      const totalRaw = felder.reduce((sum, f) => sum + (f.inhalt || '').length, 0);
+      const maxPerScene = totalRaw > 80000 ? 1500 : 0; // Kürzen bei sehr langen Stücken
+      return felder.map((f, i) => {
+        const figuren = (f.figuren || []).map(fid => data.figuren?.find(fig => fig.id === fid)?.name).filter(Boolean);
+        const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
+        let dialogText = htmlToText(f.inhalt || '');
+        if (maxPerScene > 0 && dialogText.length > maxPerScene) {
+          dialogText = dialogText.slice(0, maxPerScene) + '\n[... gekürzt]';
+        }
+        let block = `${i+1}. "${f.titel}"${figurenStr}\n   Zusammenfassung: ${f.zusammenfassung || '(keine)'}`;
+        if (dialogText) {
+          block += `\n   --- SZENENTEXT ---\n${dialogText}\n   --- ENDE SZENE ${i+1} ---`;
+        }
+        return block;
+      }).join('\n\n');
+    })();
+
     // Detaillierten Kontext aufbauen
     const projektKontext = `
 AKTUELLER PROJEKT-STAND:
@@ -19443,8 +19478,8 @@ ${(data.figuren || []).map((f, i) => `${i}. ${f.name}${f.ziel ? ` - Will: ${f.zi
 THEMEN (${data.themen.length}):
 ${(data.themen || []).map(t => t.name).join(', ') || 'Keine'}
 
-SZENEN IM ZEITSTRAHL (${data.felder.length}):
-${(data.felder || []).map((f, i) => `${i}. "${f.titel}" - ${f.zusammenfassung || 'Keine Zusammenfassung'}`).join('\n') || 'Keine Szenen'}
+SZENEN MIT DIALOGEN (${data.felder.length}):
+${szenenMitDialog}
 
 SZENEN-IDEEN IM MATERIAL (${data.szenenIdeen?.length || 0}):
 ${data.szenenIdeen?.map(s => `- "${s.titel}"`).join('\n') || 'Keine'}
