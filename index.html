@@ -15523,7 +15523,7 @@ Schreibe konkret und anschaulich. Nur den Text.${schweizHinweis}`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9äöüÄÖÜ\s]/g, '_') + '_Foerderdossier.docx';
+      a.download = `${new Date().toISOString().slice(0,10)} Dramera ${data.projektName || 'Projekt'} Foerderdossier.docx`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -17048,7 +17048,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${(data.projektName || 'Stueck').replace(/[^a-zA-Z0-9äöüÄÖÜ]/g, '_')}_Schreibtisch.docx`;
+      a.download = `${new Date().toISOString().slice(0,10)} Dramera ${data.projektName || 'Stueck'} Schreibtisch.docx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -22608,28 +22608,31 @@ WICHTIGE REGELN:
     
     let content, filename, title;
     
+    const heute = new Date().toISOString().slice(0, 10);
+    const pName = data.projektName || 'Projekt';
+
     switch (type) {
       case 'archiv':
         content = generateArchivContent(format);
-        filename = `${data.projektName || 'projekt'}-archiv`;
-        title = `Projekt-Archiv: ${data.projektName}`;
+        filename = `${heute} Dramera ${pName} Archiv`;
+        title = `Projekt-Archiv: ${pName}`;
         break;
       case 'treatment':
         content = generateTreatmentContent(format);
-        filename = `${data.projektName || 'projekt'}-treatment`;
-        title = `Treatment: ${data.projektName}`;
+        filename = `${heute} Dramera ${pName} Treatment`;
+        title = `Treatment: ${pName}`;
         break;
       case 'stuecktext':
         content = generateStuecktextContent(format);
-        filename = `${data.projektName || 'stueck'}-text`;
+        filename = `${heute} Dramera ${pName}`;
         // Titel kann ein Objekt sein!
         const titelForExport = data.fundament?.titel;
-        title = typeof titelForExport === 'string' ? titelForExport : (titelForExport?.titel || data.projektName || 'Stücktext');
+        title = typeof titelForExport === 'string' ? titelForExport : (titelForExport?.titel || pName || 'Stücktext');
         break;
       case 'materialien':
         content = generateMaterialienContent(format);
-        filename = `${data.projektName || 'projekt'}-materialien`;
-        title = `Recherche-Materialien: ${data.projektName}`;
+        filename = `${heute} Dramera ${pName} Materialien`;
+        title = `Recherche-Materialien: ${pName}`;
         break;
       default:
         return;
