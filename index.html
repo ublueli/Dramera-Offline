@@ -222,6 +222,7 @@
 
       // Follow-up key when leader active
       if (window.__leaderActive) {
+        console.log('[LEADER-DBG] Follow-up key:', e.key, 'lkey:', e.key.toLowerCase(), 'inQuill:', !!inQuill, 'inOrdnen:', !!inOrdnen, 'quillInstance:', !!quillInstance);
         e.preventDefault();
         e.stopPropagation();
         var lkey = e.key.toLowerCase();
@@ -229,9 +230,13 @@
 
         // Format keys
         if (lkey in LEADER_QUILL_MAP) {
+          console.log('[LEADER-DBG] Applying format:', lkey, '→', LEADER_QUILL_MAP[lkey]);
           if (inQuill && quillInstance) {
+            console.log('[LEADER-DBG] Using setBlockFormat on Quill');
             setBlockFormat(quillInstance, LEADER_QUILL_MAP[lkey]);
+            console.log('[LEADER-DBG] Format applied successfully via Quill');
           } else if (inOrdnen) {
+            console.log('[LEADER-DBG] Using Ordnen CSS class manipulation');
             // Ordnen mode: direct CSS class manipulation
             var ordnenMap = {
               'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
