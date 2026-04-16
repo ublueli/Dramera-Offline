@@ -22678,6 +22678,12 @@ WICHTIGE REGELN:
           // Hilfsfunktionen für THEATER_FORMATE → DOCX
           const TF = THEATER_FORMATE;
           const alignMap = { center: AlignmentType.CENTER, right: AlignmentType.RIGHT, left: AlignmentType.LEFT };
+
+          // CSS Margin-Collapsing simulieren: Abstand zwischen zwei Absätzen =
+          // max(vorheriger spacingAfter, aktueller spacingBefore), nicht die Summe.
+          // Wir speichern den letzten spacingAfter und passen spacingBefore an.
+          let lastSpacingAfterPt = 0;
+
           const fmtPara = (fmt, text, extraOpts = {}) => {
             const runs = [];
             // Inline-Regie erkennen: (Text in Klammern)
@@ -22693,10 +22699,17 @@ WICHTIGE REGELN:
             } else {
               runs.push(new TextRun({ text, font: fmt.font, size: fmt.size * 2, bold: !!fmt.bold, italics: !!fmt.italic, allCaps: !!fmt.allCaps, characterSpacing: fmt.letterSpacing ? Math.round(fmt.letterSpacing * 100) : undefined, color: fmt.color }));
             }
+
+            // CSS margin collapsing: max(prevAfter, curBefore) statt Summe
+            const curBeforePt = fmt.spacingBefore || 0;
+            const collapsedBefore = Math.max(0, curBeforePt - lastSpacingAfterPt);
+            const curAfterPt = fmt.spacingAfter || 0;
+            lastSpacingAfterPt = curAfterPt;
+
             return new Paragraph({
               alignment: alignMap[fmt.align] || AlignmentType.LEFT,
               indent: fmt.indent ? { left: Math.round(fmt.indent * 567) } : undefined,
-              spacing: { before: (fmt.spacingBefore || 0) * 20, after: (fmt.spacingAfter || 0) * 20, line: fmt.lineHeight ? Math.round(fmt.lineHeight * 240) : undefined },
+              spacing: { before: collapsedBefore * 20, after: curAfterPt * 20, line: fmt.lineHeight ? Math.round(fmt.lineHeight * 240) : undefined },
               ...extraOpts,
               children: runs
             });
@@ -22778,7 +22791,7 @@ WICHTIGE REGELN:
             if (data.felder?.length > 0) {
               let currentAkt = '';
               data.felder.forEach((feld, idx) => {
-                if (idx === 0) dc.push(new Paragraph({ children: [new PageBreak()] }));
+                if (idx === 0) { dc.push(new Paragraph({ children: [new PageBreak()] })); lastSpacingAfterPt = 0; }
 
                 // Akt-Wechsel
                 if (feld.akt && feld.akt !== currentAkt) {
