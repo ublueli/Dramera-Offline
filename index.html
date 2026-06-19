@@ -9,6 +9,11 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>
+    Babel.registerPreset('react-classic', {
+      presets: [[Babel.availablePresets.react, { runtime: 'classic' }]],
+    });
+  </script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
@@ -630,7 +635,7 @@
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel">
+  <script type="text/babel" data-presets="react-classic">
     const { useState, useEffect, useRef, useMemo, useCallback, Component } = React;
 
 // =====================================================
@@ -17634,6 +17639,157 @@ function DrameraWerkbank() {
     } catch(e) { console.warn('Recovery check failed:', e); }
   }, []);
 
+  // =====================================================
+  // DATEI-SICHERN (Desktop-App-Style)
+  // =====================================================
+  const saveToFile = React.useCallback(async () => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
+
+    try {
+      const exportData = {
+        _app: 'dramera',
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
+      };
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+
+      // Has existing file handle? Save silently.
+      if (fileHandleRef.current) {
+        try {
+          const writable = await fileHandleRef.current.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+          return;
+        } catch (err) {
+          // Permission revoked or handle invalid — fall through to picker
+          if (err.name === 'NotAllowedError') {
+            fileHandleRef.current = null;
+            setFilePath(null);
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // No handle — show picker (or download fallback)
+      if (window.showSaveFilePicker) {
+        try {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+          const handle = await window.showSaveFilePicker({
+            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
+            types: [{
+              description: 'Dramera Projekt',
+              accept: { 'application/json': ['.dramera.json', '.json'] }
+            }]
+          });
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        } catch (err) {
+          if (err.name === 'AbortError') return; // User cancelled
+          throw err;
+        }
+      } else {
+        // Fallback: browser download
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+        setFileIsDirty(false);
+        setLastFileSaveTime(new Date());
+        setSaveStatus('saved');
+        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+      }
+    } catch (err) {
+      console.error('Fehler beim Sichern:', err);
+      setSaveStatus('error');
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+
+  const saveToFileAs = React.useCallback(async () => {
+    if (saveInProgressRef.current) return;
+    saveInProgressRef.current = true;
+
+    try {
+      const exportData = {
+        _app: 'dramera',
+        version: '4.16',
+        exportDate: new Date().toISOString(),
+        data,
+        guidedMode,
+        strukturAntworten,
+        offeneFormAbschnitte,
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
+      };
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+
+      if (window.showSaveFilePicker) {
+        try {
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+          const handle = await window.showSaveFilePicker({
+            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
+            types: [{
+              description: 'Dramera Projekt',
+              accept: { 'application/json': ['.dramera.json', '.json'] }
+            }]
+          });
+          fileHandleRef.current = handle;
+          setFilePath(handle.name);
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          throw err;
+        }
+      } else {
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+        setFileIsDirty(false);
+        setLastFileSaveTime(new Date());
+        setSaveStatus('saved');
+        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+      }
+    } catch (err) {
+      console.error('Fehler beim Sichern unter:', err);
+      setSaveStatus('error');
+    } finally {
+      saveInProgressRef.current = false;
+    }
+  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+
   // Keyboard shortcuts: Cmd+S = Sichern, Cmd+Shift+S = Sichern unter
   useEffect(() => {
     const handleFileSaveKeyDown = (e) => {
@@ -20839,157 +20995,6 @@ WICHTIGE REGELN:
       alert('❌ ZIP-Export fehlgeschlagen: ' + e.message);
     }
   }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, versionHistory]);
-
-  // =====================================================
-  // DATEI-SICHERN (Desktop-App-Style)
-  // =====================================================
-  const saveToFile = React.useCallback(async () => {
-    if (saveInProgressRef.current) return;
-    saveInProgressRef.current = true;
-
-    try {
-      const exportData = {
-        _app: 'dramera',
-        version: '4.16',
-        exportDate: new Date().toISOString(),
-        data,
-        guidedMode,
-        strukturAntworten,
-        offeneFormAbschnitte,
-        aktuellesRaster,
-        materialSidebarWidth,
-        werkzeugSidebarWidth,
-        bearbeitenSidebarWidth
-      };
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-
-      // Has existing file handle? Save silently.
-      if (fileHandleRef.current) {
-        try {
-          const writable = await fileHandleRef.current.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          setFileIsDirty(false);
-          setLastFileSaveTime(new Date());
-          setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-          return;
-        } catch (err) {
-          // Permission revoked or handle invalid — fall through to picker
-          if (err.name === 'NotAllowedError') {
-            fileHandleRef.current = null;
-            setFilePath(null);
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      // No handle — show picker (or download fallback)
-      if (window.showSaveFilePicker) {
-        try {
-          const dateStr = new Date().toISOString().slice(0, 10);
-          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-          const handle = await window.showSaveFilePicker({
-            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
-            types: [{
-              description: 'Dramera Projekt',
-              accept: { 'application/json': ['.dramera.json', '.json'] }
-            }]
-          });
-          fileHandleRef.current = handle;
-          setFilePath(handle.name);
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          setFileIsDirty(false);
-          setLastFileSaveTime(new Date());
-          setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-        } catch (err) {
-          if (err.name === 'AbortError') return; // User cancelled
-          throw err;
-        }
-      } else {
-        // Fallback: browser download
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
-        setFileIsDirty(false);
-        setLastFileSaveTime(new Date());
-        setSaveStatus('saved');
-        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-      }
-    } catch (err) {
-      console.error('Fehler beim Sichern:', err);
-      setSaveStatus('error');
-    } finally {
-      saveInProgressRef.current = false;
-    }
-  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
-
-  const saveToFileAs = React.useCallback(async () => {
-    if (saveInProgressRef.current) return;
-    saveInProgressRef.current = true;
-
-    try {
-      const exportData = {
-        _app: 'dramera',
-        version: '4.16',
-        exportDate: new Date().toISOString(),
-        data,
-        guidedMode,
-        strukturAntworten,
-        offeneFormAbschnitte,
-        aktuellesRaster,
-        materialSidebarWidth,
-        werkzeugSidebarWidth,
-        bearbeitenSidebarWidth
-      };
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-
-      if (window.showSaveFilePicker) {
-        try {
-          const dateStr = new Date().toISOString().slice(0, 10);
-          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-          const handle = await window.showSaveFilePicker({
-            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
-            types: [{
-              description: 'Dramera Projekt',
-              accept: { 'application/json': ['.dramera.json', '.json'] }
-            }]
-          });
-          fileHandleRef.current = handle;
-          setFilePath(handle.name);
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          setFileIsDirty(false);
-          setLastFileSaveTime(new Date());
-          setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-          throw err;
-        }
-      } else {
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
-        setFileIsDirty(false);
-        setLastFileSaveTime(new Date());
-        setSaveStatus('saved');
-        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-      }
-    } catch (err) {
-      console.error('Fehler beim Sichern unter:', err);
-      setSaveStatus('error');
-    } finally {
-      saveInProgressRef.current = false;
-    }
-  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
 
   // =====================================================
   // DATEI ÖFFNEN (Desktop-App-Style mit File System Access API)
