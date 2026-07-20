@@ -509,10 +509,21 @@
       const resp = await gdriveFetch(GDRIVE_API + '/files', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(metadata) });
       return await resp.json();
     }
-    async function gdriveListFolders() {
-      try { const q = "mimeType='application/vnd.google-apps.folder' and trashed=false"; const resp = await gdriveFetch(GDRIVE_API + `/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=20`); return (await resp.json()).files || []; }
-      catch(e) { return []; }
+    async function gdriveListFolders(parentId) {
+      // Ordner UNTERHALB eines Elternordners auflisten (ermöglicht Navigation in Unterordner).
+      // Hinweis: Der drive.file-Zugriff zeigt nur Ordner, die diese App erstellt hat oder
+      // die du ausdrücklich über Google geöffnet hast.
+      try {
+        const parent = parentId || 'root';
+        const q = `'${parent}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+        const resp = await gdriveFetch(GDRIVE_API + `/files?q=${encodeURIComponent(q)}&fields=files(id,name,modifiedTime)&orderBy=name&pageSize=100`);
+        return (await resp.json()).files || [];
+      } catch(e) { return []; }
     }
+    // Navigations-Stack für den hierarchischen Ordner-Picker
+    var gdrivePickerStack = [{ id: 'root', name: 'Mein Drive' }];
+    function gdriveEscHtml(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function gdriveEscJs(s) { return String(s == null ? '' : s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/</g,'\\u003c'); }
     async function gdriveSetFolder(id, name) { gdriveFolderId = id; gdriveFolderName = name; localStorage.setItem('nina_gdrive_folder_id', id); localStorage.setItem('nina_gdrive_folder_name', name); if (gdriveRenderCallback) gdriveRenderCallback(); }
     async function gdriveSaveFile(fileName, jsonData, folderId) {
       const targetFolder = folderId || gdriveFolderId;
@@ -535,27 +546,72 @@
     
     function gdriveShowFolderPicker() {
       if (!gdriveIsConnected()) { gdriveOnConnected = () => gdriveShowFolderPicker(); gdriveSignIn(); return; }
+      gdrivePickerStack = [{ id: 'root', name: 'Mein Drive' }];
       const modal = document.createElement('div');
       modal.id = 'gdriveFolderPickerModal';
       modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
-      modal.innerHTML = '<div style="background:white;border-radius:12px;padding:24px;max-width:450px;width:90%;max-height:80vh;overflow-y:auto;" onclick="event.stopPropagation()"><h3 style="font-size:16px;font-weight:600;margin-bottom:16px;">📁 Google Drive – Ordner wählen</h3><div id="gdriveFolderList"><p style="color:#666;font-size:14px;">⏳ Ordner werden geladen...</p></div><div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px;"><p style="font-size:12px;color:#666;margin-bottom:8px;">Neuen Ordner erstellen:</p><div style="display:flex;gap:8px;"><input type="text" id="gdriveNewFolderName" placeholder="z.B. Der Sturm" style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;"><button onclick="gdriveCreateNewFolder()" style="padding:6px 14px;background:#1e3a5f;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Erstellen</button></div></div><div style="text-align:right;margin-top:16px;"><button onclick="document.getElementById(\'gdriveFolderPickerModal\').remove()" style="padding:6px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;">Schliessen</button></div></div>';
+      modal.innerHTML = '<div style="background:white;border-radius:12px;padding:24px;max-width:480px;width:90%;max-height:82vh;overflow-y:auto;" onclick="event.stopPropagation()"><h3 style="font-size:16px;font-weight:600;margin-bottom:6px;">📁 Google Drive – Ordner wählen</h3><div id="gdriveBreadcrumb" style="font-size:12px;color:#666;margin-bottom:10px;"></div><div id="gdriveCurrentActions" style="margin-bottom:10px;"></div><div id="gdriveFolderList"><p style="color:#666;font-size:14px;">⏳ Ordner werden geladen...</p></div><div style="border-top:1px solid #e5e7eb;padding-top:12px;margin-top:12px;"><p style="font-size:12px;color:#666;margin-bottom:8px;">Neuen Unterordner im aktuellen Ordner erstellen:</p><div style="display:flex;gap:8px;"><input type="text" id="gdriveNewFolderName" placeholder="z.B. Der Sturm" style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;"><button onclick="gdriveCreateNewFolder()" style="padding:6px 14px;background:#1e3a5f;color:white;border:none;border-radius:6px;font-size:13px;cursor:pointer;">Erstellen</button></div></div><div style="text-align:right;margin-top:16px;"><button onclick="document.getElementById(\'gdriveFolderPickerModal\').remove()" style="padding:6px 16px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:13px;cursor:pointer;">Schliessen</button></div></div>';
       document.body.appendChild(modal);
       modal.onclick = () => modal.remove();
       gdriveLoadFolderList();
     }
+    function gdriveRenderBreadcrumb() {
+      const bc = document.getElementById('gdriveBreadcrumb');
+      const act = document.getElementById('gdriveCurrentActions');
+      const cur = gdrivePickerStack[gdrivePickerStack.length - 1];
+      if (bc) {
+        bc.innerHTML = gdrivePickerStack.map((n, i) => {
+          const sep = i > 0 ? ' <span style="color:#bbb;">›</span> ' : '';
+          if (i === gdrivePickerStack.length - 1) return sep + '<strong>' + gdriveEscHtml(n.name) + '</strong>';
+          return sep + '<span onclick="gdriveNavTo(' + i + ')" style="cursor:pointer;color:#1e3a5f;text-decoration:underline;">' + gdriveEscHtml(n.name) + '</span>';
+        }).join('');
+      }
+      if (act) {
+        const upBtn = gdrivePickerStack.length > 1
+          ? '<button onclick="gdriveNavUp()" style="padding:5px 10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;font-size:12px;cursor:pointer;margin-right:8px;">↩ Zurück</button>'
+          : '';
+        const selectable = cur.id !== 'root';
+        const selBtn = selectable
+          ? '<button onclick="gdriveSelectCurrent()" style="padding:5px 12px;background:#16a34a;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">✓ Diesen Ordner wählen</button>'
+          : '<span style="font-size:12px;color:#999;">Wähle einen Ordner oder öffne einen Unterordner.</span>';
+        act.innerHTML = upBtn + selBtn;
+      }
+    }
     async function gdriveLoadFolderList() {
       const container = document.getElementById('gdriveFolderList'); if (!container) return;
+      gdriveRenderBreadcrumb();
+      const cur = gdrivePickerStack[gdrivePickerStack.length - 1];
+      container.innerHTML = '<p style="color:#666;font-size:14px;">⏳ Ordner werden geladen...</p>';
       try {
-        const folders = await gdriveListFolders();
-        if (folders.length === 0) { container.innerHTML = '<p style="color:#666;font-size:14px;">Keine Ordner gefunden. Erstelle einen neuen.</p>'; return; }
-        container.innerHTML = folders.map(f => `<div onclick="gdrivePickFolder('${f.id}', '${(f.name||'').replace(/'/g,'\\\'')}')" style="padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background='#f0f4ff'" onmouseout="this.style.background='white'"><span>📁</span><span style="flex:1;font-size:14px;">${f.name}</span>${f.id === gdriveFolderId ? '<span style="color:#1e3a5f;font-size:12px;">✓ aktuell</span>' : ''}</div>`).join('');
-      } catch(e) { container.innerHTML = '<p style="color:#ef4444;">Fehler: ' + e.message + '</p>'; }
+        const folders = await gdriveListFolders(cur.id);
+        if (folders.length === 0) { container.innerHTML = '<p style="color:#666;font-size:14px;">Keine Unterordner hier. Du kannst diesen Ordner wählen oder einen neuen erstellen.</p>'; return; }
+        container.innerHTML = folders.map(f => {
+          const nm = gdriveEscHtml(f.name);
+          // Für inline-onclick: erst JS-escapen, dann fürs HTML-Attribut kodieren
+          const jsName = gdriveEscHtml(gdriveEscJs(f.name));
+          const isCurrent = f.id === gdriveFolderId ? '<span style="color:#1e3a5f;font-size:12px;">✓ aktuell</span>' : '';
+          return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+            + '<div onclick="gdriveNavInto(\'' + f.id + '\',\'' + jsName + '\')" style="flex:1;padding:10px 12px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background=\'#f0f4ff\'" onmouseout="this.style.background=\'white\'"><span>📁</span><span style="flex:1;font-size:14px;">' + nm + '</span><span style="color:#bbb;font-size:12px;">öffnen ›</span>' + isCurrent + '</div>'
+            + '<button onclick="gdrivePickFolder(\'' + f.id + '\',\'' + jsName + '\')" title="Diesen Ordner wählen" style="padding:8px 10px;background:#16a34a;color:white;border:none;border-radius:6px;font-size:12px;cursor:pointer;">✓</button>'
+            + '</div>';
+        }).join('');
+      } catch(e) { container.innerHTML = '<p style="color:#ef4444;">Fehler: ' + gdriveEscHtml(e.message) + '</p>'; }
     }
+    function gdriveNavInto(id, name) { gdrivePickerStack.push({ id, name }); gdriveLoadFolderList(); }
+    function gdriveNavUp() { if (gdrivePickerStack.length > 1) { gdrivePickerStack.pop(); gdriveLoadFolderList(); } }
+    function gdriveNavTo(index) { if (index >= 0 && index < gdrivePickerStack.length) { gdrivePickerStack = gdrivePickerStack.slice(0, index + 1); gdriveLoadFolderList(); } }
+    function gdriveSelectCurrent() { const cur = gdrivePickerStack[gdrivePickerStack.length - 1]; if (cur && cur.id !== 'root') gdrivePickFolder(cur.id, cur.name); }
     function gdrivePickFolder(id, name) { gdriveSetFolder(id, name); const m = document.getElementById('gdriveFolderPickerModal'); if (m) m.remove(); }
     async function gdriveCreateNewFolder() {
       const input = document.getElementById('gdriveNewFolderName'); const name = input?.value?.trim(); if (!name) return alert('Bitte einen Namen eingeben.');
-      try { const folder = await gdriveCreateFolder(name); gdriveSetFolder(folder.id, name); const m = document.getElementById('gdriveFolderPickerModal'); if (m) m.remove(); alert('✅ Ordner "' + name + '" erstellt!'); }
-      catch(e) { alert('❌ Fehler: ' + e.message); }
+      try {
+        const parent = gdrivePickerStack[gdrivePickerStack.length - 1];
+        const parentId = parent && parent.id !== 'root' ? parent.id : null;
+        const folder = await gdriveCreateFolder(name, parentId);
+        // In den neuen Ordner navigieren, damit man ihn direkt wählen oder weiter untergliedern kann
+        if (input) input.value = '';
+        gdriveNavInto(folder.id, name);
+      } catch(e) { alert('❌ Fehler: ' + gdriveEscHtml(e.message)); }
     }
     // GIS wird lazy geladen beim ersten gdriveSignIn() – kein eageres Laden mehr
     // (vermeidet "The message port closed before a response was received" Fehler)
@@ -683,6 +739,36 @@ function initAutoResizeTextareas() {
   });
 
   observer.observe(document.body, { childList: true, subtree: true });
+
+  // Auch bei Fokus und bei change-Events (z.B. nach Werkzeug-Übertragung) anpassen
+  document.addEventListener('focusin', (e) => {
+    if (e.target && e.target.tagName === 'TEXTAREA' && e.target.classList.contains('auto-resize')) {
+      autoResizeTextarea(e.target);
+    }
+  }, true);
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.tagName === 'TEXTAREA' && e.target.classList.contains('auto-resize')) {
+      autoResizeTextarea(e.target);
+    }
+  }, true);
+
+  // Robuster Auffang-Sweep: React setzt Werte oft programmatisch (Projekt laden,
+  // Werkzeug-Übertragung, KI-Transformation), ohne dass ein input-Event feuert.
+  // Dieser leichte Intervall-Sweep sorgt dafür, dass JEDES ausgefüllte Feld
+  // zuverlässig auf seine volle Texthöhe wächst und nichts abgeschnitten bleibt.
+  setInterval(() => {
+    const list = document.querySelectorAll('textarea.auto-resize');
+    for (let i = 0; i < list.length; i++) {
+      const ta = list[i];
+      // Nur anpassen, wenn sich die Inhaltshöhe seit der letzten Anpassung geändert
+      // hat. So entsteht KEIN dauernder Reflow (wichtig bei Feldern mit Rahmen),
+      // sondern nur echte Arbeit, wenn neuer Text dazukommt.
+      if (ta.__lastAutoH !== ta.scrollHeight) {
+        autoResizeTextarea(ta);
+        ta.__lastAutoH = ta.scrollHeight;
+      }
+    }
+  }, 500);
 
   // Initial
   processTextareas();
@@ -17353,6 +17439,102 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   );
 };
 
+// =====================================================
+// SZENEN-GUIDE: Von einer bestehenden Szene aus Schritt für Schritt
+// durch dramaturgische Fragen geführt werden.
+// =====================================================
+const SZENEN_GUIDE_SCHRITTE = [
+  { key: 'funktion', frage: 'Welche Funktion hat diese Szene im Ganzen?', hilfe: 'Was muss nach der Szene anders sein als davor? Wenn du die Szene streichst – was fehlt der Geschichte?', placeholder: 'Nach dieser Szene ist … / Sie treibt voran, indem …' },
+  { key: 'figuren_wollen', frage: 'Was will jede anwesende Figur – hier und jetzt?', hilfe: 'Nicht das grosse Lebensziel, sondern das konkrete Wollen in genau dieser Szene. Pro Figur ein Satz.', placeholder: 'A will … / B will …' },
+  { key: 'konflikt', frage: 'Woran reiben sich diese Absichten?', hilfe: 'Wer steht wem im Weg? Ein Konflikt entsteht, wenn zwei Figuren dasselbe wollen oder Unvereinbares.', placeholder: 'Der Widerstand kommt von … weil …' },
+  { key: 'wendung', frage: 'Was kippt in der Szene?', hilfe: 'An welchem Punkt ändert sich die Richtung? Welche Information, Handlung oder Entscheidung dreht die Lage?', placeholder: 'Der Umschlag passiert, als …' },
+  { key: 'einsatz', frage: 'Was steht auf dem Spiel?', hilfe: 'Was riskiert die Figur, die am meisten will? Ohne Einsatz bleibt eine Szene beliebig.', placeholder: 'Auf dem Spiel steht … / Wenn es misslingt, dann …' },
+  { key: 'eintritt_austritt', frage: 'Wie beginnt und endet die Szene?', hilfe: 'Steige so spät wie möglich ein, mitten im Geschehen. Mit welchem Bild oder Satz endet sie – und was bleibt offen?', placeholder: 'Anfang: … / Letztes Bild: …' },
+  { key: 'subtext', frage: 'Was wird verschwiegen?', hilfe: 'Was sagen die Figuren NICHT, meinen es aber? Der Subtext ist oft interessanter als das Gesagte.', placeholder: 'Unausgesprochen bleibt …' },
+  { key: 'ort_zeit', frage: 'Warum genau hier und jetzt?', hilfe: 'Was gibt der Ort und die Zeit dieser Szene? Was wäre an einem anderen Ort verloren?', placeholder: 'Der Ort bedeutet … / Der Zeitpunkt …' },
+  { key: 'theatermittel', frage: 'Was kann nur das Theater hier?', hilfe: 'Was wäre im Film oder Roman anders? Wo nutzt die Szene das Live-Ereignis, den Raum, den Körper, die Gleichzeitigkeit?', placeholder: 'Theatral wird es, wenn …' }
+];
+
+const SZENEN_GUIDE_MARKER = '── Szenen-Steckbrief (geführt) ──';
+
+function SzenenGuideModal({ feld, figuren, onSave, onClose }) {
+  const [schritt, setSchritt] = React.useState(0);
+  const [antworten, setAntworten] = React.useState(() => ({ ...((feld && feld.szenenGuide) || {}) }));
+  if (!feld) return null;
+
+  const aktuell = SZENEN_GUIDE_SCHRITTE[schritt];
+  const anzahl = SZENEN_GUIDE_SCHRITTE.length;
+  const istLetzter = schritt === anzahl - 1;
+  const figurenNamen = (feld.figuren || []).map(fid => { const f = (figuren || []).find(x => x && x.id === fid); return f ? f.name : null; }).filter(Boolean);
+
+  const setAntwort = (val) => setAntworten(prev => ({ ...prev, [aktuell.key]: val }));
+
+  const kompiliereSteckbrief = (ant) => {
+    const zeilen = [SZENEN_GUIDE_MARKER];
+    SZENEN_GUIDE_SCHRITTE.forEach(s => {
+      const v = (ant[s.key] || '').trim();
+      if (v) { zeilen.push(''); zeilen.push(s.frage); zeilen.push(v); }
+    });
+    return zeilen.join('\n');
+  };
+
+  const abschliessen = () => {
+    // Bestehende Zusammenfassung erhalten, alten Steckbrief-Block ersetzen
+    const alt = (feld.zusammenfassung || '');
+    const markerIdx = alt.indexOf(SZENEN_GUIDE_MARKER);
+    const basis = (markerIdx !== -1 ? alt.slice(0, markerIdx) : alt).trim();
+    const steckbrief = kompiliereSteckbrief(antworten);
+    const neueZusammenfassung = basis ? (basis + '\n\n' + steckbrief) : steckbrief;
+    onSave(feld.id, { ...antworten }, neueZusammenfassung);
+    onClose();
+  };
+
+  return (
+    <div className="szenenguide-overlay" onClick={onClose}>
+      <div className="szenenguide-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="szenenguide-header">
+          <div>
+            <div className="szenenguide-kicker">🧭 Szene geführt entwickeln</div>
+            <div className="szenenguide-titel">{feld.titel || 'Unbenannte Szene'}</div>
+            {figurenNamen.length > 0 && <div className="szenenguide-figuren">Figuren: {figurenNamen.join(', ')}</div>}
+          </div>
+          <button className="szenenguide-close" onClick={onClose}>×</button>
+        </div>
+
+        <div className="szenenguide-progress">
+          {SZENEN_GUIDE_SCHRITTE.map((s, i) => (
+            <div key={s.key} className={'szenenguide-dot ' + (i === schritt ? 'aktiv' : (antworten[s.key] && antworten[s.key].trim() ? 'gefuellt' : ''))} onClick={() => setSchritt(i)} title={s.frage} />
+          ))}
+        </div>
+
+        <div className="szenenguide-body">
+          <div className="szenenguide-schrittzahl">Schritt {schritt + 1} von {anzahl}</div>
+          <h3 className="szenenguide-frage">{aktuell.frage}</h3>
+          <p className="szenenguide-hilfe">{aktuell.hilfe}</p>
+          <textarea
+            className="szenenguide-textarea"
+            value={antworten[aktuell.key] || ''}
+            onChange={(e) => setAntwort(e.target.value)}
+            placeholder={aktuell.placeholder}
+            rows={6}
+            autoFocus
+          />
+        </div>
+
+        <div className="szenenguide-footer">
+          <button className="szenenguide-btn sekundaer" onClick={() => setSchritt(s => Math.max(0, s - 1))} disabled={schritt === 0}>← Zurück</button>
+          <div className="szenenguide-footer-rechts">
+            <button className="szenenguide-btn geist" onClick={abschliessen} title="Antworten in die Szene übernehmen und schliessen">Speichern &amp; schliessen</button>
+            {!istLetzter
+              ? <button className="szenenguide-btn primaer" onClick={() => setSchritt(s => Math.min(anzahl - 1, s + 1))}>Weiter →</button>
+              : <button className="szenenguide-btn primaer" onClick={abschliessen}>Abschliessen ✓</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DrameraWerkbank() {
   // Lade gespeicherte Daten aus localStorage oder verwende Default
   const [data, setData] = useState(savedState?.data || DEFAULT_DATA);
@@ -17362,6 +17544,7 @@ function DrameraWerkbank() {
   const [werkzeugKategorieOpen, setWerkzeugKategorieOpen] = useState(null);
   const [aktivesWerkzeug, setAktivesWerkzeug] = useState(null);
   const [ausgewaehltesFeld, setAusgewaehltesFeld] = useState(null);
+  const [szenenGuideFeldId, setSzenenGuideFeldId] = useState(null);
   const [selectedFigur, setSelectedFigur] = useState(null);
   const [selectedSzeneIdee, setSelectedSzeneIdee] = useState(null);
   const [selectedThema, setSelectedThema] = useState(null);
@@ -17642,6 +17825,16 @@ function DrameraWerkbank() {
   // =====================================================
   // DATEI-SICHERN (Desktop-App-Style)
   // =====================================================
+  // Hinweis, wenn die Umgebung kein direktes Zurückschreiben erlaubt und die
+  // Datei stattdessen im Download-Ordner landet (file:// oder Browser ohne
+  // File System Access API). Der ausführliche Hinweis erscheint nur einmal.
+  const notifyDownloadFallback = () => {
+    if (window.__showFormatToast) window.__showFormatToast('💾 In den Download-Ordner gesichert');
+    if (!window.__ninaSaveHintShown) {
+      window.__ninaSaveHintShown = true;
+      setTimeout(() => alert('ℹ️ Direktes Speichern in den Ursprungsordner ist in dieser Umgebung nicht möglich.\n\nDas passiert, wenn die App als lokale Datei (file://) oder in einem Browser ohne Datei-Zugriff (Firefox/Safari) läuft. Dein Projekt wurde deshalb in den Download-Ordner gelegt.\n\nFür echtes Zurückschreiben in denselben Ordner: die App in Chrome oder Edge über eine Web-Adresse öffnen (http/https oder localhost) – nicht per Doppelklick als Datei. Alternativ das Google-Drive-Backup verwenden.'), 150);
+    }
+  };
   const saveToFile = React.useCallback(async () => {
     if (saveInProgressRef.current) return;
     saveInProgressRef.current = true;
@@ -17708,7 +17901,16 @@ function DrameraWerkbank() {
           window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
         } catch (err) {
           if (err.name === 'AbortError') return; // User cancelled
-          throw err;
+          // Umgebung erlaubt keinen Datei-Dialog / kein Schreiben (z.B. file://):
+          // auf Download ausweichen statt hart zu scheitern.
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+          downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          notifyDownloadFallback();
+          return;
         }
       } else {
         // Fallback: browser download
@@ -17718,7 +17920,7 @@ function DrameraWerkbank() {
         setFileIsDirty(false);
         setLastFileSaveTime(new Date());
         setSaveStatus('saved');
-        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        notifyDownloadFallback();
       }
     } catch (err) {
       console.error('Fehler beim Sichern:', err);
@@ -17771,7 +17973,15 @@ function DrameraWerkbank() {
           window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
         } catch (err) {
           if (err.name === 'AbortError') return;
-          throw err;
+          // Kein Datei-Dialog m\u00f6glich (z.B. file://): auf Download ausweichen.
+          const dateStr = new Date().toISOString().slice(0, 10);
+          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
+          downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+          setFileIsDirty(false);
+          setLastFileSaveTime(new Date());
+          setSaveStatus('saved');
+          notifyDownloadFallback();
+          return;
         }
       } else {
         const dateStr = new Date().toISOString().slice(0, 10);
@@ -17780,7 +17990,7 @@ function DrameraWerkbank() {
         setFileIsDirty(false);
         setLastFileSaveTime(new Date());
         setSaveStatus('saved');
-        window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+        notifyDownloadFallback();
       }
     } catch (err) {
       console.error('Fehler beim Sichern unter:', err);
@@ -17789,6 +17999,180 @@ function DrameraWerkbank() {
       saveInProgressRef.current = false;
     }
   }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+
+  // === GESAMT-EXPORT: Alle ausgefüllten Felder + alle Szenen als Word-Dokument ===
+  // Bündelt Fundament, Figuren, Themen, Schauplatz/Zeit und weitere Werkzeug-Inhalte
+  // sowie jede Szene (Beschrieb, Zusammenfassung, Text) in einem .docx.
+  const exportGesamtdokument = React.useCallback(async () => {
+    try {
+      if (!window.docx) {
+        const cdnUrls = [
+          'https://unpkg.com/docx@8.5.0/build/index.umd.js',
+          'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'
+        ];
+        for (const url of cdnUrls) {
+          if (window.docx) break;
+          try {
+            const s = document.createElement('script');
+            s.src = url;
+            document.head.appendChild(s);
+            await new Promise((resolve, reject) => {
+              s.onload = resolve; s.onerror = reject;
+              setTimeout(() => reject(new Error('Timeout')), 8000);
+            });
+          } catch (e) { /* nächste URL versuchen */ }
+        }
+        if (!window.docx) throw new Error('docx-Library konnte nicht geladen werden. Bitte Internetverbindung prüfen.');
+      }
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } = window.docx;
+
+      const stripHtml = (html) => {
+        if (!html) return '';
+        try {
+          const d = document.createElement('div');
+          d.innerHTML = String(html)
+            .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+            .replace(/<br\s*\/?>/gi, '\n');
+          return (d.textContent || '').replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+        } catch (e) { return String(html).replace(/<[^>]*>/g, ' ').trim(); }
+      };
+
+      const LABELS = {
+        name: 'Name', email: 'E-Mail', website: 'Website', adresse: 'Adresse', copyright: 'Copyright',
+        titel: 'Titel', tagline: 'Tagline', logline: 'Logline', kern: 'Kern der Geschichte',
+        konflikt: 'Konflikt', beschreibung: 'Beschreibung', zusammenfassung: 'Zusammenfassung',
+        ziel: 'Ziel', begehren: 'Begehren', want: 'Want', need: 'Need', ghost: 'Ghost',
+        sprechweise: 'Sprechweise', biographie: 'Biografie', alter: 'Alter', beruf: 'Beruf',
+        geschlecht: 'Geschlecht', weltgesetz: 'Weltgesetz', hauptort: 'Hauptort', epoche: 'Epoche',
+        dauer: 'Dauer', rhythmus: 'Rhythmus', held: 'Held', drache: 'Drache/Gegner', schatz: 'Schatz',
+        mentor: 'Mentor', schwelle: 'Schwelle', verwandlung: 'Verwandlung', ort: 'Ort', zeit: 'Zeit',
+        akt: 'Akt', bedeutung: 'Bedeutung', umWas: 'Worum es geht', stakes: 'Einsatz', eskalation: 'Eskalation',
+        ausgang: 'Ausgang', unaussprechliches: 'Unaussprechliches', emotionale_bewegung: 'Emotionale Bewegung'
+      };
+      const NOISE = new Set(['id','_exchangeId','position','farbe','color','sort_order','icon','_source','portrait','portraitBild','titelbild','contrast','selected','status','_id','key','slug','nr','anteil']);
+      const humanize = (k) => LABELS[k] || (String(k).charAt(0).toUpperCase() + String(k).slice(1).replace(/_/g, ' '));
+
+      const children = [];
+      const H = (text, level) => new Paragraph({ heading: level, spacing: { before: 240, after: 100 }, children: [ new TextRun({ text: String(text), bold: true }) ] });
+      const P = (text, opts) => new Paragraph({ spacing: { after: 60 }, children: [ new TextRun(Object.assign({ text: String(text) }, opts || {})) ] });
+      const KV = (label, val) => new Paragraph({ spacing: { after: 40 }, children: [ new TextRun({ text: label + ': ', bold: true }), new TextRun({ text: String(val) }) ] });
+
+      const renderValue = (label, value, depth) => {
+        if (value == null || value === '') return;
+        if (typeof value === 'string') { const t = stripHtml(value); if (t) children.push(KV(label || 'Text', t)); return; }
+        if (typeof value === 'number' || typeof value === 'boolean') { children.push(KV(label || 'Wert', value)); return; }
+        if (Array.isArray(value)) {
+          const items = value.filter(v => v != null && v !== '');
+          if (items.length === 0) return;
+          if (label) children.push(P(label, { bold: true }));
+          items.forEach((item, i) => {
+            if (typeof item === 'string') { const t = stripHtml(item); if (t) children.push(P('•  ' + t)); }
+            else if (typeof item === 'object') {
+              const title = item.name || item.titel || item.title || ('#' + (i + 1));
+              children.push(P('•  ' + title, { bold: true }));
+              Object.keys(item).forEach(k => { if (!NOISE.has(k) && k !== 'name' && k !== 'titel' && k !== 'title') renderValue('    ' + humanize(k), item[k], depth + 1); });
+            }
+          });
+          return;
+        }
+        if (typeof value === 'object') {
+          const keys = Object.keys(value).filter(k => !NOISE.has(k));
+          if (keys.length === 0) return;
+          if (label) children.push(P(label, { bold: true }));
+          keys.forEach(k => renderValue(humanize(k), value[k], depth + 1));
+        }
+      };
+
+      const section = (title, value) => {
+        // Prüfen, ob überhaupt Inhalt vorhanden ist
+        const before = children.length;
+        const marker = H(title, HeadingLevel.HEADING_2);
+        children.push(marker);
+        renderValue('', value, 0);
+        // Wenn keine Inhaltszeile dazukam, Überschrift wieder entfernen
+        if (children.length === before + 1) children.pop();
+      };
+
+      // Titelseite
+      children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 2400, after: 200 }, children: [ new TextRun({ text: data.projektName || 'Unbenanntes Projekt', bold: true, size: 52, font: 'Trebuchet MS' }) ] }));
+      children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 }, children: [ new TextRun({ text: 'Gesamtübersicht – alle Felder und Szenen', italics: true, size: 26, font: 'Georgia' }) ] }));
+      if (data.autor && data.autor.name) children.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [ new TextRun({ text: 'von ' + data.autor.name, size: 22 }) ] }));
+      children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400 }, children: [ new TextRun({ text: new Date().toLocaleDateString('de-CH'), size: 18, color: '888888' }) ] }));
+
+      // Ausgefüllte Felder (kuratierte Abschnitte, robust gegen fehlende Keys)
+      children.push(H('Material', HeadingLevel.HEADING_1));
+      section('Autor', data.autor);
+      section('Fundament', data.fundament);
+      section('Thema', data.themaDetails);
+      section('Themen', data.themen);
+      section('Motive', data.selectedMotive || data.motive);
+      section('Wertequadrat', data.wertequadrat);
+      section('Schauplatz', data.schauplatz);
+      section('Zeit', data.zeit);
+      section('Märchenmodell', data.maerchenmodell);
+      section('Kräfte', data.kraefte);
+      section('Archetypen', data.archetypen);
+      section('Geheimnisse', data.geheimnisse);
+      section('Intrigen', data.intrigen);
+      section('Spannungsideen', data.spannungsIdeen);
+      section('Recherche', data.recherche);
+      section('Vorgaben', data.vorgaben);
+      section('Impulsfragen-Notizen', data.impulsfragen_notizen);
+      section('Reflexionsnotizen', data.reflexionsNotizen);
+      section('Förderdossier', data.dossier);
+
+      // Figuren mit allen ausgefüllten Feldern
+      const figuren = Array.isArray(data.figuren) ? data.figuren : [];
+      if (figuren.length > 0) {
+        children.push(H('Figuren', HeadingLevel.HEADING_1));
+        figuren.forEach(fig => {
+          if (!fig) return;
+          children.push(H(fig.name || 'Unbenannte Figur', HeadingLevel.HEADING_2));
+          Object.keys(fig).forEach(k => { if (!NOISE.has(k) && k !== 'name' && k !== 'tracking') renderValue(humanize(k), fig[k], 1); });
+        });
+      }
+
+      // Szenen mit Beschrieb, Zusammenfassung und Text
+      const felder = Array.isArray(data.felder) ? [...data.felder] : [];
+      felder.sort((a, b) => ((a && a.position) || 0) - ((b && b.position) || 0));
+      const figName = (fid) => { const f = figuren.find(x => x && x.id === fid); return f ? (f.name || fid) : fid; };
+      if (felder.length > 0) {
+        children.push(H('Szenen', HeadingLevel.HEADING_1));
+        let lastAkt = null;
+        felder.forEach((feld, idx) => {
+          if (!feld) return;
+          if (feld.akt && feld.akt !== lastAkt) { lastAkt = feld.akt; children.push(H(feld.akt, HeadingLevel.HEADING_2)); }
+          children.push(H((feld.nummer || (idx + 1)) + '. ' + (feld.titel || 'Szene'), HeadingLevel.HEADING_3));
+          const meta = [feld.ort, feld.zeit].filter(Boolean).join(' · ');
+          if (meta) children.push(P(meta, { italics: true, color: '757575' }));
+          if (Array.isArray(feld.figuren) && feld.figuren.length > 0) children.push(KV('Figuren', feld.figuren.map(figName).join(', ')));
+          const beschrieb = stripHtml(feld.beschreibung || feld.zusammenfassung || '');
+          if (beschrieb) { children.push(P('Beschrieb / Zusammenfassung', { bold: true })); children.push(P(beschrieb)); }
+          const inhalt = stripHtml(feld.inhalt || '');
+          if (inhalt) { children.push(P('Text', { bold: true })); inhalt.split('\n').forEach(line => children.push(P(line || ' '))); }
+        });
+      }
+
+      // Freie Schreibfläche (falls vorhanden und nicht leer)
+      const flaeche = stripHtml(data.schreibflaeche || '');
+      if (flaeche) { children.push(H('Schreibfläche', HeadingLevel.HEADING_1)); flaeche.split('\n').forEach(line => children.push(P(line || ' '))); }
+
+      const doc = new Document({ sections: [{ properties: { page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } } }, children }] });
+      const blob = await Packer.toBlob(doc);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß_\- ]/g, '');
+      a.download = new Date().toISOString().slice(0, 10) + ' Dramera ' + safeName + ' Gesamtuebersicht.docx';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+      if (window.__showFormatToast) window.__showFormatToast('✓ Gesamtübersicht als Word exportiert');
+    } catch (err) {
+      console.error('Gesamt-Export fehlgeschlagen:', err);
+      alert('Gesamt-Export fehlgeschlagen: ' + err.message);
+    }
+  }, [data]);
 
   // Keyboard shortcuts: Cmd+S = Sichern, Cmd+Shift+S = Sichern unter
   useEffect(() => {
@@ -23666,21 +24050,37 @@ STIL:
   };
   
   // Handler für freien Text in der Schreibfläche
+  // WICHTIG: Bewahrt manuell geschriebenen Text, damit er bei einer Werkzeug-
+  // Übertragung (die die Fläche aus den strukturierten Inhalten neu aufbaut)
+  // NICHT verloren geht. Der frei getippte Teil wird in schreibflaecheFreitext
+  // abgelegt; generateFormattedSchreibflaeche hängt ihn beim Neuaufbau wieder an.
+  const SCHREIBFLAECHE_FREITEXT_MARKER = '▓▓▓  ✍️ NOTIZEN  ▓▓▓';
   const handleSchreibflaecheChange = (newContent) => {
-    // Prüfe ob der Inhalt manuell bearbeitet wurde
-    const generatedContent = generateFormattedSchreibflaeche(
-      data.schreibflaecheInhalte || {}, 
-      data
-    );
-    
-    if (newContent !== generatedContent) {
-      // User hat manuell editiert - speichere als Freitext
-      // Versuche den generierten Teil zu identifizieren und den Rest als Freitext
-      setData(prev => ({
-        ...prev,
-        schreibflaeche: newContent
-      }));
-    }
+    setData(prev => {
+      const inhalte = prev.schreibflaecheInhalte || {};
+      const hasTools = Object.keys(inhalte).length > 0;
+      let freitext;
+      const mIdx = newContent.indexOf(SCHREIBFLAECHE_FREITEXT_MARKER);
+      if (mIdx !== -1) {
+        // Generierte Werkzeug-Blöcke + Notizen-Marker vorhanden:
+        // Alles nach dem Marker ist frei getippter Text.
+        freitext = newContent.slice(mIdx + SCHREIBFLAECHE_FREITEXT_MARKER.length).replace(/^\n+/, '');
+      } else if (!hasTools) {
+        // Keine Werkzeug-Inhalte: die ganze Fläche ist frei getippter Text.
+        freitext = newContent;
+      } else {
+        // Werkzeug-Inhalte vorhanden, aber (noch) kein Notizen-Marker:
+        // generierten Teil als Präfix bestimmen und den Rest als Freitext werten.
+        const gen = generateFormattedSchreibflaeche(inhalte, { ...prev, schreibflaecheFreitext: '' });
+        if (newContent.startsWith(gen)) {
+          freitext = newContent.slice(gen.length).replace(/^\n+/, '');
+        } else {
+          // Uneindeutig – bestehenden Freitext nicht überschreiben.
+          freitext = prev.schreibflaecheFreitext || '';
+        }
+      }
+      return { ...prev, schreibflaeche: newContent, schreibflaecheFreitext: freitext };
+    });
   };
   
   // =====================================================
@@ -24717,6 +25117,7 @@ STIL:
             <button className="sidebar-menu-item" onClick={() => { openExportDialog('stuecktext'); setShowMenu(false); }}>📝 Stücktext</button>
             <button className="sidebar-menu-item" onClick={() => { openExportDialog('treatment'); setShowMenu(false); }}>📋 Treatment</button>
             <button className="sidebar-menu-item" onClick={() => { openExportDialog('materialien'); setShowMenu(false); }}>📚 Recherche-Material</button>
+            <button className="sidebar-menu-item" onClick={() => { exportGesamtdokument(); setShowMenu(false); }}>🗂️ Gesamtübersicht (Word)</button>
             <button className="sidebar-menu-item" onClick={() => { setShowDossierAssistent(true); setShowMenu(false); }}>📑 Förderdossier</button>
           </div>
         )}
@@ -30988,6 +31389,37 @@ STIL:
         
         /* Bearbeiten Sidebar */
         .bearbeiten-sidebar { background: #fff; border-left: 1px solid #e0dbd2; padding: 1rem; overflow-y: auto; overflow-x: hidden; flex-shrink: 0; min-width: 200px; max-width: 450px; }
+        /* Szenen-Guide */
+        .szenenguide-start-btn { width: 100%; margin: 0.25rem 0 0.75rem; padding: 0.55rem 0.75rem; background: linear-gradient(135deg, #6b4423, #8b5a2b); color: #fff; border: none; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: filter 0.15s; }
+        .szenenguide-start-btn:hover { filter: brightness(1.08); }
+        .szenenguide-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 12000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+        .szenenguide-modal { background: #fdfbf8; border-radius: 1rem; width: 100%; max-width: 620px; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 24px 60px rgba(0,0,0,0.32); overflow: hidden; }
+        .szenenguide-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1.1rem 1.3rem 0.8rem; border-bottom: 1px solid #ece5da; }
+        .szenenguide-kicker { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #8b5a2b; font-weight: 700; }
+        .szenenguide-titel { font-size: 1.15rem; font-weight: 700; color: #2b211a; margin-top: 0.15rem; }
+        .szenenguide-figuren { font-size: 0.78rem; color: #7a6a5a; margin-top: 0.2rem; }
+        .szenenguide-close { background: none; border: none; font-size: 1.6rem; line-height: 1; color: #9a8b7a; cursor: pointer; padding: 0 0.2rem; }
+        .szenenguide-close:hover { color: #4a3025; }
+        .szenenguide-progress { display: flex; gap: 0.4rem; padding: 0.8rem 1.3rem; flex-wrap: wrap; }
+        .szenenguide-dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: #ddd3c6; cursor: pointer; transition: transform 0.15s, background 0.15s; }
+        .szenenguide-dot:hover { transform: scale(1.2); }
+        .szenenguide-dot.gefuellt { background: #b58a5e; }
+        .szenenguide-dot.aktiv { background: #6b4423; transform: scale(1.25); }
+        .szenenguide-body { padding: 0.4rem 1.3rem 1rem; overflow-y: auto; }
+        .szenenguide-schrittzahl { font-size: 0.75rem; color: #9a8b7a; margin-bottom: 0.35rem; }
+        .szenenguide-frage { font-size: 1.15rem; color: #2b211a; margin: 0 0 0.35rem; font-family: 'Georgia', serif; }
+        .szenenguide-hilfe { font-size: 0.85rem; color: #6f6152; line-height: 1.5; margin: 0 0 0.7rem; }
+        .szenenguide-textarea { width: 100%; box-sizing: border-box; padding: 0.7rem 0.8rem; border: 1px solid #d1c7b8; border-radius: 0.5rem; font-size: 0.92rem; font-family: inherit; line-height: 1.5; resize: vertical; background: #fff; }
+        .szenenguide-textarea:focus { outline: none; border-color: #8b5a2b; box-shadow: 0 0 0 2px rgba(139,90,43,0.15); }
+        .szenenguide-footer { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; padding: 0.85rem 1.3rem; border-top: 1px solid #ece5da; background: #f7f1e8; }
+        .szenenguide-footer-rechts { display: flex; gap: 0.5rem; }
+        .szenenguide-btn { padding: 0.55rem 1rem; border-radius: 0.5rem; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+        .szenenguide-btn.primaer { background: #6b4423; color: #fff; }
+        .szenenguide-btn.primaer:hover { filter: brightness(1.1); }
+        .szenenguide-btn.sekundaer { background: #fff; color: #6b4423; border-color: #d1c7b8; }
+        .szenenguide-btn.sekundaer:disabled { opacity: 0.4; cursor: default; }
+        .szenenguide-btn.geist { background: transparent; color: #7a6a5a; border-color: #d1c7b8; }
+        .szenenguide-btn.geist:hover { background: #efe7db; }
         .bearbeiten-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         
         /* Aufklappbare Sektionen */
@@ -34643,9 +35075,9 @@ STIL:
                 {/* FREIER MODUS */}
                 {!guidedMode.active && (
                   <>
-                    <textarea 
-                      value={data.schreibflaeche || ''} 
-                      onChange={(e) => setData(p => ({ ...p, schreibflaeche: e.target.value }))} 
+                    <textarea
+                      value={data.schreibflaeche || ''}
+                      onChange={(e) => handleSchreibflaecheChange(e.target.value)}
                       placeholder={`📝 Willkommen bei Dramera!
 
 Wer schon weiss, was erzählt werden soll – hier direkt losschreiben.
@@ -35987,7 +36419,12 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     
                     {/* Titel */}
                     <input type="text" value={ausgewaehltesFeld.titel} onChange={(e) => updateFeld(ausgewaehltesFeld.id, { titel: e.target.value })} className="bearbeiten-input" placeholder="Titel" />
-                    
+
+                    {/* Geführt entwickeln */}
+                    <button className="szenenguide-start-btn" onClick={() => setSzenenGuideFeldId(ausgewaehltesFeld.id)} title="Schritt für Schritt durch dramaturgische Fragen zu dieser Szene">
+                      🧭 Szene geführt entwickeln
+                    </button>
+
                     {/* Zusammenfassung */}
                     <div className="feld-section">
                       <label className="feld-label">Zusammenfassung</label>
@@ -36314,6 +36751,16 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
             />
           )}
         </div>
+
+        {/* Szenen-Guide: geführt ab einer Szene */}
+        {szenenGuideFeldId && (
+          <SzenenGuideModal
+            feld={(data.felder || []).find(f => f && f.id === szenenGuideFeldId)}
+            figuren={data.figuren || []}
+            onSave={(feldId, antworten, neueZusammenfassung) => updateFeld(feldId, { szenenGuide: antworten, zusammenfassung: neueZusammenfassung })}
+            onClose={() => setSzenenGuideFeldId(null)}
+          />
+        )}
 
         {/* Wiki Panel */}
         {wikiOpen && (
