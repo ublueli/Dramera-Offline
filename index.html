@@ -18071,6 +18071,7 @@ function DrameraWerkbank() {
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [aktModell, setAktModell] = useState(getDrameraModell());
+  const [aktModellCustom, setAktModellCustom] = useState(() => !DRAMERA_MODELL_VORSCHLAEGE.includes(getDrameraModell()));
   const [apiKeyStatus, setApiKeyStatus] = useState('idle'); // 'idle', 'testing', 'success', 'error'
   const [apiKeyError, setApiKeyError] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -37671,23 +37672,41 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                   {apiKey && (
                     <>
                       <label className="settings-label" style={{ marginTop: '0.75rem' }}>KI-Modell</label>
-                      <input
-                        type="text"
-                        list="dramera-modell-liste"
-                        value={aktModell}
-                        onChange={(e) => { setAktModell(e.target.value); setDrameraModell(e.target.value); }}
-                        placeholder={DRAMERA_MODELL_DEFAULT}
+                      <select
                         className="settings-input"
-                      />
-                      <datalist id="dramera-modell-liste">
-                        {DRAMERA_MODELL_VORSCHLAEGE.map(m => <option key={m} value={m} />)}
-                      </datalist>
+                        value={aktModellCustom ? '__custom__' : aktModell}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '__custom__') {
+                            setAktModellCustom(true);
+                          } else {
+                            setAktModellCustom(false);
+                            setAktModell(v);
+                            setDrameraModell(v);
+                          }
+                        }}
+                      >
+                        <option value="claude-sonnet-4-6">Sonnet 4.6 – ausgewogen (Standard)</option>
+                        <option value="claude-sonnet-5">Sonnet 5 – neuer</option>
+                        <option value="claude-opus-4-8">Opus 4.8 – am stärksten (langsamer, teurer)</option>
+                        <option value="claude-haiku-4-5">Haiku 4.5 – schnell & günstig</option>
+                        <option value="__custom__">Andere / eigene Modell-ID …</option>
+                      </select>
+                      {aktModellCustom && (
+                        <input
+                          type="text"
+                          value={aktModell}
+                          onChange={(e) => { setAktModell(e.target.value); setDrameraModell(e.target.value); }}
+                          placeholder={DRAMERA_MODELL_DEFAULT}
+                          className="settings-input"
+                          style={{ marginTop: '0.4rem' }}
+                          autoFocus
+                        />
+                      )}
                       <p className="settings-hint">
-                        Standard: {DRAMERA_MODELL_DEFAULT}. Falls dieses Modell einmal nicht mehr
-                        verfügbar ist, hier die aktuelle Modell-ID von Anthropic eintragen.
-                        {aktModell !== DRAMERA_MODELL_DEFAULT && (
-                          <> <a href="#" onClick={(e) => { e.preventDefault(); setAktModell(DRAMERA_MODELL_DEFAULT); setDrameraModell(DRAMERA_MODELL_DEFAULT); }}>↺ Zurücksetzen</a></>
-                        )}
+                        Alle Modelle laufen über denselben API-Key. Opus ist am stärksten, aber
+                        langsamer und teurer; Sonnet ist der ausgewogene Standard. Bei «Andere»
+                        kannst du jede aktuelle Modell-ID von Anthropic eintragen.
                       </p>
                     </>
                   )}
