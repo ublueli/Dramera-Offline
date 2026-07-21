@@ -155,7 +155,7 @@
         + '<span><b>F</b> Figurenname</span><span><b>D</b> Dialog</span>'
         + '<span><b>R</b> Regieanweisung</span><span><b>T</b> Szenen-Titel</span>'
         + '<span><b>A</b> Akt-Titel</span><span><b>L</b> Lied</span>'
-        + '<span><b>V</b> Versmaß</span><span><b>P</b> Pause</span>'
+        + '<span><b>V</b> Versmass</span><span><b>P</b> Pause</span>'
         + '<span><b>N</b> Standard</span><span style="color:#9ca3af;">───</span>'
         + '<span><b>K</b> Kopieren</span><span><b>E</b> Einfügen</span>'
         + '</div>';
@@ -957,6 +957,27 @@ class ErrorBoundary extends Component {
 }
 
 // =====================================================
+// KI-MODELL (zentral definiert, in den Einstellungen wählbar)
+// Eine einzige Stelle statt neunfach fest verdrahtet. Falls Anthropic ein
+// Modell einmal ablöst, kann man in den Einstellungen ein anderes eintragen –
+// ohne Code-Änderung. Das Freitextfeld ist die Zukunftssicherung.
+// =====================================================
+const DRAMERA_MODELL_DEFAULT = 'claude-sonnet-4-6';
+const DRAMERA_MODELL_VORSCHLAEGE = [
+  'claude-sonnet-4-6',
+  'claude-sonnet-4-5',
+  'claude-opus-4-6',
+  'claude-haiku-4-5'
+];
+let DRAMERA_MODELL = DRAMERA_MODELL_DEFAULT;
+try { const _m = localStorage.getItem('dramera-modell'); if (_m) DRAMERA_MODELL = _m; } catch (e) {}
+function getDrameraModell() { return DRAMERA_MODELL || DRAMERA_MODELL_DEFAULT; }
+function setDrameraModell(id) {
+  DRAMERA_MODELL = (id && id.trim()) ? id.trim() : DRAMERA_MODELL_DEFAULT;
+  try { localStorage.setItem('dramera-modell', DRAMERA_MODELL); } catch (e) {}
+}
+
+// =====================================================
 // SZENE-EDITOR KOMPONENTE (verhindert React-Konflikte)
 // =====================================================
 const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFormatChange, editorRefsMap }) => {
@@ -1397,15 +1418,15 @@ Einfach drauflos schreiben. Brainstormen. Alles notieren was einfällt – Ideen
 GEFÜHRTER MODUS
 Fünf verschiedene Einstiegspfade führen mit Fragen durch den Entwicklungsprozess:
 
-A) ICH HABE EINE FIGUR – Start mit einem Menschen der interessiert. Wer ist das? Was will diese Person? Was steht im Weg?
+A) ICH HABE EINE FIGUR (figur-getrieben) – Start mit einem Menschen der interessiert. Wer ist das? Was will diese Person? Was steht im Weg?
 
-B) ICH HABE EIN THEMA – Start mit einer Frage, einem Konflikt, etwas das beschäftigt. Was soll verhandelt werden?
+B) ICH WILL EINE KLASSISCHE STRUKTUR (3-Akt) – Aufbau nach dem Drei-Akt-Modell: Anlass, Konfrontation, Auflösung.
 
-C) ICH HABE EINE SITUATION – Eine Szene steht vor Augen. Zwei Menschen, ein Moment. Was passiert da?
+C) ICH FOLGE DER HELDENREISE – Die mythische Reise in Stationen nach Campbell/Vogler. Aufbruch, Prüfungen, Rückkehr.
 
-D) ICH HABE EINE FORM – Das Aussehen ist klar. Ein Monolog? Ein Kammerspiel? Ein Stationendrama?
+D) ICH ARBEITE IN OFFENER FORM – Für Stücke jenseits klassischer Dramaturgie. Stimmen, Textflächen, Montage.
 
-E) ICH WILL EINEN EFFEKT – Das Publikumsgefühl ist klar. Schock? Rührung? Erkenntnis?
+E) ICH HABE EIN THEMA (thema-getrieben) – Der Stoff, das Thema oder der Wert steht am Anfang. Was soll verhandelt werden?
 
 Die Antworten landen in der Schreibfläche und können später weiterentwickelt werden. Der Wechsel zwischen frei und geführt ist jederzeit möglich.
 
@@ -1452,7 +1473,7 @@ WICHTIG: Jedes Werkzeug hat einen Button "→ Schreibfläche" mit dem Ideen, Tex
 • Die Figur – Grundinformationen, Portrait, Kurzbeschreibung
 • Biographie – Die Lebensgeschichte vor Beginn der Handlung
 • Beziehungen – Das Netz zwischen den Figuren: Wer kennt wen wie?
-• 5 Eckpfeiler – Want (bewusstes Ziel), Need (unbewusstes Bedürfnis), Lüge (falsche Überzeugung), Wahrheit (was gelernt werden muss), Ghost (prägende Verletzung)
+• 5 Eckpfeiler (nach David Corbett) – Begehren (Want & Need), Schwierigkeiten (Verletzlichkeit), Verletzungen (Ghost/Wunden), Geheimnisse, Widersprüche
 
 🎲 SITUATIONEN – Was passiert?
 • Impulsfragen – Gezielte Fragen zu Situationen
@@ -1474,11 +1495,11 @@ SPEZIELLE BROWSER
 
 Einige Werkzeuge haben eigene Browser zum Stöbern und Entdecken:
 
-🎭 FIGURENBROWSER: 12 Archetypen mit ausführlichen Beschreibungen (Protagonist, Antagonist, Mentor, Schwellenhüter, Herold, Gestaltwandler, Schatten, Trickster, Gefährte, Anima/Animus, Selbst, Kind). Klicke auf einen Archetyp um ihn als Ausgangspunkt für eine eigene Figur zu übernehmen.
+🎭 FIGURENBROWSER: 16 Archetypen mit ausführlichen Beschreibungen (Protagonist, Antagonist, Hauptfigur, Einwirkung, Mentor, Schwellenhüter, Herold, Gestaltwandler, Schatten, Trickster, Gefährte, Skeptiker, Vernunft, Emotion, Contagonist, Wächter). Klicke auf einen Archetyp um ihn als Ausgangspunkt für eine eigene Figur zu übernehmen.
 
 💡 THEMENBROWSER: Kategorien von Themen und Gegensätzen. Stöbere durch Beziehungsthemen, Machtthemen, Identitätsthemen etc.
 
-🎲 SITUATIONSFINDER: Die 36 dramatischen Situationen nach Georges Polti. Finde Grundkonstellationen für die Szenen – von "Flehen" über "Rache" bis "Konflikt mit einem Gott".
+🎲 SITUATIONSFINDER: Ein umfangreicher Katalog dramatischer Situationen – inspiriert von Georges Poltis 36 Grundmustern, aber deutlich erweitert. Finde Grundkonstellationen für die Szenen – von «Flehen» über «Rache» bis «Kampf gegen einen Gott».
 
 🎪 KLISCHEEBROWSER: Sammlung von Klischees sortiert nach Kategorien. Manchmal hilft es zu wissen was man vermeiden will – oder bewusst brechen.
 
@@ -3185,13 +3206,13 @@ Intrigen erzeugen automatisch Spannung – das Publikum weiss mehr als das Opfer
 
 DIE SIEBEN KRÄFTE
 
-Das Märchenmodell (nach Propp und anderen) identifiziert sieben grundlegende Kräfte, die in jeder Geschichte wirken können:
+Das Märchenmodell nach Wladimir Propp identifiziert sieben grundlegende Rollen (Kräfte), die in vielen Geschichten wirken:
 
 DER HELD: Die zentrale Figur, die sich auf die Reise begibt. Sie hat ein Ziel und kämpft darum.
 
-DER ANTAGONIST: Die Gegenkraft. Wer oder was den Helden am Ziel hindert.
+DER GEGENSPIELER: Die Gegenkraft (bei Propp der Bösewicht). Wer oder was den Helden am Ziel hindert.
 
-DER MENTOR: Der Weise, der dem Helden hilft. Er gibt Wissen, Werkzeuge, Ermutigung – aber er kann die Reise nicht für den Helden machen.
+DER FALSCHE HELD: Wer sich fälschlich als Held ausgibt oder dessen Verdienste beansprucht – und am Ende entlarvt wird.
 
 DER HELFER: Wer den Helden auf der Reise unterstützt. Freunde, Verbündete, magische Tiere.
 
@@ -3205,21 +3226,21 @@ WARUM DAS NÜTZLICH IST
 
 Das Märchenmodell zeigt, dass Geschichten aus Kräften bestehen, nicht nur aus Figuren. Eine Figur kann mehrere Rollen übernehmen. Mehrere Figuren können eine Rolle teilen.
 
-Der Mentor kann auch Antagonist werden. Der Helfer kann sich als Verräter entpuppen. Die "Prinzessin" kann der Held sein, der sich selbst rettet.
+Der Gegenspieler kann sich als Helfer entpuppen. Der Helfer kann sich als Verräter entpuppen. Die "Prinzessin" kann der Held sein, der sich selbst rettet.
 
 Das Modell ist flexibel. Aber es hilft zu fragen: Welche Kräfte wirken in meiner Geschichte? Sind alle nötigen Kräfte vorhanden?
 
 MODERNE ANWENDUNG
 
-Star Wars nutzt das Modell fast lehrbuchartig: Luke (Held), Darth Vader (Antagonist), Obi-Wan (Mentor), Han Solo (Helfer), R2-D2 (Schenker der Nachricht), Leia (Prinzessin – aber auch selbst aktiv), der ermordete Owen (Auftraggeber durch seinen Tod).
+Star Wars nutzt das Modell fast lehrbuchartig: Luke (Held), Darth Vader (Antagonist), Obi-Wan (Schenker/Mentor), Han Solo (Helfer), R2-D2 (Bote), Leia (Prinzessin – aber auch selbst aktiv), der ermordete Owen (Auftraggeber durch seinen Tod).
 
-Aber auch: Breaking Bad. Walter (Held, aber auch Antagonist), die Krankheit (Antagonist), Gus Fring (Antagonist, aber auch Mentor), Jesse (Helfer, Opfer, schliesslich Held), Skyler (zunächst "Prinzessin", dann Antagonist).
+Aber auch: Breaking Bad. Walter (Held, aber auch Antagonist), die Krankheit (Antagonist), Gus Fring (Gegenspieler, aber auch Schenker), Jesse (Helfer, Opfer, schliesslich Held), Skyler (zunächst "Prinzessin", dann Antagonist).
 
 Das Modell passt sich an. Es schreibt nicht vor – es analysiert.
 
 PRÜF DEINE KRÄFTE
 
-Wer ist der Held? Was ist die Gegenkraft? Gibt es einen Mentor – oder muss der Held allein lernen? Wer hilft, wer hindert? Was ist das Ziel der Reise?`,
+Wer ist der Held? Was ist die Gegenkraft? Gibt es einen Schenker oder Helfer – oder muss der Held allein lernen? Wer hilft, wer hindert? Was ist das Ziel der Reise?`,
     linkedTerms: ['heldenreise', 'archetypen', 'propp', 'struktur']
   },
 
@@ -4233,8 +4254,8 @@ const WIKI_ENTRIES = {
     importance: 'Die meisten Schreibblockaden entstehen, weil wir gleichzeitig kreativ sein und strukturieren wollen. Dramera gibt dir Raum für beides – nacheinander.',
     content: [
       { heading: 'Die Oberfläche', text: 'LINKS: Material-Sidebar (Vorgaben, Figuren, Themen, Szenen-Ideen). MITTE: Schreibfläche (Sammeln) oder Zeitstrahl (Ordnen). RECHTS: Werkzeuge die das Material entwickeln. Oben wählst du die Phase.' },
-      { heading: 'Die Schreibfläche', text: 'FREIER MODUS: Schreib drauflos, markiere Text und extrahiere ihn als Figur/Thema/Szene. GEFÜHRTER MODUS: 5 Pfade (Figur/Thema/Situation/Form/Effekt) führen dich mit Fragen. Alle Werkzeuge haben "→ Schreibfläche" um Ideen zu übernehmen.' },
-      { heading: 'Die Werkzeuge', text: 'Fundament (Logline, Konflikt, Kern), Kräfte (Märchenmodell, Archetypen), Thema (Wertequadrat, Motive), Figuren (Biographie, Beziehungen, 5 Eckpfeiler), Situationen, Raum & Zeit, Reflexion, Recherche. Jede Kategorie hat Impulsfragen. Dazu: Figurenbrowser (12 Archetypen), Themenbrowser, Situationsfinder (36 Polti), Klischeebrowser.' },
+      { heading: 'Die Schreibfläche', text: 'FREIER MODUS: Schreib drauflos, markiere Text und extrahiere ihn als Figur/Thema/Szene. GEFÜHRTER MODUS: 5 Pfade (Figur / 3-Akt-Struktur / Heldenreise / Offene Form / Thema) führen dich mit Fragen. Alle Werkzeuge haben "→ Schreibfläche" um Ideen zu übernehmen.' },
+      { heading: 'Die Werkzeuge', text: 'Fundament (Logline, Konflikt, Kern), Kräfte (Märchenmodell, Archetypen), Thema (Wertequadrat, Motive), Figuren (Biographie, Beziehungen, 5 Eckpfeiler), Situationen, Raum & Zeit, Reflexion, Recherche. Jede Kategorie hat Impulsfragen. Dazu: Figurenbrowser (16 Archetypen), Themenbrowser, Situationsfinder (erweiterter Situationskatalog), Klischeebrowser.' },
       { heading: 'Der Zeitstrahl', text: 'In "Ordnen" legst du Szenen an. Wähle Strukturmodelle (3-Akt, Heldenreise, Anfang-Mitte-Ende, 5-Akt, Offene Form, Frei) oder nutze die Strukturhilfe. Szenen-Ideen aus dem Material können auf den Zeitstrahl gezogen werden. Jede Szene kann Figuren und Themen zugeordnet bekommen.' },
       { heading: 'KI-Dramaturg (optional)', text: 'Mit Anthropic API-Key (Einstellungen ⚙️): Sparring-Partner für Feedback (unten rechts), Figuren vertiefen mit KI, Text importieren (KI extrahiert Figuren/Themen/Szenen aus bestehendem Material). Ohne Key funktioniert alles – nur KI-Features fehlen.' },
       { heading: 'Speichern & Export', text: 'Auto-Save: Dein Projekt wird automatisch im Browser gespeichert (✓ oben rechts). ABER: Bei Cache-Löschen oder anderem Browser weg! Sichere Backups: Export → Projekt speichern (JSON). Weitere Exports: Archiv, Treatment, Stücktext, Förderdossier (Word).' }
@@ -4536,9 +4557,9 @@ const WIKI_ENTRIES = {
     definition: 'Georges Polti identifizierte 36 Grundsituationen, die in Geschichten auftreten können.',
     importance: 'Ein Werkzeug zur Inspiration, zur Analyse bestehender Geschichten und zur Identifikation von Konflikten.',
     content: [
-      { heading: 'Situationen 1-12', text: '1. Rettung – 2. Flehen – 3. Rache eines Verbrechens – 4. Rache an einem geliebten Menschen – 5. Gejagt werden – 6. Zerstören – 7. Besitz – 8. Aufstand – 9. Kühn sein – 10. Entführung – 11. Ein Rätsel lösen – 12. Gewinnen oder Erobern' },
-      { heading: 'Situationen 13-24', text: '13. Hass – 14. Wettkampf – 15. Mörderischer Ehebruch – 16. Wahnsinn – 17. Tödliche Unvorsichtigkeit – 18. Inzest – 19. Unwissentliches Töten – 20. Sich für das Ideal opfern – 21. Alles der Leidenschaft opfern – 22. Sich den Verwandten opfern – 23. Pflicht zu opfern – 24. Ungleicher Kampf' },
-      { heading: 'Situationen 25-36', text: '25. Ehebruch – 26. Liebesverbrechen – 27. Unehrenhaftigkeit entdecken – 28. Verhinderte Liebe – 29. Den Feind lieben – 30. Ehrgeiz – 31. Kampf gegen Gott – 32. Irrtümliche Eifersucht – 33. Justizirrtum – 34. Schuldgefühle – 35. Wiedervereinigung – 36. Trauer' }
+      { heading: 'Situationen 1-12', text: '1. Flehen – 2. Rettung – 3. Rache für ein Verbrechen – 4. Blutrache unter Verwandten – 5. Verfolgung/Flucht – 6. Katastrophe – 7. Opfer von Grausamkeit oder Unglück – 8. Aufstand – 9. Kühnes Unternehmen – 10. Entführung – 11. Das Rätsel – 12. Erlangen' },
+      { heading: 'Situationen 13-24', text: '13. Hass unter Verwandten – 14. Rivalität unter Verwandten – 15. Mörderischer Ehebruch – 16. Wahnsinn – 17. Verhängnisvolle Unvorsichtigkeit – 18. Unwissentliches Liebesverbrechen (z. B. Inzest) – 19. Unwissentliches Töten eines Verwandten – 20. Selbstopfer für ein Ideal – 21. Selbstopfer für Verwandte – 22. Alles der Leidenschaft opfern – 23. Geliebte Menschen opfern müssen – 24. Rivalität zwischen Ungleichen' },
+      { heading: 'Situationen 25-36', text: '25. Ehebruch – 26. Verbrechen aus Liebe – 27. Entdeckung der Schande eines geliebten Menschen – 28. Verhinderte Liebe – 29. Den Feind lieben – 30. Ehrgeiz – 31. Kampf gegen einen Gott – 32. Irrtümliche Eifersucht – 33. Irrtümliches Urteil – 34. Reue – 35. Wiederfinden eines Verlorenen – 36. Verlust geliebter Menschen' }
     ],
     questions: ['Welche der 36 Situationen beschreibt den Kern der Geschichte?', 'Gibt es Nebensituationen für andere Handlungsstränge?'],
     seeAlso: ['konflikt', 'szene', 'maerchenmodell']
@@ -6461,7 +6482,7 @@ Wenn du mehrere Szenen einfügen sollst, nutze SEPARATE Aktions-Blöcke für JED
 Wenn der User fragt "automatisch einsetzen" oder "übernehmen" zu zuvor genannten Vorschlägen:
 Generiere sofort die passenden AKTIONS-BLÖCKE für alle zuvor genannten Elemente.
 
-SPRACHE: Schweizer Hochdeutsch (ss statt ss)
+SPRACHE: Schweizer Hochdeutsch («ss» statt Eszett)
 `;
 
 // =====================================================
@@ -7299,6 +7320,32 @@ const WerkzeugHeader = ({ werkzeugId, titel, onOpenWiki, onClose }) => {
 // =====================================================
 // WIKI PANEL KOMPONENTE
 // =====================================================
+// Weiterleitungen für Verweise, die keinen eigenen Artikel haben, aber sinnvoll
+// auf einen bestehenden zeigen können. Nur Ziele, die es wirklich gibt.
+const WIKI_ALIASES = {
+  'protagonist': 'konflikt', 'antagonist': 'konflikt', 'hindernis': 'konflikt', 'innerer-konflikt': 'konflikt',
+  'charakter': 'figur', 'backstory': 'biographie',
+  'ghost': 'verletzungen', 'ziel': 'begehren',
+  'charakterbogen': 'heldenreise', 'wandlung': 'heldenreise', 'transformation': 'heldenreise',
+  'suspense': 'spannung', 'cliffhanger': 'spannung', 'erwartung': 'spannung', 'mystery': 'spannung',
+  'symbol': 'motiv', 'bildsprache': 'motiv',
+  'raum': 'schauplatz', 'buehne': 'schauplatz', 'setting': 'schauplatz', 'atmosphaere': 'schauplatz', 'ort': 'schauplatz',
+  'zeit': 'setting-time',
+  'soliloquium': 'monolog', 'stimme': 'sprechweise',
+  'identifikation': 'empathie', 'publikum': 'empathie',
+  'brecht': 'epische-form', 'verfremdung': 'epische-form', 'gestus': 'epische-form', 'episodisch': 'epische-form',
+  'propp': 'maerchenmodell',
+  'collage': 'materialcollage',
+  'peripetie': 'wendepunkt', 'plot-point': 'wendepunkt',
+  'pitch': 'logline',
+  'verstellung': 'subtext',
+  'anfang-mitte-ende': 'exposition', 'einstieg': 'exposition', 'erster-akt': 'exposition',
+  'plot': 'wendepunkt', 'aufloesung': 'wendepunkt',
+  'stoffrecherche': 'materialcollage',
+  'wirkung': 'empathie', 'ton': 'sprechweise',
+  'rhythmus': 'szene'
+};
+
 const WikiPanel = ({ onClose, initialSlug }) => {
   const [search, setSearch] = useState('');
   const [selectedSlug, setSelectedSlug] = useState(initialSlug || null);
@@ -7308,15 +7355,20 @@ const WikiPanel = ({ onClose, initialSlug }) => {
   // Slug-Normalisierung: Unterstriche zu Bindestrichen für konsistente Keys
   const normalizeSlug = (slug) => slug.replace(/_/g, '-');
   
-  // Alle Einträge sammeln und Duplikate vermeiden
+  // Alle Einträge aus GLOSSARY UND WIKI_ENTRIES sammeln (Vereinigung), damit auch
+  // reine WIKI_ENTRIES-Artikel erreichbar sind. Zusammenführung nach normalisiertem Slug.
+  const bySlug = {};
+  [...Object.keys(GLOSSARY), ...Object.keys(WIKI_ENTRIES)].forEach((slug) => {
+    const normSlug = normalizeSlug(slug);
+    const g = GLOSSARY[slug] || GLOSSARY[normSlug] || {};
+    const w = WIKI_ENTRIES[normSlug] || WIKI_ENTRIES[slug] || {};
+    bySlug[normSlug] = { slug: normSlug, ...(bySlug[normSlug] || {}), ...g, ...w };
+  });
   const seenTitles = new Set();
-  const allEntries = Object.entries(GLOSSARY)
-    .map(([slug, entry]) => {
-      const normSlug = normalizeSlug(slug);
-      return { slug: normSlug, ...entry, ...(WIKI_ENTRIES[normSlug] || WIKI_ENTRIES[slug] || {}) };
-    })
+  const allEntries = Object.values(bySlug)
+    .filter(entry => !!entry.title)
     .filter(entry => {
-      // Duplikate anhand des Titels filtern (bevorzuge Einträge mit mehr Inhalt)
+      // Duplikate anhand des Titels filtern
       const titleKey = entry.title.toLowerCase().replace(/^(der|die|das)\s+/i, '');
       if (seenTitles.has(titleKey)) return false;
       seenTitles.add(titleKey);
@@ -7336,7 +7388,15 @@ const WikiPanel = ({ onClose, initialSlug }) => {
     return acc;
   }, {});
   
-  const selectedEntry = selectedSlug ? allEntries.find(e => e.slug === selectedSlug || e.slug === normalizeSlug(selectedSlug)) || GLOSSARY[selectedSlug] : null;
+  // Slug auf einen existierenden Artikel auflösen (mit Normalisierung und Weiterleitung)
+  const resolveSlug = (slug) => {
+    if (!slug) return null;
+    const n = normalizeSlug(slug);
+    if (allEntries.find(e => e.slug === n)) return n;
+    const a = WIKI_ALIASES[n] || WIKI_ALIASES[slug];
+    return a || n;
+  };
+  const selectedEntry = selectedSlug ? (allEntries.find(e => e.slug === resolveSlug(selectedSlug)) || GLOSSARY[selectedSlug] || null) : null;
   
   // Markdown-artige Formatierung: **fett**, typografische Anführungszeichen
   const renderFormattedText = (text) => {
@@ -7587,8 +7647,11 @@ const WikiPanel = ({ onClose, initialSlug }) => {
               <div className="wiki-see-also">
                 <span>Siehe auch:</span>
                 {(selectedEntry.seeAlso || selectedEntry.linkedTerms || []).map(slug => {
-                  const linked = allEntries.find(e => e.slug === slug);
-                  return linked ? <button key={slug} onClick={() => setSelectedSlug(slug)}>→ {linked.title}</button> : null;
+                  // Slug normalisieren + weiterleiten (behebt Unterstrich-Verweise wie
+                  // fuenf_eckpfeiler und leitet Waisen wie «protagonist» sinnvoll um).
+                  const norm = resolveSlug(slug);
+                  const linked = allEntries.find(e => e.slug === norm);
+                  return linked ? <button key={slug} onClick={() => setSelectedSlug(norm)}>→ {linked.title}</button> : null;
                 })}
               </div>
             )}
@@ -10435,7 +10498,7 @@ ${text}`;
                         'anthropic-dangerous-direct-browser-access': 'true'
                       },
                       body: JSON.stringify({
-                        model: 'claude-sonnet-4-6',
+                        model: getDrameraModell(),
                         max_tokens: 800,
                         system: 'Du bist ein erfahrener Dramaturg. Du schreibst lebendige, atmosphärische Prosatexte über dramatische Intrigen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
                         messages: [{ role: 'user', content: prompt }]
@@ -11999,7 +12062,7 @@ FRAGEN:
 Beantworte JEDE Frage mit einer konkreten, dramaturgisch fundierten Einschätzung (2-4 Sätze). Beziehe dich dabei auf die konkreten Figuren, Beziehungen und Szenen des Projekts. Wenn Informationen fehlen, benenne was fehlt und warum es dramaturgisch relevant wäre.
 Sei direkt und konstruktiv.
 
-WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
+WICHTIG: Verwende Schweizer Schreibweise («ss» statt Eszett).`;
     
     try {
       const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -12011,7 +12074,7 @@ WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 2000,
           system: 'Du bist ein erfahrener Dramaturg mit tiefem Verständnis für Figurenführung, Konfliktdynamik und Spannungsdramaturgie. Du analysierst Theaterprojekte gründlich und gibst fundierte, konstruktive Einschätzungen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
@@ -12572,7 +12635,7 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 2500,
           system: 'Du bist ein erfahrener Dramaturg, der professionelle Treatments für Theater schreibt. Du schreibst atmosphärisch, konkret und im Präsens. Du zeigst Figuren in Aktion, nicht in Beschreibung. Jeder Abschnitt soll Lust machen weiterzulesen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
@@ -14427,7 +14490,7 @@ Schreibe konkret und anschaulich. Nur den Text.${schweizHinweis}`;
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 1500,
           system: 'Du bist ein erfahrener Dramaturg und Kulturmanager, der professionelle Förderdossiers für Theaterprojekte erstellt. Du kennst die Erwartungen von Förderstellen und schreibst überzeugend, konkret und dramaturgisch fundiert. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
@@ -16008,7 +16071,7 @@ const raster = {
   },
   'heldenreise': {
     name: 'Heldenreise',
-    beschreibung: 'Joseph Campbells Monomythos – 12 Stufen der Transformation',
+    beschreibung: 'Die Heldenreise (Campbell/Vogler) – 12 Stationen der Transformation',
     wikiSlug: 'heldenreise',
     abschnitte: [
       { name: '1. Gewohnte Welt', anteil: 0.08, farbe: '#22c55e', desc: 'Status Quo', details: 'Alltag des Helden' },
@@ -16501,12 +16564,63 @@ function safeSetItem(key, value) {
         return true;
       } catch(e2) {
         console.error('⚠️ localStorage immer noch voll! Key:', key, 'Grösse:', value.length);
+        // Flag setzen, damit die App eine deutliche Warnung + Export anbieten kann
+        try { window.__ninaStorageFull = true; } catch(_) {}
         return false;
       }
     }
     console.error('localStorage Fehler:', e);
     return false;
   }
+}
+
+// =====================================================
+// INDEXEDDB – zusätzliche Sicherungskopie
+// Schützt vor dem grössten Verlustszenario: localStorage wird gelöscht, ist voll
+// oder das Browserprofil wechselt. IndexedDB fasst viel mehr und überlebt das
+// Leeren des localStorage. Rein additiv – localStorage bleibt der Primärspeicher.
+// =====================================================
+const DRAMERA_IDB_NAME = 'dramera-db';
+const DRAMERA_IDB_STORE = 'projekt';
+function drameraIDBOpen() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!window.indexedDB) return reject(new Error('IndexedDB nicht verfügbar'));
+      const req = indexedDB.open(DRAMERA_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DRAMERA_IDB_STORE)) db.createObjectStore(DRAMERA_IDB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    } catch (e) { reject(e); }
+  });
+}
+async function drameraIDBSave(key, value) {
+  try {
+    const db = await drameraIDBOpen();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DRAMERA_IDB_STORE, 'readwrite');
+      tx.objectStore(DRAMERA_IDB_STORE).put(value, key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+    return true;
+  } catch (e) { return false; }
+}
+async function drameraIDBLoad(key) {
+  try {
+    const db = await drameraIDBOpen();
+    const val = await new Promise((resolve, reject) => {
+      const tx = db.transaction(DRAMERA_IDB_STORE, 'readonly');
+      const r = tx.objectStore(DRAMERA_IDB_STORE).get(key);
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    db.close();
+    return val || null;
+  } catch (e) { return null; }
 }
 
 // Cleanup beim Start
@@ -16644,7 +16758,7 @@ const SCHREIBTISCH_FORMATVORLAGEN = {
   regieanweisung: { name: 'Regieanweisung', class: 'format-regieanweisung', description: '(Handlungsanweisung)', icon: '🎬', shortcut: 'R' },
   szeneTitel: { name: 'Szenen-Titel', class: 'format-szene-titel', description: 'Überschrift', icon: '🔍', shortcut: 'T' },
   aktTitel: { name: 'Akt-Titel', class: 'format-akt-titel', description: 'ERSTER AKT', icon: '🏛️', shortcut: 'A' },
-  vers: { name: 'Versmaß', class: 'format-vers', description: 'Gebundene Sprache', icon: '📜', shortcut: 'V' },
+  vers: { name: 'Versmass', class: 'format-vers', description: 'Gebundene Sprache', icon: '📜', shortcut: 'V' },
   lied: { name: 'Lied', class: 'format-lied', description: 'Gesungener Text', icon: '🎵', shortcut: 'L' },
   pause: { name: 'Pause', class: 'format-pause', description: '— PAUSE —', icon: '⏸️', shortcut: 'P' },
   musik: { name: 'Musik', class: 'format-musik', description: 'Musik-Einsatz', icon: '🎼' },
@@ -16808,7 +16922,9 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
         const text = el.textContent;
         const m = text.match(/^([A-ZÄÖÜa-zäöü][A-ZÄÖÜa-zäöüß\s\d.]*?):\s*([\s\S]*)$/);
         if (m) {
-          el.innerHTML = '<span class="figur-name">' + m[1].trim().toUpperCase() + ':</span><span class="dialog-text">' + (m[2] || '') + '</span>';
+          // SICHERHEIT (XSS): Textinhalt vor dem Wieder-Einsetzen als HTML escapen
+          const escD = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          el.innerHTML = '<span class="figur-name">' + escD(m[1].trim().toUpperCase()) + ':</span><span class="dialog-text">' + escD(m[2] || '') + '</span>';
         }
       }
     });
@@ -17639,6 +17755,12 @@ function DrameraWerkbank() {
   const [recoveryData, setRecoveryData] = useState(null);
   const lastGdriveBackupRef = useRef(null);
   const [lastGdriveBackupTime, setLastGdriveBackupTime] = useState(null);
+  // === DATENSICHERHEIT (zusätzlich) ===
+  const [storageFull, setStorageFull] = useState(false);      // localStorage voll
+  const [backupOverdue, setBackupOverdue] = useState(false);  // lange kein Datei-Backup
+  const [idbRecovery, setIdbRecovery] = useState(null);       // Wiederherstellung aus IndexedDB möglich
+  const projektDataRef = useRef(data);
+  projektDataRef.current = data;
 
   // === GEFÜHRTER MODUS (Schreibfläche) ===
   const [guidedMode, setGuidedMode] = useState(() => {
@@ -17697,17 +17819,24 @@ function DrameraWerkbank() {
           werkzeugSidebarWidth,
           bearbeitenSidebarWidth
         };
-        if (!safeSetItem(STORAGE_KEY, JSON.stringify(saveData))) {
+        const saveJson = JSON.stringify(saveData);
+        // Immer zusätzlich in IndexedDB sichern (Sicherheitsnetz) – auch wenn localStorage klemmt
+        drameraIDBSave('projekt', saveJson);
+        if (!safeSetItem(STORAGE_KEY, saveJson)) {
           console.error('Auto-Save fehlgeschlagen: localStorage voll');
           setSaveStatus('error');
+          setStorageFull(true);
           return;
         }
 
-        // === VERSIONSHISTORIE: Snapshot speichern ===
+        // === VERSIONSHISTORIE: Snapshot speichern (mit Dedup gegen identische Stände) ===
         try {
-          const snapshot = { timestamp: new Date().toISOString(), source: 'browser', data: JSON.parse(JSON.stringify(data)) };
+          const dataJson = JSON.stringify(data);
           setVersionHistory(prev => {
-            const updated = [...prev, snapshot].slice(-10); // Max 10 (nicht 20) — spart Platz
+            // Unveränderten Stand nicht erneut sichern – spart Speicher (Haupttreiber der Quota)
+            if (prev.length && JSON.stringify(prev[prev.length - 1].data) === dataJson) return prev;
+            const snapshot = { timestamp: new Date().toISOString(), source: 'browser', data: JSON.parse(dataJson) };
+            const updated = [...prev, snapshot].slice(-10); // Max 10 — spart Platz
             try { safeSetItem('nina_version_history', JSON.stringify(updated)); } catch(e) {}
             return updated;
           });
@@ -18202,6 +18331,7 @@ function DrameraWerkbank() {
   // === IMPORT & EINSTELLUNGEN ===
   const [showSettings, setShowSettings] = useState(false);
   const [apiKey, setApiKey] = useState('');
+  const [aktModell, setAktModell] = useState(getDrameraModell());
   const [apiKeyStatus, setApiKeyStatus] = useState('idle'); // 'idle', 'testing', 'success', 'error'
   const [apiKeyError, setApiKeyError] = useState('');
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -18500,8 +18630,10 @@ function DrameraWerkbank() {
       // Erlaubt: HUTTER, Hutter, FRAU VOCK, DR. GERI SCHMUTZ, VOLK 1, SR. MARGOT
       const dialogMatch = text.match(/^([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß\s\d.\-]{0,39}?):\s*(.*)$/s);
       if (dialogMatch) {
-        const figurName = dialogMatch[1].trim();
-        const dialogText = dialogMatch[2] || '';
+        // SICHERHEIT (XSS): Namen/Text aus importiertem Material escapen
+        const escB = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const figurName = escB(dialogMatch[1].trim());
+        const dialogText = escB(dialogMatch[2] || '');
         block.className = 'fmt-dialog';
         if (block.tagName === 'P') {
           // P → DIV umwandeln (Dialog braucht Flexbox)
@@ -18982,6 +19114,51 @@ function DrameraWerkbank() {
     }
   }, []);
   
+  // === DATENSICHERHEIT: Backup-Erinnerung, Quota-Warnung, IndexedDB-Wiederherstellung ===
+  const hatInhalt = (d) => !!(d && ((d.felder && d.felder.length) || (d.figuren && d.figuren.length) || (d.themen && d.themen.length) || (d.vorgaben && d.vorgaben.length) || (d.schreibflaeche && d.schreibflaeche.trim().length > 0) || (d.fundament && Object.keys(d.fundament).length)));
+  useEffect(() => {
+    const checkBackup = () => {
+      try {
+        if (!hatInhalt(projektDataRef.current)) { setBackupOverdue(false); return; }
+        const last = localStorage.getItem('dramera-last-backup');
+        const days = last ? (Date.now() - new Date(last).getTime()) / 86400000 : Infinity;
+        setBackupOverdue(days > 7);
+      } catch (e) {}
+    };
+    checkBackup();
+    const tBackup = setInterval(checkBackup, 5 * 60 * 1000);
+    const tFull = setInterval(() => { if (window.__ninaStorageFull) setStorageFull(true); }, 3000);
+    // IndexedDB-Wiederherstellung anbieten, wenn lokal (noch) nichts Sinnvolles da ist
+    (async () => {
+      try {
+        // Nur anbieten, wenn lokal nichts Sinnvolles da ist UND im localStorage gar kein
+        // Projekt mehr liegt (echtes «Speicher gelöscht»-Szenario, nicht bewusster Neustart).
+        if (hatInhalt(projektDataRef.current)) return;
+        if (localStorage.getItem(STORAGE_KEY)) return;
+        const idb = await drameraIDBLoad('projekt');
+        if (!idb) return;
+        const parsed = JSON.parse(idb);
+        if (parsed && hatInhalt(parsed.data)) setIdbRecovery(parsed);
+      } catch (e) {}
+    })();
+    return () => { clearInterval(tBackup); clearInterval(tFull); };
+  }, []);
+  // Zeitstempel des letzten Datei-/Drive-Backups festhalten (für die Erinnerung)
+  useEffect(() => {
+    if (lastFileSaveTime) { try { localStorage.setItem('dramera-last-backup', new Date(lastFileSaveTime).toISOString()); } catch (e) {} setBackupOverdue(false); }
+  }, [lastFileSaveTime]);
+  useEffect(() => {
+    if (lastGdriveBackupTime) { try { localStorage.setItem('dramera-last-backup', new Date().toISOString()); } catch (e) {} setBackupOverdue(false); }
+  }, [lastGdriveBackupTime]);
+  const applyIdbRecovery = () => {
+    if (!idbRecovery) return;
+    try {
+      setData({ ...DEFAULT_DATA, ...idbRecovery.data });
+      if (idbRecovery.guidedMode) setGuidedMode(idbRecovery.guidedMode);
+    } catch (e) {}
+    setIdbRecovery(null);
+  };
+
   // API-Key aus localStorage laden
   useEffect(() => {
     const savedKey = localStorage.getItem('dramera-api-key');
@@ -19016,7 +19193,7 @@ function DrameraWerkbank() {
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Antworte nur mit: OK' }]
         })
@@ -19031,6 +19208,8 @@ function DrameraWerkbank() {
           setApiKeyError('Ungültiger API-Key');
         } else if (response.status === 403) {
           setApiKeyError('Keine Berechtigung (Key gesperrt?)');
+        } else if (response.status === 404 || (err.error?.type === 'not_found_error')) {
+          setApiKeyError('Modell «' + getDrameraModell() + '» nicht gefunden – bitte KI-Modell in den Einstellungen anpassen.');
         } else if (err.error?.message) {
           setApiKeyError(err.error.message);
         } else {
@@ -19094,7 +19273,7 @@ THEMEN: ${data.themen?.map(t => t.name).join(', ') || 'Keine'}
 CONSTRAINTS: ${data.vorgaben?.map(c => c.titel).join(', ') || 'Keine'}
 SCHREIBFLÄCHE: ${data.schreibflaeche?.substring(0, 300) || '(leer)'}${data.schreibflaeche?.length > 300 ? '...' : ''}${guidedAnswersShort}
 
-WICHTIG: Antworte auf Schweizer Hochdeutsch (kein ss, immer ss verwenden).`;
+WICHTIG: Antworte auf Schweizer Hochdeutsch (niemals Eszett, immer «ss»).`;
     
     if (type === 'szene') {
       const figurenNamen = target.figuren?.map(id => data.figuren.find(f => f.id === id)?.name).filter(Boolean).join(', ') || 'Keine';
@@ -19355,7 +19534,7 @@ Am Ende zwei AKTION-Blöcke - einen für Titel, einen für Zusammenfassung:
 }
 ===ENDE===
 
-WICHTIG: Verwende Schweizer Schreibweise (ss statt ss).`;
+WICHTIG: Verwende Schweizer Schreibweise («ss» statt Eszett).`;
     }
     
     // Szenentitel ALLE generieren (alte Methode)
@@ -19393,7 +19572,7 @@ Format für jede Szene:
 WICHTIG: 
 - Generiere für JEDE Szene einen separaten AKTION-Block
 - Die szene_id muss exakt die ID von oben sein
-- Verwende Schweizer Schreibweise (ss statt ss)
+- Verwende Schweizer Schreibweise («ss» statt Eszett)
 - Der User kann dann bei jeder Szene einzeln entscheiden, ob er übernehmen will`;
     }
     
@@ -19470,7 +19649,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 4500,
           system: 'Du bist ein erfahrener Dramaturg und dramaturgischer Sparringspartner. Du analysierst Szenen, Figurenkonstellationen und Spannungsverläufe mit professionellem Blick. Du denkst in Want/Need/Ghost, in Subtext und dramatischer Ironie. Wenn du Dialoge schreibst, haben die Figuren eigene Stimmen und verfolgen verborgene Ziele. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
@@ -19667,8 +19846,12 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         // Dialog-Text in HTML umwandeln
         // Ersetze literal \n mit echten Newlines falls nötig
         const normalizedDialog = dialogText.replace(/\\n/g, '\n');
-        
-        const dialogHtml = normalizedDialog
+        // SICHERHEIT (XSS): KI-Antwort zuerst HTML-escapen, damit eingeschleustes
+        // Markup/Script nicht ausgeführt wird. Die App fügt danach nur ihre eigenen,
+        // sicheren Tags (<em>, <div>, <span>) hinzu. Die Muster (*text*, NAME:) bleiben
+        // funktionsfähig, da sie ASCII-Zeichen nutzen, die vom Escapen unberührt sind.
+        const _escHtmlKI = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const dialogHtml = _escHtmlKI(normalizedDialog)
           .split('\n')
           .filter(line => line.trim()) // Leere Zeilen ignorieren
           .map(line => {
@@ -19684,7 +19867,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
             const lineClean = line.trim();
             
             // Pattern 1: **FIGURNAME**: Dialog (Markdown-Bold)
-            const matchBold = lineClean.match(/^\*\*([A-ZÄÖÜa-zäöüss0-9\s\.\-]+)\*\*:\s*(.*)$/);
+            const matchBold = lineClean.match(/^\*\*([A-ZÄÖÜa-zäöüß0-9\s\.\-]+)\*\*:\s*(.*)$/);
             if (matchBold) {
               const figurName = matchBold[1].trim();
               const dialogText = cleanInlineRegie(matchBold[2]);
@@ -19693,7 +19876,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
             
             // Pattern 2: FIGURNAME: Dialog (ohne Markdown)
             // Erweiterte Regex: Erlaubt auch Ziffern, Leerzeichen, Punkte in Figurennamen
-            const match = lineClean.match(/^([A-ZÄÖÜ][A-ZÄÖÜa-zäöüss0-9\s\.\-]+):\s*(.*)$/);
+            const match = lineClean.match(/^([A-ZÄÖÜ][A-ZÄÖÜa-zäöüß0-9\s\.\-]+):\s*(.*)$/);
             if (match) {
               const dialogText = cleanInlineRegie(match[2]);
               return `<div class="fmt-dialog"><span class="figur">${match[1]}:</span> <span class="text">${dialogText}</span></div>`;
@@ -20037,7 +20220,7 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
       const needsWebSearch = /recherchier|such|find|aktuell|news|wikipedia|was weisst|im netz|im internet|online/i.test(userMessage);
       
       const requestBody = {
-        model: 'claude-sonnet-4-6',
+        model: getDrameraModell(),
         max_tokens: 4000,
         system: DRAMATURG_SYSTEM_PROMPT + '\n\n' + projektKontext,
         messages: [...dramaturgMessages.slice(-10), newUserMsg].map(m => ({
@@ -20277,7 +20460,7 @@ WICHTIGE REGELN:
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: getDrameraModell(),
         max_tokens: 64000,
         messages: [
           { role: 'user', content: `Analysiere diesen Textabschnitt und gib NUR JSON zurück:\n\n${chunkText}` }
@@ -20545,15 +20728,18 @@ WICHTIGE REGELN:
     // Dialog-Array in HTML-Format konvertieren
     const dialogToHtml = (dialog, szeneTitel) => {
       if (!dialog || !Array.isArray(dialog) || dialog.length === 0) return '';
+      // SICHERHEIT (XSS): importierte/KI-extrahierte Texte escapen, bevor sie als HTML
+      // eingesetzt werden – ein präpariertes Dokument könnte sonst Markup einschleusen.
+      const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       let html = '';
       if (szeneTitel) {
-        html += `<div class="fmt-szenen-titel">${szeneTitel}</div>`;
+        html += `<div class="fmt-szenen-titel">${esc(szeneTitel)}</div>`;
       }
       dialog.forEach(entry => {
         if (entry.typ === 'regie') {
-          html += `<div class="fmt-regie">${entry.text}</div>`;
+          html += `<div class="fmt-regie">${esc(entry.text)}</div>`;
         } else if (entry.typ === 'dialog' && entry.figur) {
-          html += `<div class="fmt-dialog"><span class="figur">${entry.figur}:</span><span class="text">${entry.text || ''}</span></div>`;
+          html += `<div class="fmt-dialog"><span class="figur">${esc(entry.figur)}:</span><span class="text">${esc(entry.text || '')}</span></div>`;
         }
       });
       return html;
@@ -23771,7 +23957,7 @@ THEMEN: ${data.themen?.map(t => t.name).join(', ') || 'Keine'}`.trim();
           'anthropic-dangerous-direct-browser-access': 'true'
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
+          model: getDrameraModell(),
           max_tokens: 800,
           system: 'Du bist ein erfahrener Dramaturg. Du transformierst dramaturgische Notizen in lebendige, präzise Prosatexte. Du kennst das Gesamtprojekt und bettest die Einzelteile in den dramaturgischen Zusammenhang ein. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{
@@ -31420,6 +31606,15 @@ STIL:
         .szenenguide-btn.sekundaer:disabled { opacity: 0.4; cursor: default; }
         .szenenguide-btn.geist { background: transparent; color: #7a6a5a; border-color: #d1c7b8; }
         .szenenguide-btn.geist:hover { background: #efe7db; }
+        /* Datensicherheits-Banner */
+        .sicherheits-banner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; padding: 0.6rem 1rem; background: #fdf4e3; border-bottom: 1px solid #e7c98a; color: #5a4326; font-size: 0.85rem; }
+        .sicherheits-banner.kritisch { background: #fdeaea; border-bottom-color: #e7a1a1; color: #7a2b2b; }
+        .sicherheits-banner span { flex: 1; min-width: 220px; }
+        .sicherheits-banner-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+        .sicherheits-banner button { padding: 0.4rem 0.85rem; border-radius: 0.4rem; border: none; font-size: 0.8rem; font-weight: 600; cursor: pointer; background: #6b4423; color: #fff; }
+        .sicherheits-banner.kritisch button { background: #b3352f; }
+        .sicherheits-banner button.ghost { background: transparent; color: inherit; border: 1px solid currentColor; opacity: 0.75; }
+        .sicherheits-banner button:hover { filter: brightness(1.08); }
         .bearbeiten-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         
         /* Aufklappbare Sektionen */
@@ -34932,6 +35127,36 @@ STIL:
       {/* Werkbank View */}
       {currentView === 'werkbank' && (
       <div className="app">
+        {/* Datensicherheits-Banner (Quota / Wiederherstellung / Backup-Erinnerung) */}
+        {(storageFull || idbRecovery || backupOverdue) && (
+          <div className={`sicherheits-banner ${storageFull ? 'kritisch' : ''}`}>
+            {storageFull ? (
+              <>
+                <span>⚠️ Der Browser-Speicher ist voll. Änderungen werden nur noch als Sicherungskopie gehalten – bitte jetzt als Datei sichern.</span>
+                <div className="sicherheits-banner-actions">
+                  <button onClick={() => saveToFileAs()}>💾 Jetzt sichern</button>
+                  <button className="ghost" onClick={() => { setStorageFull(false); try { window.__ninaStorageFull = false; } catch (e) {} }}>Später</button>
+                </div>
+              </>
+            ) : idbRecovery ? (
+              <>
+                <span>♻️ Es wurde eine Sicherungskopie gefunden, dieses Fenster ist aber leer. Projekt aus der Sicherung wiederherstellen?</span>
+                <div className="sicherheits-banner-actions">
+                  <button onClick={applyIdbRecovery}>Wiederherstellen</button>
+                  <button className="ghost" onClick={() => setIdbRecovery(null)}>Verwerfen</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span>💡 Dein Projekt lebt nur im Browser. Seit über einer Woche kein Datei-Backup – sichere es zur Sicherheit als Datei.</span>
+                <div className="sicherheits-banner-actions">
+                  <button onClick={() => saveToFileAs()}>💾 Jetzt sichern</button>
+                  <button className="ghost" onClick={() => setBackupOverdue(false)}>Später</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         {/* Header - vereinfacht, Menü ist jetzt in der Sidebar */}
         <header className="header" style={{ position: 'relative' }}>
           <div className="header-left" style={{ position: 'relative' }}>
@@ -37926,8 +38151,31 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                   {apiKey && apiKeyStatus === 'idle' && (
                     <div className="settings-status neutral">Key eingegeben – klicke "Testen" zur Prüfung</div>
                   )}
+                  {apiKey && (
+                    <>
+                      <label className="settings-label" style={{ marginTop: '0.75rem' }}>KI-Modell</label>
+                      <input
+                        type="text"
+                        list="dramera-modell-liste"
+                        value={aktModell}
+                        onChange={(e) => { setAktModell(e.target.value); setDrameraModell(e.target.value); }}
+                        placeholder={DRAMERA_MODELL_DEFAULT}
+                        className="settings-input"
+                      />
+                      <datalist id="dramera-modell-liste">
+                        {DRAMERA_MODELL_VORSCHLAEGE.map(m => <option key={m} value={m} />)}
+                      </datalist>
+                      <p className="settings-hint">
+                        Standard: {DRAMERA_MODELL_DEFAULT}. Falls dieses Modell einmal nicht mehr
+                        verfügbar ist, hier die aktuelle Modell-ID von Anthropic eintragen.
+                        {aktModell !== DRAMERA_MODELL_DEFAULT && (
+                          <> <a href="#" onClick={(e) => { e.preventDefault(); setAktModell(DRAMERA_MODELL_DEFAULT); setDrameraModell(DRAMERA_MODELL_DEFAULT); }}>↺ Zurücksetzen</a></>
+                        )}
+                      </p>
+                    </>
+                  )}
                 </div>
-                
+
                 {apiKey && (
                   <div className="settings-section">
                     <h3>🎭 KI-Assistent</h3>
@@ -38255,8 +38503,11 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     <div key={i} className={`dramaturg-message ${msg.role}`}>
                       {/* Nachrichteninhalt mit Markdown-ähnlicher Formatierung */}
                       {msg.content.split('\n').map((line, j) => {
-                        // Fett markieren
-                        const formattedLine = line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+                        // SICHERHEIT (XSS): Zeile zuerst escapen, dann nur unsere eigene
+                        // **Fett**-Auszeichnung als <strong> einsetzen. So kann kein
+                        // eingeschleustes Markup aus der KI-Antwort ausgeführt werden.
+                        const escaped = String(line).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                        const formattedLine = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
                         return <p key={j} dangerouslySetInnerHTML={{ __html: formattedLine }} />;
                       })}
                       
