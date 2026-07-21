@@ -965,8 +965,8 @@ class ErrorBoundary extends Component {
 const DRAMERA_MODELL_DEFAULT = 'claude-sonnet-4-6';
 const DRAMERA_MODELL_VORSCHLAEGE = [
   'claude-sonnet-4-6',
-  'claude-sonnet-4-5',
-  'claude-opus-4-6',
+  'claude-sonnet-5',
+  'claude-opus-4-8',
   'claude-haiku-4-5'
 ];
 let DRAMERA_MODELL = DRAMERA_MODELL_DEFAULT;
@@ -975,6 +975,23 @@ function getDrameraModell() { return DRAMERA_MODELL || DRAMERA_MODELL_DEFAULT; }
 function setDrameraModell(id) {
   DRAMERA_MODELL = (id && id.trim()) ? id.trim() : DRAMERA_MODELL_DEFAULT;
   try { localStorage.setItem('dramera-modell', DRAMERA_MODELL); } catch (e) {}
+}
+
+// Gemeinsamer KI-Aufruf an die Anthropic-API: kapselt Endpoint, Header und die
+// Body-Serialisierung an EINER Stelle (statt neunfach dupliziert). Das Modell
+// steckt bereits im übergebenen body. Die Antwort-Verarbeitung bleibt bewusst an
+// der jeweiligen Aufrufstelle, da die Formate unterschiedlich sind.
+async function kiFetch(apiKey, body) {
+  return fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify(body)
+  });
 }
 
 // =====================================================
@@ -6438,51 +6455,50 @@ const GEFUEHRTE_PFADE = {
 // KI-DRAMATURG SYSTEM
 // =====================================================
 const DRAMATURG_SYSTEM_PROMPT = `
-Du bist ein erfahrener Dramaturg – kein Chatbot, sondern ein dramaturgischer Sparringspartner. Du denkst in Konflikten, Figuren-Konstellationen, Spannungsbögen und theatralen Mitteln.
+Du bist ein erfahrener Dramaturg – kein Chatbot, sondern ein dramaturgischer Sparringspartner, der ein Stück von Anfang bis Ende begleitet. Du kennst den ganzen Projektstand (er wird dir mitgeliefert) und gehst voran, statt nur zu warten.
 
 DEINE HALTUNG:
-- Du fragst nach dem WARUM hinter Entscheidungen
-- Du denkst von der Figur her: Was will sie? Was braucht sie wirklich? Was steht im Weg?
-- Du achtest auf den Unterschied zwischen WANT (bewusstes Ziel) und NEED (unbewusstes Bedürfnis)
-- Du erkennst dramaturgische Muster: Peripetie, Anagnorisis, dramatische Ironie
-- Du denkst in Beziehungs-Dynamiken und Kräfteverhältnissen
-- Du hinterfragst konstruktiv: "Was passiert, wenn du das anders denkst?"
+- Du denkst von der Figur her: Was will sie (WANT, bewusst)? Was braucht sie wirklich (NEED, unbewusst)? Was steht im Weg?
+- Du fragst nach dem WARUM hinter Entscheidungen und hinterfragst konstruktiv.
+- Du erkennst dramaturgische Muster (Peripetie, Anagnorisis, dramatische Ironie) und denkst in Kräfteverhältnissen.
+- Du darfst unbequem sein, aber bleibst konkret und hilfreich.
 
-LÄNGENSTEUERUNG – passe deine Antwortlänge dem Anliegen an:
-- Einfache Fragen, Vorschläge, Listen: Kurz und präzise (3-5 Sätze)
-- Analyse einer Szene oder Figur: Gründlich aber fokussiert (1-2 Absätze)
-- Tiefenanalyse, Strukturfragen, dramaturgische Probleme: So ausführlich wie nötig – nimm dir den Raum, den das Problem braucht
-- Bei "analysiere", "erkläre", "warum" darf die Antwort tiefgründig sein
-- Bei "schlage vor", "liste", "kurz" bleibe kompakt
+SO FÜHRST DU (WICHTIG):
+- Stelle NICHT viele Fragen auf einmal. Stelle die EINE Frage, die den Autor gerade am weitesten bringt. Erst wenn die geklärt ist, kommt die nächste.
+- Arbeite nach dieser Prioritäten-Leiter und frage immer aus der Ebene, die als Nächstes dran ist:
+  1. Fundament: Worum geht es? Wer will was? Was steht im Weg? Was ist der Kern/die Zumutung?
+  2. Figuren & Konflikt: Konstellation, Want/Need, Gegenkraft, Beziehungen.
+  3. Struktur & Spannungsbogen: Aufbau, Wendepunkte, Reihenfolge der Szenen.
+  4. Feinschliff: Dialog, theatrale Mittel, Atmosphäre.
+  Lass Feinheiten liegen, solange das Fundament wackelt.
 
-AKTIONEN - So fügst du Inhalte ins Projekt ein:
-Wenn du Figuren, Szenen oder Themen vorschlägst UND der User diese übernehmen möchte, nutze AKTIONS-BLÖCKE.
-Format (EXAKT so, keine Abweichungen):
+FORMDIAGNOSE:
+- Leite aus dem vorhandenen Material eine Vermutung ab, wohin das Stück formal tendiert – klassischer Drei-Akter, offene Form, Stationendrama, Kammerspiel – und sag, WORAN du das festmachst. Formuliere es als Angebot, nicht als Urteil. Beispiel: viele lose Szenen-Ideen ohne Kausalkette deuten eher auf offene Form; eine klare Hauptfigur mit Ziel und wachsendem Widerstand eher auf den Drei-Akter.
+
+LÄNGE:
+- Standard: kurz und präzise (wenige Sätze). Nur bei ausdrücklicher Bitte um Analyse/Tiefe ("analysiere", "erkläre", "warum") nimmst du dir mehr Raum.
+
+VORSCHLÄGE – DER AUTOR ENTSCHEIDET:
+- Du fügst NICHTS eigenmächtig ins Projekt ein. Wenn du etwas Konkretes vorschlägst (Figur, Szene, Thema), biete es als AKTIONS-BLOCK an – der Autor sieht dann einen "Übernehmen"-Knopf und entscheidet selbst.
+- Nutze Aktions-Blöcke nur, wenn ein konkreter, übernehmbarer Vorschlag vorliegt – nicht für blosse Rückfragen.
+
+FIGUREN VOLLSTÄNDIG ENTWICKELN:
+- Wenn du eine Figur vorschlägst, fülle so viele Felder wie sinnvoll aus – nicht nur den Namen. Nutze die echten Feldnamen der App (siehe Schema). "ziel" = das bewusste Wollen, "beduerfnis" = das unbewusste Brauchen, "praegung" = die prägende Wunde/der Ghost.
+
+AKTIONS-BLÖCKE – Format EXAKT so:
 
 ===AKTION===
-{"type": "szene_hinzufuegen", "daten": {"titel": "Titel hier", "zusammenfassung": "Beschreibung hier"}}
+{"type": "figur_hinzufuegen", "daten": {"name": "Name", "charakteristik": "wer sie in einem Satz ist", "ziel": "was sie bewusst will", "beduerfnis": "was sie unbewusst braucht", "praegung": "prägende Wunde/Ghost", "alter": "z.B. Mitte 30", "beruf": "...", "geschlecht": "...", "sprechweise": "wie sie spricht", "herkunft": "woher sie kommt", "backstory": "kurze Vorgeschichte"}}
 ===ENDE===
 
 AKTIONS-TYPEN:
-- figur_hinzufuegen: {"type": "figur_hinzufuegen", "daten": {"name": "Name", "beschreibung": "...", "ziel": "...", "sprechweise": "..."}}
-- szene_hinzufuegen: {"type": "szene_hinzufuegen", "daten": {"titel": "...", "zusammenfassung": "..."}}
-- thema_hinzufuegen: {"type": "thema_hinzufuegen", "daten": {"name": "..."}}
+- figur_hinzufuegen: daten wie oben. Nur "name" ist Pflicht; fülle die übrigen Felder aus, soweit du sie begründen kannst. Erfinde nichts Beliebiges.
+- szene_hinzufuegen: {"type": "szene_hinzufuegen", "daten": {"titel": "...", "zusammenfassung": "...", "ziel": "Ziel der Szene", "widerstand": "...", "wendepunkt": "..."}}
+- thema_hinzufuegen: {"type": "thema_hinzufuegen", "daten": {"name": "...", "contrast": "der Gegensatz/Widerspruch"}}
 
-WICHTIG bei mehreren Szenen:
-Wenn du mehrere Szenen einfügen sollst, nutze SEPARATE Aktions-Blöcke für JEDE Szene:
+Für MEHRERE Elemente: je ein SEPARATER Aktions-Block pro Element.
 
-===AKTION===
-{"type": "szene_hinzufuegen", "daten": {"titel": "Szene 1 Titel", "zusammenfassung": "Beschreibung 1"}}
-===ENDE===
-
-===AKTION===
-{"type": "szene_hinzufuegen", "daten": {"titel": "Szene 2 Titel", "zusammenfassung": "Beschreibung 2"}}
-===ENDE===
-
-Wenn der User fragt "automatisch einsetzen" oder "übernehmen" zu zuvor genannten Vorschlägen:
-Generiere sofort die passenden AKTIONS-BLÖCKE für alle zuvor genannten Elemente.
-
-SPRACHE: Schweizer Hochdeutsch («ss» statt Eszett)
+SPRACHE: Schweizer Hochdeutsch («ss» statt Eszett).
 `;
 
 // =====================================================
@@ -10489,21 +10505,12 @@ Verwandle diese Intrigen-Notizen in einen lebendigen, prosaischen Text (4-6 Sät
 Notizen:
 ${text}`;
 
-                    const response = await fetch('https://api.anthropic.com/v1/messages', {
-                      method: 'POST',
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'x-api-key': apiKey,
-                        'anthropic-version': '2023-06-01',
-                        'anthropic-dangerous-direct-browser-access': 'true'
-                      },
-                      body: JSON.stringify({
+                    const response = await kiFetch(apiKey, {
                         model: getDrameraModell(),
                         max_tokens: 800,
                         system: 'Du bist ein erfahrener Dramaturg. Du schreibst lebendige, atmosphärische Prosatexte über dramatische Intrigen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
                         messages: [{ role: 'user', content: prompt }]
-                      })
-                    });
+                      });
                     
                     if (response.ok) {
                       const data = await response.json();
@@ -12065,21 +12072,12 @@ Sei direkt und konstruktiv.
 WICHTIG: Verwende Schweizer Schreibweise («ss» statt Eszett).`;
     
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 2000,
           system: 'Du bist ein erfahrener Dramaturg mit tiefem Verständnis für Figurenführung, Konfliktdynamik und Spannungsdramaturgie. Du analysierst Theaterprojekte gründlich und gibst fundierte, konstruktive Einschätzungen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
-        })
-      });
+        });
       
       const result = await response.json();
       const antwort = result.content?.[0]?.text || 'Keine Antwort';
@@ -12626,21 +12624,12 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
     const prompt = getKIPrompt(activeKapitel, material, existingText);
     
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 2500,
           system: 'Du bist ein erfahrener Dramaturg, der professionelle Treatments für Theater schreibt. Du schreibst atmosphärisch, konkret und im Präsens. Du zeigst Figuren in Aktion, nicht in Beschreibung. Jeder Abschnitt soll Lust machen weiterzulesen. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
-        })
-      });
+        });
 
       if (!response.ok) throw new Error('API-Fehler');
       const result = await response.json();
@@ -14481,21 +14470,12 @@ Schreibe konkret und anschaulich. Nur den Text.${schweizHinweis}`;
     }
     
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 1500,
           system: 'Du bist ein erfahrener Dramaturg und Kulturmanager, der professionelle Förderdossiers für Theaterprojekte erstellt. Du kennst die Erwartungen von Förderstellen und schreibst überzeugend, konkret und dramaturgisch fundiert. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
-        })
-      });
+        });
 
       const result = await response.json();
       const text = result.content?.[0]?.text || '';
@@ -16767,7 +16747,7 @@ const SCHREIBTISCH_FORMATVORLAGEN = {
   nebentext: { name: 'Nebentext', class: 'format-nebentext', description: 'Erläuternder Text', icon: '📄' }
 };
 
-const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparringWithAI }) => {
+const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparringWithAI, onExportDocx }) => {
   const [activeSceneId, setActiveSceneId] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
   const [currentPosition, setCurrentPosition] = useState('');
@@ -17088,181 +17068,8 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const exportPDF = useCallback(() => { window.print(); }, []);
 
   // DOCX-Export
-  const exportDOCX = useCallback(async () => {
-    try {
-      // Lade docx library dynamisch wenn nicht vorhanden (UMD Build für Browser)
-      if (!window.docx) {
-        const cdnUrls = [
-          'https://unpkg.com/docx@8.5.0/build/index.umd.js',
-          'https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js'
-        ];
-        let loaded = false;
-        for (const url of cdnUrls) {
-          if (loaded) break;
-          try {
-            const s = document.createElement('script');
-            s.src = url;
-            document.head.appendChild(s);
-            await new Promise((resolve, reject) => {
-              s.onload = () => { loaded = true; resolve(); };
-              s.onerror = reject;
-              setTimeout(() => reject(new Error('Timeout')), 5000);
-            });
-          } catch (e) {
-            console.log('CDN fehlgeschlagen:', url);
-          }
-        }
-        if (!window.docx) {
-          throw new Error('docx-Library konnte nicht geladen werden. Bitte prüfe deine Internetverbindung.');
-        }
-      }
-      const { Document, Packer, Paragraph, TextRun, AlignmentType, PageBreak } = window.docx;
-      const children = [];
-
-      // Titelseite
-      children.push(
-        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 4000 }, children: [
-          new TextRun({ text: data.projektName || 'Unbenanntes Stück', font: 'Trebuchet MS', size: 56, bold: true })
-        ]}),
-        new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 2000 }, children: [
-          new TextRun({ text: 'Ein Theaterstück', font: 'Georgia', size: 28, italics: true })
-        ]})
-      );
-      if (data.autor?.name) {
-        children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 2000 }, children: [
-          new TextRun({ text: `von ${data.autor.name}`, font: 'Trebuchet MS', size: 22 })
-        ]}));
-      }
-
-      // Personenliste
-      if (data.figuren?.length > 0) {
-        children.push(
-          new Paragraph({ spacing: { before: 600 }, children: [new PageBreak()] }),
-          new Paragraph({ spacing: { after: 300 }, children: [
-            new TextRun({ text: 'PERSONEN', font: 'Trebuchet MS', size: 28, bold: true })
-          ]})
-        );
-        data.figuren.forEach(f => {
-          children.push(new Paragraph({ spacing: { after: 60 }, children: [
-            new TextRun({ text: f.name.toUpperCase(), font: 'Georgia', size: 22, bold: true }),
-            new TextRun({ text: f.beschreibung ? ` — ${f.beschreibung}` : '', font: 'Georgia', size: 22 })
-          ]}));
-        });
-      }
-
-      // Szenen – HTML parsen und in DOCX umwandeln
-      sortedFelder.forEach((feld, idx) => {
-        if (idx === 0) children.push(new Paragraph({ children: [new PageBreak()] }));
-
-        children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 400, after: 200 }, children: [
-          new TextRun({ text: `${idx + 1}. ${feld.titel}`, font: 'Georgia', size: 24, bold: true })
-        ]}));
-
-        if (feld.ort) {
-          children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 }, children: [
-            new TextRun({ text: feld.ort, font: 'Georgia', size: 22, italics: true })
-          ]}));
-        }
-
-        // HTML parsen
-        const htmlStr = convertFmtToFormat(feld.inhalt || '');
-        if (htmlStr) {
-          const parser = new DOMParser();
-          const doc = parser.parseFromString(`<div>${htmlStr}</div>`, 'text/html');
-          doc.body.firstChild.childNodes.forEach(node => {
-            if (node.nodeType !== 1) return;
-            const cls = node.className || '';
-
-            // Inline-Regie erkennen und als separate TextRuns rendern
-            const parseInlineRegie = (text, baseFmt) => {
-              if (!/\([^)]{2,}\)/.test(text)) return [new TextRun({ text, font: baseFmt.font, size: baseFmt.size * 2, bold: baseFmt.bold, italics: baseFmt.italic, color: baseFmt.color })];
-              return text.split(/(\([^)]{2,}\))/g).filter(Boolean).map(part => {
-                if (/^\([^)]{2,}\)$/.test(part)) {
-                  const ir = THEATER_FORMATE.inlineRegie;
-                  return new TextRun({ text: part, font: ir.font, size: ir.size * 2, italics: true, color: ir.color });
-                }
-                return new TextRun({ text: part, font: baseFmt.font, size: baseFmt.size * 2, bold: baseFmt.bold, italics: baseFmt.italic, color: baseFmt.color });
-              });
-            };
-
-            if (cls.includes('format-akt-titel')) {
-              const f = THEATER_FORMATE.aktTitel;
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round(f.letterSpacing * 100), color: f.color })
-              ]}));
-            } else if (cls.includes('format-szene-titel')) {
-              const f = THEATER_FORMATE.szeneTitel;
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, color: f.color })
-              ]}));
-            } else if (cls.includes('format-regieanweisung')) {
-              const f = THEATER_FORMATE.regieanweisung;
-              children.push(new Paragraph({ indent: { left: Math.round(f.indent * 567) }, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
-              ]}));
-            } else if (cls.includes('format-figurenname')) {
-              const f = THEATER_FORMATE.figurenname;
-              children.push(new Paragraph({ spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((f.letterSpacing || 0.03) * 100), color: f.color })
-              ]}));
-            } else if (cls.includes('format-dialog')) {
-              const fn = node.querySelector('.figur-name');
-              const dt = node.querySelector('.dialog-text');
-              const ff = THEATER_FORMATE.figurenname;
-              const fd = THEATER_FORMATE.dialog;
-              children.push(new Paragraph({ spacing: { before: ff.spacingBefore * 20, after: ff.spacingAfter * 20 }, children: [
-                new TextRun({ text: fn ? fn.textContent : '', font: ff.font, size: ff.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((ff.letterSpacing || 0.03) * 100), color: ff.color })
-              ]}));
-              children.push(new Paragraph({ indent: { left: Math.round(fd.indent * 567) }, spacing: { before: fd.spacingBefore * 20, after: fd.spacingAfter * 20 }, children: parseInlineRegie(dt ? dt.textContent : '', fd) }));
-            } else if (cls.includes('format-vers') || cls.includes('format-lied')) {
-              const f = cls.includes('format-lied') ? THEATER_FORMATE.lied : THEATER_FORMATE.vers;
-              children.push(new Paragraph({ indent: { left: Math.round(f.indent * 567) }, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
-              ]}));
-            } else if (cls.includes('format-pause')) {
-              const f = THEATER_FORMATE.pause;
-              children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: f.spacingBefore * 20, after: f.spacingAfter * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, bold: true, allCaps: true, characterSpacing: Math.round((f.letterSpacing || 0.3) * 100), color: f.color })
-              ]}));
-            } else if (cls.includes('format-musik') || cls.includes('format-sound')) {
-              const f = cls.includes('format-musik') ? THEATER_FORMATE.musik : THEATER_FORMATE.sound;
-              children.push(new Paragraph({ indent: { left: Math.round((f.indent || 4) * 567) }, spacing: { before: (f.spacingBefore || 3) * 20, after: (f.spacingAfter || 7) * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
-              ]}));
-            } else if (cls.includes('format-nebentext')) {
-              const f = THEATER_FORMATE.nebentext;
-              children.push(new Paragraph({ spacing: { before: (f.spacingBefore || 3) * 20, after: (f.spacingAfter || 6) * 20 }, children: [
-                new TextRun({ text: node.textContent, font: f.font, size: f.size * 2, italics: true, color: f.color })
-              ]}));
-            } else if (node.textContent.trim()) {
-              const f = THEATER_FORMATE.standard;
-              children.push(new Paragraph({ children: parseInlineRegie(node.textContent, f) }));
-            }
-          });
-        } else if (feld.zusammenfassung) {
-          children.push(new Paragraph({ children: [
-            new TextRun({ text: `[${feld.zusammenfassung}]`, font: 'Georgia', size: 20, italics: true, color: '999999' })
-          ]}));
-        }
-      });
-
-      const doc = new Document({
-        sections: [{ properties: {
-          page: { margin: { top: 1440, right: 1440, bottom: 1728, left: 1440 } }
-        }, children }]
-      });
-      const blob = await Packer.toBlob(doc);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${new Date().toISOString().slice(0,10)} Dramera ${data.projektName || 'Stueck'} Schreibtisch.docx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('DOCX-Export fehlgeschlagen:', err);
-      alert('DOCX-Export fehlgeschlagen: ' + err.message);
-    }
-  }, [data, sortedFelder, convertFmtToFormat]);
+  // DOCX-Export läuft jetzt über executeExport('stuecktext','docx') (onExportDocx-Prop) –
+  // ein gemeinsamer Generator statt zwei parallelen.
 
   // Spannungsfarbe
   const getTensionColor = (val) => {
@@ -17382,7 +17189,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
 
           <div className="schreibtisch-toolbar-group">
             <button className="schreibtisch-toolbar-btn" onClick={exportPDF} title="Als PDF drucken">PDF</button>
-            <button className="schreibtisch-toolbar-btn" onClick={exportDOCX} title="Als DOCX exportieren">DOCX</button>
+            <button className="schreibtisch-toolbar-btn" onClick={onExportDocx} title="Als DOCX exportieren">DOCX</button>
           </div>
         </div>
 
@@ -17964,7 +17771,7 @@ function DrameraWerkbank() {
       setTimeout(() => alert('ℹ️ Direktes Speichern in den Ursprungsordner ist in dieser Umgebung nicht möglich.\n\nDas passiert, wenn die App als lokale Datei (file://) oder in einem Browser ohne Datei-Zugriff (Firefox/Safari) läuft. Dein Projekt wurde deshalb in den Download-Ordner gelegt.\n\nFür echtes Zurückschreiben in denselben Ordner: die App in Chrome oder Edge über eine Web-Adresse öffnen (http/https oder localhost) – nicht per Doppelklick als Datei. Alternativ das Google-Drive-Backup verwenden.'), 150);
     }
   };
-  const saveToFile = React.useCallback(async () => {
+  const saveToFile = React.useCallback(async (forceNew = false) => {
     if (saveInProgressRef.current) return;
     saveInProgressRef.current = true;
 
@@ -17985,8 +17792,8 @@ function DrameraWerkbank() {
       const jsonStr = JSON.stringify(exportData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json' });
 
-      // Has existing file handle? Save silently.
-      if (fileHandleRef.current) {
+      // Bestehenden Datei-Bezug still speichern – ausser bei "Sichern unter" (forceNew).
+      if (!forceNew && fileHandleRef.current) {
         try {
           const writable = await fileHandleRef.current.createWritable();
           await writable.write(blob);
@@ -18059,75 +17866,7 @@ function DrameraWerkbank() {
     }
   }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
 
-  const saveToFileAs = React.useCallback(async () => {
-    if (saveInProgressRef.current) return;
-    saveInProgressRef.current = true;
-
-    try {
-      const exportData = {
-        _app: 'dramera',
-        version: '4.16',
-        exportDate: new Date().toISOString(),
-        data,
-        guidedMode,
-        strukturAntworten,
-        offeneFormAbschnitte,
-        aktuellesRaster,
-        materialSidebarWidth,
-        werkzeugSidebarWidth,
-        bearbeitenSidebarWidth
-      };
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-
-      if (window.showSaveFilePicker) {
-        try {
-          const dateStr = new Date().toISOString().slice(0, 10);
-          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-          const handle = await window.showSaveFilePicker({
-            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
-            types: [{
-              description: 'Dramera Projekt',
-              accept: { 'application/json': ['.dramera.json', '.json'] }
-            }]
-          });
-          fileHandleRef.current = handle;
-          setFilePath(handle.name);
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          setFileIsDirty(false);
-          setLastFileSaveTime(new Date());
-          setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-          // Kein Datei-Dialog m\u00f6glich (z.B. file://): auf Download ausweichen.
-          const dateStr = new Date().toISOString().slice(0, 10);
-          const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-          downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
-          setFileIsDirty(false);
-          setLastFileSaveTime(new Date());
-          setSaveStatus('saved');
-          notifyDownloadFallback();
-          return;
-        }
-      } else {
-        const dateStr = new Date().toISOString().slice(0, 10);
-        const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
-        setFileIsDirty(false);
-        setLastFileSaveTime(new Date());
-        setSaveStatus('saved');
-        notifyDownloadFallback();
-      }
-    } catch (err) {
-      console.error('Fehler beim Sichern unter:', err);
-      setSaveStatus('error');
-    } finally {
-      saveInProgressRef.current = false;
-    }
-  }, [data, guidedMode, strukturAntworten, offeneFormAbschnitte, aktuellesRaster, materialSidebarWidth, werkzeugSidebarWidth, bearbeitenSidebarWidth]);
+  const saveToFileAs = React.useCallback(() => saveToFile(true), [saveToFile]);
 
   // === GESAMT-EXPORT: Alle ausgefüllten Felder + alle Szenen als Word-Dokument ===
   // Bündelt Fundament, Figuren, Themen, Schauplatz/Zeit und weitere Werkzeug-Inhalte
@@ -19069,6 +18808,7 @@ function DrameraWerkbank() {
     return saved || 'aus';
   });
   const [dramaturgPanelOpen, setDramaturgPanelOpen] = useState(false);
+  const [dramaturgFullscreen, setDramaturgFullscreen] = useState(false); // eigener Bereich (Vollbild)
   const [dramaturgMessages, setDramaturgMessages] = useState([]);
   const [dramaturgInput, setDramaturgInput] = useState('');
   const [dramaturgLoading, setDramaturgLoading] = useState(false);
@@ -19184,20 +18924,11 @@ function DrameraWerkbank() {
     setApiKeyError('');
     
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 10,
           messages: [{ role: 'user', content: 'Antworte nur mit: OK' }]
-        })
-      });
+        });
       
       if (response.ok) {
         setApiKeyStatus('success');
@@ -19270,7 +19001,7 @@ function DrameraWerkbank() {
 PROJEKT: ${data.projektName || 'Unbenannt'}
 FIGUREN: ${data.figuren?.map(f => `${f.name}${f.ziel ? ` (will: ${f.ziel})` : ''}`).join(', ') || 'Keine'}
 THEMEN: ${data.themen?.map(t => t.name).join(', ') || 'Keine'}
-CONSTRAINTS: ${data.vorgaben?.map(c => c.titel).join(', ') || 'Keine'}
+CONSTRAINTS: ${data.vorgaben?.map(c => c.text || c.titel || c.name).join(', ') || 'Keine'}
 SCHREIBFLÄCHE: ${data.schreibflaeche?.substring(0, 300) || '(leer)'}${data.schreibflaeche?.length > 300 ? '...' : ''}${guidedAnswersShort}
 
 WICHTIG: Antworte auf Schweizer Hochdeutsch (niemals Eszett, immer «ss»).`;
@@ -19640,21 +19371,12 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
     }
     
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 4500,
           system: 'Du bist ein erfahrener Dramaturg und dramaturgischer Sparringspartner. Du analysierst Szenen, Figurenkonstellationen und Spannungsverläufe mit professionellem Blick. Du denkst in Want/Need/Ghost, in Subtext und dramatischer Ironie. Wenn du Dialoge schreibst, haben die Figuren eigene Stimmen und verfolgen verborgene Ziele. Antworte in Schweizer Hochdeutsch (ss statt ß).',
           messages: [{ role: 'user', content: prompt }]
-        })
-      });
+        });
 
       if (!response.ok) {
         const err = await response.json();
@@ -19737,19 +19459,23 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
     
     switch (action.type) {
       case 'figur_hinzufuegen': {
+        // Auf die ECHTEN Editor-Felder mappen, damit die Figur in der App gefüllt ist.
+        // Fallbacks fangen ältere/englische Schlüssel ab (beschreibung/want/need/ghost/biografie).
+        const d = action.daten || {};
         const neueFigur = {
           id: `fig_ki_${Date.now()}`,
-          name: action.daten.name || 'Neue Figur',
-          beschreibung: action.daten.beschreibung || '',
-          ziel: action.daten.ziel || '',
-          sprechweise: action.daten.sprechweise || '',
-          pi: action.daten.pi || '',
-          arc: action.daten.arc || '',
-          funktion: action.daten.funktion || '',
-          kontrast: action.daten.kontrast || '',
-          geheimnisse: action.daten.geheimnisse || '',
-          backstory: action.daten.backstory || '',
-          physische_eigenheiten: action.daten.physische_eigenheiten || ''
+          name: d.name || 'Neue Figur',
+          charakteristik: d.charakteristik || d.beschreibung || '',
+          ziel: d.ziel || d.want || '',
+          beduerfnis: d.beduerfnis || d.need || '',
+          praegung: d.praegung || d.ghost || d.schwaeche || '',
+          alter: d.alter || '',
+          beruf: d.beruf || '',
+          geschlecht: d.geschlecht || '',
+          sprechweise: d.sprechweise || '',
+          herkunft: d.herkunft || '',
+          backstory: d.backstory || d.biografie || '',
+          physische_eigenheiten: d.physische_eigenheiten || ''
         };
         setData(prev => ({ ...prev, figuren: [...(prev.figuren || []), neueFigur] }));
         return `✅ Figur "${neueFigur.name}" hinzugefügt`;
@@ -20116,14 +19842,19 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
   };
   
   // Dramaturg-Chat mit Web-Suche
-  const sendDramaturgMessage = async (userMessage) => {
+  const sendDramaturgMessage = async (userMessage, opts = {}) => {
     if (!apiKey || !userMessage.trim()) return;
-    
+    if (dramaturgLoading) return; // kein Doppel-Feuern während eine Anfrage läuft
+
     setDramaturgLoading(true);
     setPendingActions([]);
-    
-    // User-Nachricht hinzufügen
-    const newUserMsg = { role: 'user', content: userMessage };
+
+    // User-Nachricht hinzufügen. Bei opts.visibleUser === false (z.B. automatische
+    // Bestandsaufnahme) bleibt sie im Verlauf (damit die KI ihren eigenen Gesprächsfaden
+    // behält), wird aber im Render als hidden ausgeblendet.
+    const newUserMsg = opts.visibleUser === false
+      ? { role: 'user', content: userMessage, hidden: true }
+      : { role: 'user', content: userMessage };
     setDramaturgMessages(prev => [...prev, newUserMsg]);
     setDramaturgInput('');
     
@@ -20208,7 +19939,7 @@ SZENEN-IDEEN IM MATERIAL (${data.szenenIdeen?.length || 0}):
 ${data.szenenIdeen?.map(s => `- "${s.titel}"`).join('\n') || 'Keine'}
 
 CONSTRAINTS:
-${data.vorgaben?.map(c => c.titel).join(', ') || 'Keine'}
+${data.vorgaben?.map(c => c.text || c.titel || c.name).join(', ') || 'Keine'}
 
 SCHREIBFLÄCHE:
 ${data.schreibflaeche?.substring(0, 500) || '(leer)'}${data.schreibflaeche?.length > 500 ? '...' : ''}
@@ -20223,10 +19954,15 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
         model: getDrameraModell(),
         max_tokens: 4000,
         system: DRAMATURG_SYSTEM_PROMPT + '\n\n' + projektKontext,
-        messages: [...dramaturgMessages.slice(-10), newUserMsg].map(m => ({
-          role: m.role,
-          content: m.content
-        }))
+        messages: (() => {
+          const raw = [...dramaturgMessages.slice(-10), newUserMsg]
+            .filter(m => m && m.content && String(m.content).trim())
+            .map(m => ({ role: m.role, content: m.content }));
+          // Die API verlangt, dass die erste Nachricht vom User stammt – führende
+          // Assistant-Nachrichten (Begrüssung/Bestandsaufnahme) darum entfernen.
+          while (raw.length && raw[0].role !== 'user') raw.shift();
+          return raw;
+        })()
       };
       
       // Web-Suche nur wenn explizit angefragt (vermeidet Fehler)
@@ -20240,16 +19976,7 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
         ];
       }
       
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify(requestBody)
-      });
+      const response = await kiFetch(apiKey, requestBody);
       
       if (!response.ok) {
         const errText = await response.text();
@@ -20310,22 +20037,13 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
     
     setDramaturgPanelOpen(true);
     setPendingActions([]);
-    
-    // Wenn noch keine Nachrichten, Begrüssung hinzufügen
-    if (dramaturgMessages.length === 0) {
-      setDramaturgMessages([{
-        role: 'assistant',
-        content: `👋 Hallo! Ich bin dein KI-Dramaturg.
 
-Ich kann dir helfen mit:
-• **Recherche** – "Was weisst du über Königsdramen im Barock?"
-• **Figuren erstellen** – "Erstelle 3 Figuren für mein Stück"
-• **Dialoge schreiben** – "Schreibe einen Dialog für Szene 2"
-• **Titel generieren** – "Gib allen Szenen bessere Titel"
-• **Struktur prüfen** – "Was fehlt in meiner Geschichte?"
-
-Was möchtest du tun?`
-      }]);
+    // Beim ersten Öffnen: proaktive Bestandsaufnahme statt statischem Begrüssungsmenü.
+    // Der Dramaturg durchforstet den Projektstand und meldet sich von selbst mit
+    // Standortbestimmung, Formdiagnose und der wichtigsten nächsten Frage.
+    if (dramaturgMessages.length === 0 && !dramaturgLoading) {
+      const bestandsaufnahme = 'Öffne unser Gespräch mit einer kurzen Bestandsaufnahme meines aktuellen Projektstands: (1) Wo stehe ich gerade – was trägt schon, was fehlt? (2) Wohin tendiert die Form – Drei-Akter, offene Form oder etwas anderes – und woran machst du das fest? (3) Stell mir danach die EINE wichtigste nächste Frage. Halte dich insgesamt kurz und konkret. Falls noch fast nichts erfasst ist, sag das freundlich und frage, womit wir beginnen.';
+      sendDramaturgMessage(bestandsaufnahme, { visibleUser: false });
     }
   };
   
@@ -20451,23 +20169,14 @@ WICHTIGE REGELN:
 - Gib NUR JSON zurück, KEINE Erklärungen
 - Alle Strings müssen in doppelten Anführungszeichen sein`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
+    const response = await kiFetch(apiKey, {
         model: getDrameraModell(),
         max_tokens: 64000,
         messages: [
           { role: 'user', content: `Analysiere diesen Textabschnitt und gib NUR JSON zurück:\n\n${chunkText}` }
         ],
         system: systemPrompt
-      })
-    });
+      });
     
     if (!response.ok) {
       const err = await response.json();
@@ -21189,7 +20898,8 @@ WICHTIGE REGELN:
   // Export-Menü State
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportType, setExportType] = useState(null); // 'archiv', 'treatment', 'stuecktext'
+  const [exportType, setExportType] = useState(null); // 'treatment' | 'stuecktext' | 'materialien'
+  const [kiTreatmentLoading, setKiTreatmentLoading] = useState(false);
   const [showDossierAssistent, setShowDossierAssistent] = useState(false);
   const exportMenuRef = useRef(null);
   
@@ -21470,21 +21180,7 @@ WICHTIGE REGELN:
   // =====================================================
   // BACKUP EXPORT (als JSON-Datei)
   // =====================================================
-  const exportProject = () => { 
-    const safeName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_');
-    const now = new Date();
-    const ts = now.toISOString().slice(0, 10) + '_' + now.toTimeString().slice(0, 5).replace(':', '-');
-    const fileName = `${safeName}_Weba_Backup_${ts}.json`;
-    const content = JSON.stringify(data, null, 2);
-    const blob = new Blob([content], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    a.click();
-    URL.revokeObjectURL(url);
-    alert('💾 Backup gespeichert!\n\nDatei: ' + fileName);
-  };
+
 
   // =====================================================
   // MANUELLEN VERSIONS-SNAPSHOT ERSTELLEN
@@ -22497,412 +22193,141 @@ WICHTIGE REGELN:
     }
   };
   
-  // Generiere Archiv-Inhalt
-  const generateArchivContent = (format) => {
-    const lines = [];
-    const isHtml = format !== 'txt';
-    
-    const h1 = (t) => isHtml ? `<h1>${t}</h1>` : `${'═'.repeat(60)}\n${t}\n${'═'.repeat(60)}`;
-    const h2 = (t) => isHtml ? `<h2>${t}</h2>` : `\n${t}\n${'─'.repeat(40)}`;
-    const p = (t) => isHtml ? `<p>${t}</p>` : t;
-    
-    lines.push(h1(`PROJEKT-ARCHIV: ${data.projektName || 'Unbenanntes Projekt'}`));
-    lines.push(isHtml ? `<p class="meta">Exportiert am: ${new Date().toLocaleDateString('de-CH')} ${new Date().toLocaleTimeString('de-CH')}</p>` : `Exportiert am: ${new Date().toLocaleDateString('de-CH')}`);
-    
-    // 1. GRUNDDATEN (aus Fundament-Werkzeug)
-    lines.push(h2('1. Grunddaten'));
-    lines.push(p(`<strong>Projektname:</strong> ${data.projektName || '(nicht definiert)'}`));
-    // fundament.titel kann ein Objekt sein mit {titel, tagline, untertitel}
-    const titelObj = data.fundament?.titel;
-    if (titelObj) {
-      if (typeof titelObj === 'object') {
-        if (titelObj.titel) lines.push(p(`<strong>Titel:</strong> ${titelObj.titel}`));
-        if (titelObj.tagline) lines.push(p(`<strong>Tagline:</strong> ${titelObj.tagline}`));
-      } else {
-        lines.push(p(`<strong>Titel:</strong> ${titelObj}`));
-      }
-    }
-    if (data.fundament?.logline) {
-      const logline = typeof data.fundament.logline === 'object' ? data.fundament.logline.text : data.fundament.logline;
-      if (logline) lines.push(p(`<strong>Logline:</strong> ${logline}`));
-    }
-    
-    // 2. THEMEN (aus Sidebar)
-    lines.push(h2('2. Themen'));
-    if (data.themen && data.themen.length > 0) {
-      data.themen.forEach((thema, idx) => {
-        lines.push(p(`${idx + 1}. ${thema.name || thema.titel || 'Unbenannt'}`));
-        if (thema.notizen) lines.push(p(`   ${thema.notizen}`));
-      });
-    } else {
-      lines.push(p('(Keine Themen definiert)'));
-    }
-    
-    // 2b. THEMA & KERN (aus Fundament-Werkzeug, falls vorhanden)
-    if (data.fundament?.thema || data.fundament?.kern || data.fundament?.praemisse) {
-      lines.push(h2('2b. Thema & Kern (Werkzeug)'));
-      if (data.fundament?.thema) {
-        const t = data.fundament.thema;
-        if (t.these) lines.push(p(`<strong>These:</strong> ${t.these}`));
-        if (t.antithese) lines.push(p(`<strong>Antithese:</strong> ${t.antithese}`));
-        if (t.forschungsfrage) lines.push(p(`<strong>Forschungsfrage:</strong> ${t.forschungsfrage}`));
-      }
-      // Kern kann ein Objekt mit {zumutung, weltgesetz, widerstand} sein
-      const kern = data.fundament?.kern;
-      if (kern?.zumutung) lines.push(p(`<strong>Zumutung:</strong> ${kern.zumutung}`));
-      if (kern?.weltgesetz) lines.push(p(`<strong>Weltgesetz:</strong> ${kern.weltgesetz}`));
-      if (kern?.widerstand) lines.push(p(`<strong>Innerer Widerstand:</strong> ${kern.widerstand}`));
-      if (data.fundament?.praemisse) lines.push(p(`<strong>Prämisse:</strong> ${data.fundament.praemisse}`));
-      if (data.fundament?.emotionaleBewegung) {
-        const eb = data.fundament.emotionaleBewegung;
-        lines.push(p(`<strong>Emotionale Bewegung:</strong> Von "${eb.von || '?'}" zu "${eb.zu || '?'}"`));
-      }
-    }
-    
-    // 3. FIGUREN
-    lines.push(h2('3. Figuren'));
-    if (data.figuren && data.figuren.length > 0) {
-      data.figuren.forEach((figur, idx) => {
-        if (isHtml) {
-          lines.push(`<div class="figur">`);
-          lines.push(`<p class="figur-name">${figur.name || 'Unbenannt'}${figur.alter ? ` (${figur.alter})` : ''}</p>`);
-        } else {
-          lines.push(`\n[${idx + 1}] ${figur.name || 'Unbenannt'}${figur.alter ? ` (${figur.alter})` : ''}`);
-        }
-        // Grunddaten
-        if (figur.geschlecht) lines.push(p(`Geschlecht: ${figur.geschlecht}`));
-        if (figur.beruf) lines.push(p(`Beruf: ${figur.beruf}`));
-        if (figur.charakteristik) lines.push(p(`Charakteristik: ${figur.charakteristik}`));
-        // 5 Eckpfeiler
-        if (figur.begehren) lines.push(p(`Begehren (Want/Need): ${figur.begehren}`));
-        if (figur.schwierigkeiten) lines.push(p(`Schwierigkeiten: ${figur.schwierigkeiten}`));
-        if (figur.verletzungen) lines.push(p(`Verletzungen (Wunde): ${figur.verletzungen}`));
-        if (figur.geheimnisse) lines.push(p(`Geheimnisse: ${figur.geheimnisse}`));
-        if (figur.widersprueche) lines.push(p(`Widersprüche: ${figur.widersprueche}`));
-        // Biografie
-        if (figur.herkunft) lines.push(p(`Herkunft: ${figur.herkunft}`));
-        if (figur.praegende_ereignisse) lines.push(p(`Prägende Ereignisse: ${figur.praegende_ereignisse}`));
-        if (figur.backstory) lines.push(p(`Backstory: ${figur.backstory}`));
-        // Sonstiges
-        if (figur.sprechweise) lines.push(p(`Sprechweise: ${figur.sprechweise}`));
-        if (figur.physische_eigenheiten) lines.push(p(`Physische Eigenheiten: ${figur.physische_eigenheiten}`));
-        if (isHtml) lines.push(`</div>`);
-      });
-    } else {
-      lines.push(p('(Keine Figuren definiert)'));
-    }
-    
-    // 4. SCHAUPLATZ & ZEIT
-    lines.push(h2('4. Schauplatz & Zeit'));
-    const hasSchauplatz = data.schauplatz?.hauptort || data.schauplatz?.atmosphaere || data.schauplatz?.notizen;
-    const hasZeit = data.zeit?.epoche || data.zeit?.zeitrahmen || data.zeit?.jahreszeit;
-    const hasRaumZeit = data.fundament?.raumZeit;
-    
-    if (hasSchauplatz) {
-      if (data.schauplatz.hauptort) lines.push(p(`<strong>Hauptort:</strong> ${data.schauplatz.hauptort}`));
-      if (data.schauplatz.atmosphaere) lines.push(p(`<strong>Atmosphäre:</strong> ${data.schauplatz.atmosphaere}`));
-      if (data.schauplatz.notizen) lines.push(p(`<strong>Notizen:</strong> ${data.schauplatz.notizen}`));
-    }
-    if (hasZeit) {
-      if (data.zeit.epoche) lines.push(p(`<strong>Epoche:</strong> ${data.zeit.epoche}`));
-      if (data.zeit.zeitrahmen) lines.push(p(`<strong>Zeitrahmen:</strong> ${data.zeit.zeitrahmen}`));
-      if (data.zeit.jahreszeit) lines.push(p(`<strong>Jahreszeit:</strong> ${data.zeit.jahreszeit}`));
-    }
-    if (hasRaumZeit) {
-      const rz = data.fundament.raumZeit;
-      if (rz.hauptschauplatz) lines.push(p(`<strong>Hauptschauplatz:</strong> ${rz.hauptschauplatz}`));
-      if (rz.weitereOrte) lines.push(p(`<strong>Weitere Orte:</strong> ${rz.weitereOrte}`));
-      if (rz.zeitraum) lines.push(p(`<strong>Zeitraum:</strong> ${rz.zeitraum}`));
-      if (rz.atmosphaere) lines.push(p(`<strong>Atmosphäre:</strong> ${rz.atmosphaere}`));
-    }
-    if (!hasSchauplatz && !hasZeit && !hasRaumZeit) {
-      lines.push(p('(Nicht definiert)'));
-    }
-    
-    // 5. SZENEN-IDEEN (aus Sidebar)
-    lines.push(h2('5. Szenen-Ideen'));
-    if (data.szenenIdeen && data.szenenIdeen.length > 0) {
-      data.szenenIdeen.forEach((szene, idx) => {
-        lines.push(p(`${idx + 1}. ${szene.titel || szene.name || 'Ohne Titel'}`));
-        if (szene.notizen) lines.push(p(`   ${szene.notizen}`));
-      });
-    } else {
-      lines.push(p('(Keine Szenen-Ideen)'));
-    }
-    
-    // 6. SZENEN (aus Zeitstrahl/Raster)
-    lines.push(h2('6. Szenen (Zeitstrahl)'));
-    lines.push(p(`<strong>Strukturmuster:</strong> ${aktuellesRaster || 'Nicht definiert'}`));
-    
-    if (data.felder && data.felder.length > 0) {
-      data.felder.forEach((feld, idx) => {
-        if (isHtml) {
-          lines.push(`<div class="szene">`);
-          lines.push(`<p class="szene-header">Szene ${idx + 1}: ${feld.titel || 'Ohne Titel'}</p>`);
-        } else {
-          lines.push(`\n${'═'.repeat(50)}`);
-          lines.push(`SZENE ${idx + 1}: ${feld.titel || 'Ohne Titel'}`);
-          lines.push('═'.repeat(50));
-        }
-        
-        // Metadaten
-        if (feld.ort || feld.zeit) {
-          lines.push(isHtml ? `<p class="szene-meta">(${[feld.ort, feld.zeit].filter(Boolean).join(' – ')})</p>` : `(${[feld.ort, feld.zeit].filter(Boolean).join(' – ')})`);
-        }
-        if (feld.zusammenfassung) lines.push(p(`<strong>Zusammenfassung:</strong> ${feld.zusammenfassung}`));
-        if (feld.figuren && feld.figuren.length > 0) {
-          const figurenNamen = (feld?.figuren || []).map(id => data.figuren?.find(f => f.id === id)?.name || id).join(', ');
-          lines.push(p(`<strong>Figuren:</strong> ${figurenNamen}`));
-        }
-        if (feld.themen && feld.themen.length > 0) {
-          const themenNamen = (feld?.themen || []).map(id => data.themen?.find(t => t.id === id)?.name || id).join(', ');
-          lines.push(p(`<strong>Themen:</strong> ${themenNamen}`));
-        }
-        if (feld.konflikt) lines.push(p(`<strong>Konflikt:</strong> ${feld.konflikt}`));
-        if (feld.funktion) lines.push(p(`<strong>Funktion:</strong> ${feld.funktion}`));
-        
-        // Szenen-Inhalt / Dialoge
-        if (feld.inhalt && feld.inhalt.trim().length > 0) {
-          if (isHtml) {
-            lines.push(`<div class="szene-inhalt"><strong>Text/Dialoge:</strong><br>${feld.inhalt}</div>`);
-          } else {
-            lines.push('');
-            lines.push('--- TEXT/DIALOGE ---');
-            lines.push(cleanHtml(feld.inhalt));
-            lines.push('--- ENDE SZENE ---');
-          }
-        }
-        if (isHtml) lines.push(`</div>`);
-      });
-    } else {
-      lines.push(p('(Keine Szenen im Zeitstrahl)'));
-    }
-    
-    // 7. CONSTRAINTS
-    lines.push(h2('7. Vorgaben / Rahmenbedingungen'));
-    if (data.vorgaben && data.vorgaben.length > 0) {
-      data.vorgaben.forEach((c, idx) => {
-        lines.push(p(`${idx + 1}. ${c.name || c.titel || 'Unbenannt'}`));
-      });
-    } else {
-      lines.push(p('(Keine Vorgaben definiert)'));
-    }
-    
-    // 8. SCHREIBFLÄCHE
-    lines.push(h2('8. Schreibfläche'));
-    if (data.schreibflaeche) {
-      lines.push(p(data.schreibflaeche));
-    } else {
-      lines.push(p('(Leer)'));
-    }
-    
-    // 9. GUIDED MODE ANTWORTEN
-    if (data.guidedAnswers && Object.keys(data.guidedAnswers).length > 0) {
-      lines.push(h2('9. Begleiteter Einstieg - Antworten'));
-      Object.entries(data.guidedAnswers).forEach(([key, value]) => {
-        if (value) {
-          lines.push(p(`<strong>${key}:</strong> ${value}`));
-        }
-      });
-    }
-    
-    // 10. WERTEQUADRAT
-    if (data.wertequadrat) {
-      lines.push(h2('10. Wertequadrat'));
-      const wq = data.wertequadrat;
-      if (wq.virtue_a) lines.push(p(`<strong>Wert A (positiv):</strong> ${wq.virtue_a}`));
-      if (wq.virtue_b) lines.push(p(`<strong>Wert B (positiv):</strong> ${wq.virtue_b}`));
-      if (wq.exaggeration_a) lines.push(p(`<strong>Übertreibung A (negativ):</strong> ${wq.exaggeration_a}`));
-      if (wq.exaggeration_b) lines.push(p(`<strong>Übertreibung B (negativ):</strong> ${wq.exaggeration_b}`));
-      
-      // Figurenzuordnung
-      if (data.wertequadrat_zuordnung) {
-        lines.push(p('<strong>Figurenzuordnung:</strong>'));
-        Object.entries(data.wertequadrat_zuordnung).forEach(([figurId, position]) => {
-          const figur = data.figuren?.find(f => f.id === figurId);
-          if (figur) {
-            const posLabel = { virtue_a: wq.virtue_a, virtue_b: wq.virtue_b, exaggeration_a: wq.exaggeration_a, exaggeration_b: wq.exaggeration_b }[position] || position;
-            lines.push(p(`  • ${figur.name}: ${posLabel}`));
-          }
-        });
-      }
-    }
-    
-    // 11. MÄRCHENMODELL
-    if (data.maerchenmodell && Object.keys(data.maerchenmodell).length > 0) {
-      lines.push(h2('11. Märchenmodell'));
-      const mm = data.maerchenmodell;
-      if (mm.held) lines.push(p(`<strong>Held:</strong> ${mm.held}`));
-      if (mm.drache) lines.push(p(`<strong>Drache (Antagonist):</strong> ${mm.drache}`));
-      if (mm.schatz) lines.push(p(`<strong>Schatz (Ziel):</strong> ${mm.schatz}`));
-      if (mm.mentor) lines.push(p(`<strong>Mentor:</strong> ${mm.mentor}`));
-      if (mm.schwelle) lines.push(p(`<strong>Schwelle:</strong> ${mm.schwelle}`));
-      if (mm.tiefsterpunkt) lines.push(p(`<strong>Tiefster Punkt:</strong> ${mm.tiefsterpunkt}`));
-      if (mm.verwandlung) lines.push(p(`<strong>Verwandlung:</strong> ${mm.verwandlung}`));
-    }
-    
-    // 12. FUNDAMENT-WERKZEUG (alle Felder)
-    const fundHasContent = data.fundament && Object.keys(data.fundament).some(k => data.fundament[k] && typeof data.fundament[k] !== 'object');
-    if (fundHasContent) {
-      lines.push(h2('12. Fundament-Werkzeug (Details)'));
-      const f = data.fundament;
-      if (f.grundidee) lines.push(p(`<strong>Grundidee:</strong> ${f.grundidee}`));
-      if (f.ziel) lines.push(p(`<strong>Ziel:</strong> ${f.ziel}`));
-      if (f.frage) lines.push(p(`<strong>Zentrale Frage:</strong> ${f.frage}`));
-      if (f.these) lines.push(p(`<strong>These:</strong> ${f.these}`));
-      if (f.antithese) lines.push(p(`<strong>Antithese:</strong> ${f.antithese}`));
-      if (f.konflikt) lines.push(p(`<strong>Konflikt:</strong> ${f.konflikt}`));
-      if (f.unaussprechliches) lines.push(p(`<strong>Unaussprechliches:</strong> ${f.unaussprechliches}`));
-    }
-    
-    // 13. IMPULSFRAGEN-NOTIZEN
-    if (data.impulsfragen_notizen && Object.keys(data.impulsfragen_notizen).length > 0) {
-      lines.push(h2('13. Impulsfragen-Notizen'));
-      Object.entries(data.impulsfragen_notizen).forEach(([bereich, notiz]) => {
-        if (notiz) {
-          lines.push(p(`<strong>${bereich}:</strong> ${notiz}`));
-        }
-      });
-    }
-    
-    // 14. MATERIAL-SAMMLUNG
-    if (data.materialsammlung) {
-      const ms = data.materialsammlung;
-      const hasContent = ms.recherche || ms.inspiration || ms.fragmente || ms.notizen;
-      if (hasContent) {
-        lines.push(h2('14. Material-Sammlung'));
-        if (ms.recherche) lines.push(p(`<strong>Recherche:</strong><br>${ms.recherche}`));
-        if (ms.inspiration) lines.push(p(`<strong>Inspiration:</strong><br>${ms.inspiration}`));
-        if (ms.fragmente) lines.push(p(`<strong>Fragmente:</strong><br>${ms.fragmente}`));
-        if (ms.notizen) lines.push(p(`<strong>Notizen:</strong><br>${ms.notizen}`));
-      }
-    }
-    
-    // 15. BEZIEHUNGEN
-    if (data.beziehungen && data.beziehungen.length > 0) {
-      lines.push(h2('15. Beziehungen'));
-      data.beziehungen.forEach((bez) => {
-        const figur1 = data.figuren?.find(f => f.id === bez.figur1)?.name || bez.figur1;
-        const figur2 = data.figuren?.find(f => f.id === bez.figur2)?.name || bez.figur2;
-        lines.push(p(`<strong>${figur1} ↔ ${figur2}:</strong> ${bez.typ || bez.beschreibung || '(keine Beschreibung)'}`));
-        if (bez.details) lines.push(p(`  ${bez.details}`));
-      });
-    }
-    
-    return isHtml ? lines.join('\n') : lines.join('\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ');
-  };
-  
-  // Generiere Treatment-Inhalt
+    // Generiere Treatment-Inhalt
   const generateTreatmentContent = (format) => {
-    const lines = [];
     const isHtml = format !== 'txt';
-    
-    // Titelblatt - data.fundament.titel kann ein Objekt sein!
-    const titelObj = data.fundament?.titel;
-    const titelText = typeof titelObj === 'string' ? titelObj : (titelObj?.titel || data.projektName || 'TITEL');
-    const taglineText = typeof titelObj === 'string' ? data.fundament?.tagline : (titelObj?.tagline || data.fundament?.tagline);
-    
-    lines.push(isHtml ? '<div style="text-align: center; margin-bottom: 3em;">' : '');
-    lines.push(isHtml ? `<h1>${titelText}</h1>` : titelText.toUpperCase());
-    if (taglineText) {
-      lines.push(isHtml ? `<p class="subtitle">"${taglineText}"</p>` : `\n"${taglineText}"`);
+    const F = data.fundament || {};
+    const asText = (v) => v == null ? '' : (typeof v === 'string' ? v : (v.text || v.thema || v.titel || v.name || v.beschreibung || v.forschungsfrage || ''));
+
+    // Titel & Tagline (Titel kann String oder Objekt sein)
+    const titelObj = F.titel;
+    const titel = (typeof titelObj === 'string' ? titelObj : (titelObj && titelObj.titel)) || data.projektName || 'Titel';
+    const tagline = (titelObj && typeof titelObj === 'object' ? titelObj.tagline : null) || F.tagline || '';
+
+    // Abschnitte sammeln: {h, body}
+    const sections = [];
+    const add = (h, body) => { const t = (body == null ? '' : String(body)).trim(); if (t) sections.push({ h, body: t }); };
+
+    add('Logline', asText(F.logline));
+    add('Worum es geht', asText(F.grundidee));
+    // Prämisse: eigenes Feld, sonst These/Antithese
+    const praemisse = asText(F.praemisse);
+    if (praemisse) add('Prämisse', praemisse);
+    else {
+      const these = asText(F.these), antithese = asText(F.antithese);
+      if (these || antithese) add('Prämisse', [these && ('These: ' + these), antithese && ('Antithese: ' + antithese)].filter(Boolean).join('\n'));
     }
-    lines.push(isHtml ? '<p><strong>Treatment</strong></p></div><hr>' : '\nTreatment\n' + '─'.repeat(40));
-    
-    // Logline
-    if (data.fundament?.logline) {
-      lines.push(isHtml ? '<h2>Logline</h2>' : '\n\nLOGLINE\n');
-      lines.push(isHtml ? `<p>${data.fundament.logline}</p>` : data.fundament.logline);
+    add('Zentrale Frage', asText(F.frage));
+    add('Wirkungsabsicht', asText(F.ziel));
+    // Thema: aus dem Thema-Werkzeug (themaDetails) UND der Themen-Liste (Sidebar)
+    const themaParts = [];
+    const td = data.themaDetails;
+    if (td) (Array.isArray(td) ? td : [td]).forEach(t => { const x = asText(t); if (x) themaParts.push(x); });
+    (data.themen || []).forEach(t => {
+      if (!t) return;
+      const nm = t.name || t.titel || asText(t);
+      if (nm) themaParts.push('• ' + nm + (t.contrast ? ('  ↔ ' + t.contrast) : ''));
+    });
+    add('Thema', themaParts.join('\n'));
+    // Der Kern (kern als Objekt ODER flach auf fundament)
+    const kern = (F.kern && typeof F.kern === 'object') ? F.kern : F;
+    const kernParts = [];
+    const zumutung = asText(kern.zumutung) || asText(F.zumutung);
+    const weltgesetz = asText(kern.weltgesetz) || asText(F.weltgesetz);
+    const widerstand = asText(kern.widerstand) || asText(F.widerstand);
+    if (zumutung) kernParts.push('Zumutung: ' + zumutung);
+    if (weltgesetz) kernParts.push('Weltgesetz: ' + weltgesetz);
+    if (widerstand) kernParts.push('Innerer Widerstand: ' + widerstand);
+    if (asText(F.unaussprechliches)) kernParts.push('Unaussprechliches: ' + asText(F.unaussprechliches));
+    add('Der Kern', kernParts.join('\n'));
+    // Schauplatz & Zeit (Top-Level data.schauplatz / data.zeit)
+    const sp = data.schauplatz || data.settingPlace || {};
+    const zt = data.zeit || data.settingTime || {};
+    const szParts = [];
+    if (sp.hauptort) szParts.push('Ort: ' + sp.hauptort);
+    if (sp.beschreibung) szParts.push(sp.beschreibung);
+    if (sp.atmosphaere) szParts.push('Atmosphäre: ' + sp.atmosphaere);
+    if (sp.notizen) szParts.push(sp.notizen);
+    if (zt.epoche) szParts.push('Zeit: ' + zt.epoche);
+    if (zt.dauer) szParts.push('Dauer: ' + zt.dauer);
+    if (zt.rhythmus) szParts.push('Rhythmus: ' + zt.rhythmus);
+    if (zt.tageszeiten) szParts.push(zt.tageszeiten);
+    add('Schauplatz & Zeit', szParts.join('\n'));
+    // Figuren (echte Feldnamen: begehren/want, need, schwaeche, ghost, biografie)
+    const figLines = [];
+    (data.figuren || []).forEach(fig => {
+      if (!fig) return;
+      const kopf = (fig.name || 'Unbenannt') + [fig.alter && (' (' + fig.alter + ')'), fig.beruf && (', ' + fig.beruf)].filter(Boolean).join('');
+      figLines.push('• ' + kopf);
+      // Robuste Feldzugriffe: der Figuren-Editor speichert ziel/beduerfnis/praegung/
+      // backstory/herkunft, die Demo- und Archetyp-Daten begehren/want/need/ghost/biografie.
+      if (asText(fig.charakteristik)) figLines.push('   ' + asText(fig.charakteristik));
+      const will = asText(fig.ziel) || asText(fig.begehren) || asText(fig.want);
+      if (will) figLines.push('   Will: ' + will);
+      const braucht = asText(fig.beduerfnis) || asText(fig.need);
+      if (braucht) figLines.push('   Braucht: ' + braucht);
+      const wunde = asText(fig.praegung) || asText(fig.verletzungen) || asText(fig.ghost) || asText(fig.schwaeche);
+      if (wunde) figLines.push('   Prägung/Wunde: ' + wunde);
+      if (asText(fig.sprechweise)) figLines.push('   Sprechweise: ' + asText(fig.sprechweise));
+      const bio = asText(fig.backstory) || asText(fig.herkunft) || asText(fig.praegende_ereignisse) || asText(fig.biografie);
+      if (bio) figLines.push('   ' + bio);
+    });
+    add('Figuren', figLines.join('\n'));
+    // Handlungsverlauf (Szenen, nach Position sortiert)
+    const felder = [...(data.felder || [])].sort((a, b) => ((a && a.position) || 0) - ((b && b.position) || 0));
+    const figName = (fid) => { const f = (data.figuren || []).find(x => x && x.id === fid); return f ? f.name : null; };
+    const hLines = [];
+    let letzterAkt = null;
+    felder.forEach((feld, idx) => {
+      if (!feld) return;
+      if (feld.akt && feld.akt !== letzterAkt) { letzterAkt = feld.akt; hLines.push(''); hLines.push('— ' + feld.akt + ' —'); }
+      const meta = [feld.ort, feld.zeit].filter(Boolean).join(', ');
+      hLines.push((feld.nummer || (idx + 1)) + '. ' + (feld.titel || 'Szene') + (meta ? ('  (' + meta + ')') : ''));
+      const zus = asText(feld.zusammenfassung) || asText(feld.beschreibung);
+      if (zus) hLines.push('   ' + zus);
+      if (asText(feld.konflikt)) hLines.push('   Konflikt: ' + asText(feld.konflikt));
+      const figs = (feld.figuren || []).map(figName).filter(Boolean);
+      if (figs.length) hLines.push('   Figuren: ' + figs.join(', '));
+    });
+    add('Handlungsverlauf', hLines.join('\n'));
+    // Emotionale Bewegung (fundament.emotionale_bewegung: Objekt {von,zu} oder String)
+    const eb = F.emotionale_bewegung || F.emotionaleBewegung;
+    let ebText = '';
+    if (eb) {
+      if (typeof eb === 'string') ebText = eb;
+      else if (eb.von || eb.zu) ebText = 'Von «' + (eb.von || '?') + '» zu «' + (eb.zu || '?') + '»' + (eb.beschreibung ? ('\n' + eb.beschreibung) : '');
+      else ebText = asText(eb);
     }
-    
-    // Prämisse
-    if (data.fundament?.praemisse) {
-      lines.push(isHtml ? '<h2>Prämisse</h2>' : '\n\nPRÄMISSE\n');
-      lines.push(isHtml ? `<p>${data.fundament.praemisse}</p>` : data.fundament.praemisse);
-    }
-    
-    // Thema
-    if (data.fundament?.thema) {
-      lines.push(isHtml ? '<h2>Thema</h2>' : '\n\nTHEMA\n');
-      const t = data.fundament.thema;
-      if (t.forschungsfrage) lines.push(isHtml ? `<p>${t.forschungsfrage}</p>` : t.forschungsfrage);
-      if (t.these && t.antithese) {
-        lines.push(isHtml ? `<p>These: ${t.these}<br>Antithese: ${t.antithese}</p>` : `These: ${t.these}\nAntithese: ${t.antithese}`);
-      }
-    }
-    
-    // Kern (Zumutung, Weltgesetz, Widerstand)
-    const kern = data.fundament?.kern;
-    if (kern?.zumutung || kern?.weltgesetz || kern?.widerstand) {
-      lines.push(isHtml ? '<h2>Der Kern</h2>' : '\n\nDER KERN\n');
-      if (kern?.zumutung) lines.push(isHtml ? `<p><strong>Zumutung:</strong> ${kern.zumutung}</p>` : `Zumutung: ${kern.zumutung}`);
-      if (kern?.weltgesetz) lines.push(isHtml ? `<p><strong>Weltgesetz:</strong> ${kern.weltgesetz}</p>` : `Weltgesetz: ${kern.weltgesetz}`);
-      if (kern?.widerstand) lines.push(isHtml ? `<p><strong>Innerer Widerstand:</strong> ${kern.widerstand}</p>` : `Innerer Widerstand: ${kern.widerstand}`);
-    }
-    
-    // Schauplatz
-    if (data.fundament?.raumZeit) {
-      lines.push(isHtml ? '<h2>Schauplatz & Zeit</h2>' : '\n\nSCHAUPLATZ & ZEIT\n');
-      const rz = data.fundament.raumZeit;
-      const details = [];
-      if (rz.hauptschauplatz) details.push(`Ort: ${rz.hauptschauplatz}`);
-      if (rz.zeitraum) details.push(`Zeit: ${rz.zeitraum}`);
-      if (rz.atmosphaere) details.push(`Atmosphäre: ${rz.atmosphaere}`);
-      lines.push(isHtml ? `<p>${details.join('<br>')}</p>` : details.join('\n'));
-    }
-    
-    // Figuren
-    if (data.figuren && data.figuren.length > 0) {
-      lines.push(isHtml ? '<h2>Figuren</h2>' : '\n\nFIGUREN\n');
-      data.figuren.forEach(figur => {
-        const name = `${figur.name || 'Unbenannt'}${figur.alter ? ` (${figur.alter})` : ''}`;
-        const details = [];
-        if (figur.beruf) details.push(figur.beruf);
-        if (figur.wantExternal) details.push(`Will: ${figur.wantExternal}`);
-        if (figur.needInternal) details.push(`Braucht: ${figur.needInternal}`);
-        if (figur.flaw) details.push(`Schwäche: ${figur.flaw}`);
-        if (figur.widerspruch) details.push(`Widerspruch: ${figur.widerspruch}`);
-        
-        if (isHtml) {
-          lines.push(`<div class="figur"><p class="figur-name">${name}</p>`);
-          if (details.length > 0) lines.push(`<p>${details.join('. ')}.</p>`);
-          if (figur.biographie?.vergangenheit) lines.push(`<p>${figur.biographie.vergangenheit}</p>`);
-          lines.push('</div>');
-        } else {
-          lines.push(`\n${name.toUpperCase()}`);
-          if (details.length > 0) lines.push(details.join('. ') + '.');
-          if (figur.biographie?.vergangenheit) lines.push(figur.biographie.vergangenheit);
-        }
+    add('Emotionale Bewegung', ebText);
+
+    // Rendern
+    const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const lines = [];
+    if (isHtml) {
+      lines.push('<div style="text-align: center; margin-bottom: 2em;">');
+      lines.push('<h1>' + esc(titel) + '</h1>');
+      if (tagline) lines.push('<p class="subtitle"><em>«' + esc(tagline) + '»</em></p>');
+      lines.push('<p><strong>Treatment</strong></p></div><hr>');
+      sections.forEach(sec => {
+        lines.push('<h2>' + esc(sec.h) + '</h2>');
+        lines.push('<p>' + esc(sec.body).replace(/\n/g, '<br>') + '</p>');
+      });
+    } else {
+      lines.push(titel.toUpperCase());
+      if (tagline) lines.push('«' + tagline + '»');
+      lines.push('Treatment');
+      lines.push('─'.repeat(40));
+      sections.forEach(sec => {
+        lines.push('');
+        lines.push('');
+        lines.push(sec.h.toUpperCase());
+        lines.push(sec.body);
       });
     }
-    
-    // Handlungsverlauf (aus Zeitstrahl/Felder)
-    if (data.felder && data.felder.length > 0) {
-      lines.push(isHtml ? '<h2>Handlungsverlauf</h2>' : '\n\nHANDLUNGSVERLAUF\n');
-      data.felder.forEach((feld, idx) => {
-        const szeneLine = `${idx + 1}. ${feld.titel || 'Szene'}`;
-        if (isHtml) {
-          lines.push(`<p><strong>${szeneLine}</strong></p>`);
-          if (feld.zusammenfassung) lines.push(`<p style="margin-left: 1em;">${feld.zusammenfassung}</p>`);
-          if (feld.konflikt) lines.push(`<p style="margin-left: 1em; font-style: italic;">Konflikt: ${feld.konflikt}</p>`);
-        } else {
-          lines.push(szeneLine);
-          if (feld.zusammenfassung) lines.push(`   ${feld.zusammenfassung}`);
-          if (feld.konflikt) lines.push(`   Konflikt: ${feld.konflikt}`);
-        }
-      });
-    }
-    
-    // Emotionale Bewegung
-    if (data.fundament?.emotionaleBewegung) {
-      lines.push(isHtml ? '<h2>Emotionale Bewegung</h2>' : '\n\nEMOTIONALE BEWEGUNG\n');
-      const eb = data.fundament.emotionaleBewegung;
-      lines.push(isHtml ? `<p>Von "${eb.von || '?'}" zu "${eb.zu || '?'}"</p>` : `Von "${eb.von || '?'}" zu "${eb.zu || '?'}"`);
-    }
-    
+    if (sections.length === 0) lines.push(isHtml ? '<p><em>Noch keine Inhalte erfasst.</em></p>' : '(Noch keine Inhalte erfasst.)');
     return lines.join('\n');
   };
-  
+
   // Generiere Stücktext-Inhalt
   const generateStuecktextContent = (format) => {
     const lines = [];
@@ -23178,6 +22603,40 @@ WICHTIGE REGELN:
   };
   
   // Export ausführen
+  // KI-Fassung des Treatments: aus dem strukturierten Auszug einen erzählerischen
+  // Fliesstext formen lassen (nutzt den gemeinsamen kiFetch-Helfer).
+  const generateKiTreatment = async () => {
+    if (!apiKey) { alert('Bitte zuerst einen API-Key in den Einstellungen hinterlegen.'); return; }
+    const struktur = generateTreatmentContent('txt');
+    if (!struktur || struktur.includes('Noch keine Inhalte')) { alert('Es sind noch zu wenige Inhalte für ein Treatment erfasst.'); return; }
+    setKiTreatmentLoading(true);
+    try {
+      const system = 'Du bist eine erfahrene Dramaturgin. Formuliere aus den folgenden strukturierten Projektnotizen ein zusammenhängendes, erzählerisches Treatment: Fliesstext im Präsens, klare Absätze, keine Aufzählungen oder Überschriften-Listen. Bleibe eng an den gegebenen Informationen und erfinde keine Handlung dazu. Schreibe in Schweizer Hochdeutsch (ss statt ß, kein Eszett).';
+      const response = await kiFetch(apiKey, {
+        model: getDrameraModell(),
+        max_tokens: 3000,
+        system,
+        messages: [{ role: 'user', content: struktur }]
+      });
+      if (!response.ok) {
+        const e = await response.json().catch(() => ({}));
+        throw new Error((e.error && e.error.message) || ('Fehler ' + response.status));
+      }
+      const result = await response.json();
+      const text = result.content?.[0]?.text || '';
+      if (!text.trim()) throw new Error('Leere Antwort erhalten');
+      const heute = new Date().toISOString().slice(0, 10);
+      const pName = data.projektName || 'Projekt';
+      downloadFile(text, `${heute} Dramera ${pName} Treatment (KI-Fassung).txt`, 'text/plain;charset=utf-8');
+      setShowExportDialog(false);
+      if (window.__showFormatToast) window.__showFormatToast('✓ Erzählerisches Treatment erstellt');
+    } catch (err) {
+      alert('KI-Fassung fehlgeschlagen: ' + err.message);
+    } finally {
+      setKiTreatmentLoading(false);
+    }
+  };
+
   const executeExport = async (type, format) => {
     setShowExportDialog(false);
     
@@ -23187,11 +22646,6 @@ WICHTIGE REGELN:
     const pName = data.projektName || 'Projekt';
 
     switch (type) {
-      case 'archiv':
-        content = generateArchivContent(format);
-        filename = `${heute} Dramera ${pName} Archiv`;
-        title = `Projekt-Archiv: ${pName}`;
-        break;
       case 'treatment':
         content = generateTreatmentContent(format);
         filename = `${heute} Dramera ${pName} Treatment`;
@@ -23530,7 +22984,6 @@ WICHTIGE REGELN:
   };
   
   // Legacy-Funktionen für direkten Export (falls noch verwendet)
-  const exportProjektArchiv = () => executeExport('archiv', 'txt');
   const exportTreatment = () => executeExport('treatment', 'txt');
   const exportStuecktext = () => executeExport('stuecktext', 'txt');
   
@@ -23688,7 +23141,7 @@ WICHTIGE REGELN:
     },
     thema: {
       label: '💡 THEMA & WERTE',
-      werkzeuge: ['thema', 'wertequadrat', 'motiv', 'impulsfragen_thema', 'guided_thema']
+      werkzeuge: ['thema', 'wertequadrat', 'motiv', 'themenbrowser', 'impulsfragen_thema', 'guided_thema']
     },
     kraefte: {
       label: '⚔️ KONFLIKT & KRÄFTE',
@@ -23700,17 +23153,21 @@ WICHTIGE REGELN:
     },
     situationen: {
       label: '🎲 SITUATIONEN',
-      werkzeuge: ['szene', 'geheimnisse', 'impulsfragen_situationen', 'guided_situationen']
+      werkzeuge: ['szene', 'szenenidee', 'situationsfinder', 'geheimnisse', 'impulsfragen_situationen', 'guided_situationen']
     },
     offene_form: {
       label: '🌀 OFFENE FORM',
-      werkzeuge: ['sprechinstanzen', 'textflaechen', 'materialcollage', 'spracharbeit', 'performativ', 'stoffrecherche']
+      werkzeuge: ['sprechinstanzen', 'textflaechen', 'materialcollage', 'spracharbeit', 'performativ', 'stoffrecherche', 'recherche', 'musik']
     }
   };
   
   const WERKZEUG_LABELS = {
     titel: 'Titel & Tagline',
     logline: 'Logline',
+    szenenidee: 'Szenen-Idee',
+    recherche: 'Recherche',
+    musik: 'Musik & Klang',
+    reflexion: 'Reflexion',
     konflikt: 'Der Konflikt',
     kern: 'Kern der Geschichte',
     unaussprechliches: 'Das Unaussprechliche',
@@ -23948,15 +23405,7 @@ FIGUREN: ${data.figuren?.map(f => `${f.name}${f.ziel ? ` (will: ${f.ziel})` : ''
 THEMEN: ${data.themen?.map(t => t.name).join(', ') || 'Keine'}`.trim();
 
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
-        },
-        body: JSON.stringify({
+      const response = await kiFetch(apiKey, {
           model: getDrameraModell(),
           max_tokens: 800,
           system: 'Du bist ein erfahrener Dramaturg. Du transformierst dramaturgische Notizen in lebendige, präzise Prosatexte. Du kennst das Gesamtprojekt und bettest die Einzelteile in den dramaturgischen Zusammenhang ein. Antworte in Schweizer Hochdeutsch (ss statt ß).',
@@ -23981,8 +23430,7 @@ STIL:
 - Wie ein guter Programmheft-Text: macht neugierig, bleibt konkret
 - Antworte NUR mit dem Text, keine Einleitung oder Kommentar`
           }]
-        })
-      });
+        });
       
       if (!response.ok) {
         console.error('KI-Transformation fehlgeschlagen');
@@ -24223,6 +23671,30 @@ STIL:
       });
     });
     
+    // AUFFANG: Werkzeug-Inhalte, die keiner Kategorie zugeordnet sind, trotzdem anzeigen,
+    // damit «→ Schreibfläche» NIE still verschwindet (z.B. Reflexion oder neue Werkzeuge).
+    const alleWerkzeuge = new Set();
+    KATEGORIE_REIHENFOLGE.forEach(k => (SCHREIBFLAECHE_STRUKTUR[k]?.werkzeuge || []).forEach(w => alleWerkzeuge.add(w)));
+    const restKeys = Object.keys(inhalte).filter(key => {
+      if (key === 'titel' || key === 'logline' || key === 'autor') return false;
+      if (!inhalte[key]) return false;
+      const base = key.split('_')[0];
+      const b2 = key.startsWith('5-eckpfeiler') ? '5-eckpfeiler' : base;
+      return !(alleWerkzeuge.has(key) || alleWerkzeuge.has(base) || alleWerkzeuge.has(b2));
+    });
+    if (restKeys.length > 0) {
+      lines.push('');
+      lines.push('');
+      lines.push('▓▓▓  ✦ WEITERES  ▓▓▓');
+      lines.push('');
+      restKeys.forEach(key => {
+        const label = customLabels[key] || WERKZEUG_LABELS[key] || key;
+        lines.push(`▸▸ ${String(label).toUpperCase()}`);
+        lines.push(inhalte[key]);
+        lines.push('');
+      });
+    }
+
     // Freier Text am Ende (falls vorhanden)
     if (projektData?.schreibflaecheFreitext) {
       lines.push('');
@@ -25281,18 +24753,13 @@ STIL:
             {/* ===== PROJEKT ===== */}
             <div className="sidebar-menu-section">📁 PROJEKT</div>
             <button className="sidebar-menu-item" onClick={() => { newProject(); setShowMenu(false); }}>📄 Neu...</button>
-            <button className="sidebar-menu-item" onClick={() => {
-              openFromFile();
-              setShowMenu(false);
-            }}>{'\ud83d\udcc2'} Öffnen...</button>
             <button className="sidebar-menu-item" onClick={() => { loadDemo(); setShowMenu(false); }}>🎭 Demo: Romeo & Julia</button>
             <button className="sidebar-menu-item" onClick={() => { saveToFile(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318'}S</span></button>
-            <button className="sidebar-menu-item" onClick={() => { saveToFileAs(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern unter... <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318\u21e7'}S</span></button>
-            
+
             <div className="sidebar-menu-divider" />
-            
-            {/* Import / Export → öffnet Modal */}
-            <button className="sidebar-menu-item" onClick={() => { setShowImportExportModal(true); setShowMenu(false); }}>🔄 Import / Export...</button>
+
+            {/* Öffnen, Sichern unter, Backup & Teilen → alles im Import/Export-Fenster */}
+            <button className="sidebar-menu-item" onClick={() => { setShowImportExportModal(true); setShowMenu(false); }}>🔄 Öffnen, Sichern unter & Teilen...</button>
             
             <div className="sidebar-menu-divider" />
             <button className="sidebar-menu-item" onClick={() => { setShowSettings(true); setShowMenu(false); }}>⚙️ Einstellungen...</button>
@@ -25301,8 +24768,8 @@ STIL:
             <div className="sidebar-menu-divider" style={{marginTop: '0.75rem'}} />
             <div className="sidebar-menu-section">📄 DOKUMENTE</div>
             <button className="sidebar-menu-item" onClick={() => { openExportDialog('stuecktext'); setShowMenu(false); }}>📝 Stücktext</button>
-            <button className="sidebar-menu-item" onClick={() => { openExportDialog('treatment'); setShowMenu(false); }}>📋 Treatment</button>
-            <button className="sidebar-menu-item" onClick={() => { openExportDialog('materialien'); setShowMenu(false); }}>📚 Recherche-Material</button>
+            <button className="sidebar-menu-item" onClick={() => { openExportDialog('treatment'); setShowMenu(false); }}>📋 Treatment (aus Projekt)</button>
+            <button className="sidebar-menu-item" onClick={() => { openExportDialog('materialien'); setShowMenu(false); }}>📚 Recherche (als Dokument)</button>
             <button className="sidebar-menu-item" onClick={() => { exportGesamtdokument(); setShowMenu(false); }}>🗂️ Gesamtübersicht (Word)</button>
             <button className="sidebar-menu-item" onClick={() => { setShowDossierAssistent(true); setShowMenu(false); }}>📑 Förderdossier</button>
           </div>
@@ -32416,6 +31883,48 @@ STIL:
         .dramaturg-panel.open {
           width: 420px;
         }
+        /* Eigener Bereich: Vollbild-Entwicklungsgespräch */
+        .dramaturg-panel.fullscreen {
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          max-width: 100%;
+          z-index: 2000;
+          box-shadow: none;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-header {
+          padding: 1rem 1.5rem;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-header h3 {
+          font-size: 1.15rem;
+        }
+        /* Nachrichten und Eingabe im Vollbild in einer lesbaren, zentrierten Spalte */
+        .dramaturg-panel.fullscreen .dramaturg-messages {
+          align-items: center;
+          padding: 1.5rem 1rem;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-message {
+          width: 100%;
+          max-width: 760px;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-empty {
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-input-area {
+          padding: 1rem 1.5rem 1.25rem;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-input-area textarea {
+          display: block;
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        .dramaturg-panel.fullscreen .dramaturg-input-actions {
+          max-width: 760px;
+          margin: 0.5rem auto 0;
+        }
         .dramaturg-toggle-btn {
           width: 50px;
           height: 50px;
@@ -35213,6 +34722,9 @@ STIL:
                 </button>
               ))}
             </div>
+            {apiKey && (
+              <button className="wiki-btn" disabled={dramaturgLoading} onClick={() => { setDramaturgFullscreen(true); startDramaturgSession(); }} title="Dramaturg – dein eigener Entwicklungsbereich (Vollbild)">🎭 Dramaturg</button>
+            )}
             <button className="wiki-btn" onClick={() => openWiki()}>📚 Wiki</button>
             <button className="rebu-twin-btn" onClick={() => setShowTwinModal(true)} title={getTwinSyncText() ? `Letzter Sync: ${getTwinSyncText()}` : 'Projekt in Rebu (Regiebuch) öffnen'}>
               <span className="twin-icon">🎭</span> Rebu
@@ -36973,6 +36485,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
               addFeld={addFeld}
               apiKey={apiKey}
               sparringWithAI={sparringWithAI}
+              onExportDocx={() => executeExport('stuecktext', 'docx')}
             />
           )}
         </div>
@@ -37345,15 +36858,93 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 <button onClick={() => setShowImportExportModal(false)} style={{background:'none',border:'none',fontSize:'1.5rem',cursor:'pointer',color:'#999'}}>×</button>
               </div>
 
-              {/* === IMPORTIEREN === */}
+              {/* === 1. PROJEKT: SICHERN & ÖFFNEN === */}
               <div style={{marginBottom:'1.2rem'}}>
-                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>📥 Importieren</h3>
+                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>💾 Projekt sichern & öffnen</h3>
                 <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-                  
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))'}}>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #86efac',background:'#f0fdf4',cursor:'pointer'}} onClick={() => { saveToFileAs(); setShowImportExportModal(false); }}>
                     <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                       <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>🔄 Austausch-Datei laden</div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#166534'}}>💾 Als Datei sichern</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Ganzes Projekt in eine .dramera.json-Datei</div>
+                      </div>
+                      <span style={{padding:'2px 8px',background:'#16a34a',color:'white',borderRadius:'4px',fontSize:'0.65rem',fontWeight:700}}>SICHER</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #93c5fd',background:'#eff6ff',cursor:'pointer'}} onClick={() => { openFromFile(); setShowImportExportModal(false); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#1e40af'}}>📂 Projekt öffnen</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Projekt- oder Backup-Datei laden (auch ältere Backups)</div>
+                      </div>
+                      <span style={{fontSize:'0.8rem'}}>📂</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #f59e0b',background:'#fffbeb',cursor:'pointer'}} onClick={() => { exportAsZip(); setShowImportExportModal(false); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#92400e'}}>📦 Alles als ZIP</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Projekt inkl. Versionsverlauf als Archiv</div>
+                      </div>
+                      <span style={{fontSize:'0.8rem'}}>📦</span>
+                    </div>
+                  </div>
+
+                  <div style={{fontSize:'0.7rem',color:'#9ca3af',paddingLeft:'0.2rem',cursor:'pointer'}} onClick={() => { createManualSnapshot('browser'); window.__showFormatToast && window.__showFormatToast('Zwischenstand im Browser gemerkt'); }}>
+                    🕘 Nur Zwischenstand im Browser merken (kein Datei-Backup)
+                  </div>
+                </div>
+              </div>
+
+              {/* === 2. MATERIAL IMPORTIEREN === */}
+              <div style={{marginBottom:'1.2rem'}}>
+                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>📥 Material importieren</h3>
+                <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #d1d5db',background:'#f9fafb'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                    <div>
+                      <div style={{fontWeight:500,fontSize:'0.82rem',color:'#374151'}}>🤖 Mit KI importieren</div>
+                      <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Bestehenden Text, PDF oder Word analysieren (Figuren, Szenen, Themen)</div>
+                    </div>
+                    <button onClick={() => { setShowImportDialog(true); setShowImportExportModal(false); }} style={{padding:'4px 12px',background:'#374151',color:'white',border:'none',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer'}}>Starten</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* === 3. TEILEN MIT REBU / PROPLA === */}
+              <div style={{marginBottom:'1.2rem'}}>
+                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>🎭 Teilen mit Rebu / Propla</h3>
+                <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1.5px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))',cursor:'pointer'}} onClick={() => { setShowImportExportModal(false); setShowTwinModal(true); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>⚡ In Rebu öffnen</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>
+                          Projekt direkt ans Regiebuch übertragen
+                          {twinSyncStatus?.lastSync && <span style={{marginLeft:'0.5rem',color:'#8b5cf6'}}> · Letzter Sync: {getTwinSyncText()}</span>}
+                        </div>
+                      </div>
+                      <span style={{fontSize:'1.1rem'}}>🎭</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(20,184,166,0.04))',cursor:'pointer'}} onClick={() => { exportForNina(); setShowImportExportModal(false); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>📤 Austausch-Datei speichern</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Figuren, Szenen und Konzept als Datei weitergeben</div>
+                      </div>
+                      <span style={{fontSize:'0.8rem'}}>📤</span>
+                    </div>
+                  </div>
+
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(20,184,166,0.04))'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>📥 Austausch-Datei laden</div>
                         <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Daten aus Rebu oder Propla übernehmen</div>
                       </div>
                       <label style={{padding:'4px 12px',background:'linear-gradient(135deg, #8b5cf6, #14b8a6)',color:'white',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer',whiteSpace:'nowrap'}}>
@@ -37361,93 +36952,6 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                         <input type="file" accept=".json" onChange={(e) => { handleNinaExchangeImport(e); setShowImportExportModal(false); }} style={{display:'none'}} />
                       </label>
                     </div>
-                  </div>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #86efac',background:'#f0fdf4'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#166534'}}>💾 Backup wiederherstellen</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Früheres Weba-Backup laden</div>
-                      </div>
-                      <label style={{padding:'4px 12px',background:'#16a34a',color:'white',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer',whiteSpace:'nowrap'}}>
-                        📂 Datei
-                        <input type="file" accept=".json" onChange={(e) => { importProject(e); setShowImportExportModal(false); }} style={{display:'none'}} />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #d1d5db',background:'#f9fafb'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#374151'}}>🤖 Mit KI importieren</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Text, PDF oder Word per KI analysieren</div>
-                      </div>
-                      <button onClick={() => { setShowImportDialog(true); setShowImportExportModal(false); }} style={{padding:'4px 12px',background:'#374151',color:'white',border:'none',borderRadius:'6px',fontSize:'0.75rem',cursor:'pointer'}}>Starten</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* === EXPORTIEREN === */}
-              <div style={{marginBottom:'1.2rem'}}>
-                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>📤 Exportieren</h3>
-                <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #86efac',background:'#f0fdf4',cursor:'pointer'}} onClick={() => { exportProject(); setShowImportExportModal(false); }}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#166534'}}>💾 Backup auf Gerät</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Ganzes Projekt als Datei sichern</div>
-                      </div>
-                      <span style={{padding:'2px 8px',background:'#16a34a',color:'white',borderRadius:'4px',fontSize:'0.65rem',fontWeight:700}}>SICHER</span>
-                    </div>
-                  </div>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))',cursor:'pointer'}} onClick={() => { exportForNina(); setShowImportExportModal(false); }}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>🔄 Austausch-Datei für Rebu / Propla</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Figuren, Szenen und Konzept teilen</div>
-                      </div>
-                      <span style={{fontSize:'0.8rem'}}>📤</span>
-                    </div>
-                  </div>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #f59e0b',background:'#fffbeb',cursor:'pointer'}} onClick={() => { exportAsZip(); setShowImportExportModal(false); }}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#92400e'}}>📦 Komplett-Backup exportieren (ZIP)</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Projekt + Versionshistorie + Exchange als ZIP-Archiv</div>
-                      </div>
-                      <span style={{padding:'2px 8px',background:'#f59e0b',color:'white',borderRadius:'4px',fontSize:'0.65rem',fontWeight:700}}>NEU</span>
-                    </div>
-                  </div>
-
-                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #d1d5db',background:'#f9fafb',cursor:'pointer'}} onClick={() => { createManualSnapshot('browser'); setShowImportExportModal(false); window.__showFormatToast && window.__showFormatToast('Snapshot erstellt'); }}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                      <div>
-                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#374151'}}>📸 Backup jetzt erstellen</div>
-                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Manuellen Snapshot in der Versionshistorie speichern</div>
-                      </div>
-                      <span style={{fontSize:'0.8rem'}}>💾</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* === TWIN SYSTEM (Dramera ↔ Rebu) === */}
-              <div style={{marginBottom:'1.2rem'}}>
-                <h3 style={{fontSize:'0.85rem',fontWeight:600,color:'#374151',marginBottom:'0.6rem'}}>🎭 Zwillingssystem</h3>
-                <div style={{padding:'0.7rem',borderRadius:'8px',border:'1.5px solid #8b5cf6',background:'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(20,184,166,0.06))',cursor:'pointer'}} onClick={() => { setShowImportExportModal(false); setShowTwinModal(true); }}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-                    <div>
-                      <div style={{fontWeight:500,fontSize:'0.82rem',color:'#5b21b6'}}>🎭 In Rebu öffnen</div>
-                      <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>
-                        Projekt an das Regiebuch übertragen
-                        {twinSyncStatus?.lastSync && <span style={{marginLeft:'0.5rem',color:'#8b5cf6'}}> · Letzter Sync: {getTwinSyncText()}</span>}
-                      </div>
-                    </div>
-                    <span style={{fontSize:'1.2rem'}}>⚡</span>
                   </div>
                 </div>
               </div>
@@ -37781,7 +37285,6 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
             <div className="export-format-dialog">
               <div className="export-dialog-header">
                 <h2>
-                  {exportType === 'archiv' && '📦 Projekt-Archiv exportieren'}
                   {exportType === 'treatment' && '📝 Treatment exportieren'}
                   {exportType === 'stuecktext' && '📖 Stücktext exportieren'}
                 </h2>
@@ -37789,8 +37292,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
               </div>
               <div className="export-dialog-content">
                 <p className="export-dialog-info">
-                  {exportType === 'archiv' && 'Enthält alle Projektdaten: Figuren, Szenen, Material, Notizen und mehr.'}
-                  {exportType === 'treatment' && 'Professionelle Stoffzusammenfassung für Theater und Dramaturgen.'}
+                  {exportType === 'treatment' && 'Fasst dein ganzes Projekt (Fundament, Figuren, Schauplatz, Szenen) zu einem Treatment zusammen. Als strukturierter Auszug (PDF/Word/Text) oder – mit API-Key – als erzählerischer Fliesstext (KI). Unabhängig vom Treatment-Werkzeug.'}
                   {exportType === 'stuecktext' && 'Das komplette Stück mit formatierten Dialogen und Regieanweisungen.'}
                 </p>
                 
@@ -37817,7 +37319,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     </div>
                   </button>
                   
-                  <button 
+                  <button
                     className="export-format-btn"
                     onClick={() => executeExport(exportType, 'txt')}
                   >
@@ -37827,6 +37329,21 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                       <span className="format-desc">Einfach, universell kompatibel</span>
                     </div>
                   </button>
+
+                  {exportType === 'treatment' && (
+                    <button
+                      className="export-format-btn"
+                      onClick={generateKiTreatment}
+                      disabled={kiTreatmentLoading}
+                      style={{ borderColor: '#8b5cf6', background: 'linear-gradient(135deg, rgba(139,92,246,0.05), rgba(20,184,166,0.05))' }}
+                    >
+                      <span className="format-icon">✨</span>
+                      <div className="format-info">
+                        <span className="format-title">{kiTreatmentLoading ? 'Wird formuliert…' : 'Erzählerische Fassung (KI)'}</span>
+                        <span className="format-desc">{apiKey ? 'KI formt aus den Daten einen zusammenhängenden Fliesstext' : 'Benötigt einen API-Key (Einstellungen)'}</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -37937,7 +37454,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     className="save-download-btn"
                     onClick={() => {
                       setShowNewProjectDialog(false);
-                      exportProject();
+                      saveToFileAs();
                       // Nach dem Speichern kann der Benutzer nochmal "Neues Projekt" klicken
                     }}
                   >
@@ -37999,7 +37516,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     className="save-download-btn"
                     onClick={() => {
                       setShowLoadDemoDialog(false);
-                      exportProject();
+                      saveToFileAs();
                     }}
                   >
                     💾 Zuerst Backup speichern
@@ -38061,7 +37578,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     onClick={() => {
                       setShowImportConfirmDialog(false);
                       setPendingImportFile(null);
-                      exportProject();
+                      saveToFileAs();
                     }}
                   >
                     💾 Zuerst Backup speichern
@@ -38414,11 +37931,11 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
           />
         )}
 
-        {/* Dramaturg-Panel (rechts, ein-/ausklappbar) */}
-        {kiModus === 'dramaturg' && apiKey && (
-          <div className={`dramaturg-panel ${dramaturgPanelOpen ? 'open' : 'collapsed'}`}>
-            {!dramaturgPanelOpen ? (
-              <button 
+        {/* Dramaturg – Seitenpanel oder eigener Vollbild-Bereich */}
+        {apiKey && (kiModus === 'dramaturg' || dramaturgPanelOpen || dramaturgFullscreen) && (
+          <div className={`dramaturg-panel ${dramaturgFullscreen ? 'fullscreen' : (dramaturgPanelOpen ? 'open' : 'collapsed')}`}>
+            {(!dramaturgPanelOpen && !dramaturgFullscreen) ? (
+              <button
                 className="dramaturg-toggle-btn"
                 onClick={() => {
                   if (dramaturgMessages.length === 0) {
@@ -38434,18 +37951,26 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
             ) : (
               <>
                 <div className="dramaturg-header">
-                  <h3>🎭 Dramaturg</h3>
+                  <h3>🎭 Dramaturg{dramaturgFullscreen ? ' — Entwicklungsgespräch' : ''}</h3>
                   <div className="dramaturg-header-actions">
-                    <button 
+                    <button
                       className="dramaturg-minimize"
-                      onClick={() => setDramaturgPanelOpen(false)}
+                      onClick={() => { setDramaturgFullscreen(f => !f); setDramaturgPanelOpen(true); }}
+                      title={dramaturgFullscreen ? 'Verkleinern (Seitenpanel)' : 'Als eigener Bereich öffnen (Vollbild)'}
+                    >
+                      {dramaturgFullscreen ? '⤡' : '⤢'}
+                    </button>
+                    <button
+                      className="dramaturg-minimize"
+                      onClick={() => { setDramaturgFullscreen(false); setDramaturgPanelOpen(false); }}
                       title="Minimieren"
                     >
                       −
                     </button>
-                    <button 
+                    <button
                       className="dramaturg-close"
                       onClick={() => {
+                        setDramaturgFullscreen(false);
                         setDramaturgPanelOpen(false);
                         setDramaturgMessages([]);
                       }}
@@ -38499,7 +38024,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     </div>
                   )}
                   
-                  {dramaturgMessages.map((msg, i) => (
+                  {dramaturgMessages.map((msg, i) => msg.hidden ? null : (
                     <div key={i} className={`dramaturg-message ${msg.role}`}>
                       {/* Nachrichteninhalt mit Markdown-ähnlicher Formatierung */}
                       {msg.content.split('\n').map((line, j) => {
