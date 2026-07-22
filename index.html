@@ -1287,6 +1287,7 @@ const WERKZEUG_KATEGORIEN = {
     id: 'fundament', name: '🧠 Fundament', color: '#8b5cf6',
     tooltip: 'Was ist der Kern der Geschichte? Logline, emotionale Reise.',
     werkzeuge: [
+      { id: 'vorgaben', name: 'Vorgaben', icon: '📍' },
       { id: 'autor', name: 'Autor', icon: '✍️' },
       { id: 'impulsfragen_fundament', name: 'Impulsfragen', icon: '❓' },
       { id: 'titel', name: 'Titel & Tagline', icon: '🏷️' },
@@ -1419,7 +1420,7 @@ Dramera trennt Sammeln und Ordnen – erst frei spinnen, dann strukturieren. Die
 DIE OBERFLÄCHE
 
 Die App hat drei Hauptbereiche:
-• LINKS: Die Material-Sidebar – hier werden Vorgaben, Figuren, Themen und Szenen-Ideen gesammelt
+• LINKS: Die Material-Sidebar – hier werden Figuren, Themen und Szenen-Ideen gesammelt
 • MITTE: Die Schreibfläche (Sammeln) oder der Zeitstrahl (Ordnen)
 • RECHTS: Die Werkzeuge – Denkwerkzeuge die das Material entwickeln
 
@@ -1449,9 +1450,7 @@ Die Antworten landen in der Schreibfläche und können später weiterentwickelt 
 
 DAS MATERIAL (LINKS)
 
-In der Material-Sidebar werden vier Arten von Einträgen gesammelt:
-
-📍 VORGABEN: Rahmenbedingungen die die Geschichte prägen – Budget, Ensemblegrösse, Spielort, Aufführungsdauer, thematische Einschränkungen.
+In der Material-Sidebar werden drei Arten von Einträgen gesammelt:
 
 👤 FIGUREN: Die Menschen in der Geschichte. Klick auf eine Figur öffnet sie im Werkzeug "Die Figur" zur Bearbeitung. Portrait wählen, Archetypen zuordnen, Beziehungen definieren.
 
@@ -1466,6 +1465,7 @@ Die Werkzeuge sind keine Formulare zum Ausfüllen – sie sind Denkwerkzeuge. Ni
 WICHTIG: Jedes Werkzeug hat einen Button "→ Schreibfläche" mit dem Ideen, Texte oder Erkenntnisse in die Schreibfläche übernommen werden können. So verbindet sich strukturierte Arbeit mit Fliesstext.
 
 🧠 FUNDAMENT – Was ist der Kern der Geschichte?
+• Vorgaben – Rahmenbedingungen die die Geschichte prägen: Budget, Ensemblegrösse, Spielort, Aufführungsdauer, thematische Einschränkungen
 • Impulsfragen – Gezielte Fragen zum Fundament
 • Titel & Tagline – Wie heisst dein Stück? Was verspricht es?
 • Logline – Deine Geschichte in einem Satz: Wer will was, und was steht im Weg?
@@ -1607,7 +1607,11 @@ PROBLEME?
 
 • Projekt weg? Ohne JSON-Backup leider verloren. Nächstes Mal sichern!
 • Export funktioniert nicht? Den HTML-Export als Fallback probieren.
-• KI antwortet nicht? Den API-Key in den Einstellungen prüfen.`,
+• KI antwortet nicht? Den API-Key in den Einstellungen prüfen.
+
+ÜBER DRAMERA
+
+Dramera ist Teil der N!NA-Werkzeuge auf dramera.ch und arbeitet mit Rebu (Regiebuch) und Propla (Probeplan) zusammen. Entwickelt von Ueli Blum – Kontakt und weitere Werkzeuge unter ueliblum.ch/kontakt.`,
     linkedTerms: ['szene', 'figur', 'thema', 'logline', 'konflikt', 'archetypen', 'wertequadrat', 'heldenreise', '3-akt-struktur']
   },
   
@@ -7771,6 +7775,54 @@ const AutorTool = ({ value, onChange, onAddToSchreibflaeche }) => {
 };
 
 // Fundament-Werkzeuge
+const VorgabenTool = ({ items, onChange }) => {
+  const [neu, setNeu] = useState('');
+  const liste = items || [];
+  const add = () => {
+    const t = neu.trim();
+    if (!t) return;
+    onChange([...liste, { id: `c${Date.now()}`, text: t }]);
+    setNeu('');
+  };
+  const del = (id) => onChange(liste.filter(x => x.id !== id));
+  const upd = (id, text) => onChange(liste.map(x => x.id === id ? { ...x, text } : x));
+  return (
+    <div className="fundament-tool">
+      <p className="tool-intro">Der Rahmen des Projekts: Auftrag, Anlass, Spielort, Besetzungsgrösse, Dauer, Budget – alles, was von aussen vorgegeben ist und das Fundament mitbestimmt.</p>
+      <div className="new-item-form" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <input
+          type="text"
+          value={neu}
+          onChange={(e) => setNeu(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+          placeholder="Neue Vorgabe…"
+          autoComplete="off"
+          style={{ flex: 1 }}
+        />
+        <button onClick={add} disabled={!neu.trim()}>Hinzufügen</button>
+      </div>
+      {liste.length === 0 ? (
+        <p style={{ color: '#9ca3af', fontSize: '0.9rem' }}>Noch keine Vorgaben.</p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          {liste.map(item => (
+            <div key={item.id} style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <input
+                type="text"
+                value={item.text || ''}
+                onChange={(e) => upd(item.id, e.target.value)}
+                autoComplete="off"
+                style={{ flex: 1 }}
+              />
+              <button onClick={() => del(item.id)} title="Löschen" style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1rem' }}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const TitelTaglineTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick }) => {
   const [activeInfoField, setActiveInfoField] = useState(null);
   
@@ -17801,7 +17853,7 @@ function DrameraWerkbank() {
           setFileIsDirty(false);
           setLastFileSaveTime(new Date());
           setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'}));
           return;
         } catch (err) {
           // Permission revoked or handle invalid — fall through to picker
@@ -17820,7 +17872,7 @@ function DrameraWerkbank() {
           const dateStr = new Date().toISOString().slice(0, 10);
           const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
           const handle = await window.showSaveFilePicker({
-            suggestedName: 'Dramera_' + projectName + '_' + dateStr + '.dramera.json',
+            suggestedName: projectName + '_Dramera_' + dateStr + '.dramera.json',
             types: [{
               description: 'Dramera Projekt',
               accept: { 'application/json': ['.dramera.json', '.json'] }
@@ -17834,14 +17886,14 @@ function DrameraWerkbank() {
           setFileIsDirty(false);
           setLastFileSaveTime(new Date());
           setSaveStatus('saved');
-          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}));
+          window.__showFormatToast('\u2713 Gesichert um ' + new Date().toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'}));
         } catch (err) {
           if (err.name === 'AbortError') return; // User cancelled
           // Umgebung erlaubt keinen Datei-Dialog / kein Schreiben (z.B. file://):
           // auf Download ausweichen statt hart zu scheitern.
           const dateStr = new Date().toISOString().slice(0, 10);
           const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-          downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+          downloadFile(jsonStr, projectName + '_Dramera_' + dateStr + '.dramera.json', 'application/json');
           setFileIsDirty(false);
           setLastFileSaveTime(new Date());
           setSaveStatus('saved');
@@ -17852,7 +17904,7 @@ function DrameraWerkbank() {
         // Fallback: browser download
         const dateStr = new Date().toISOString().slice(0, 10);
         const projectName = (data.projektName || 'Projekt').replace(/[^a-zA-Z0-9\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df_\- ]/g, '');
-        downloadFile(jsonStr, 'Dramera_' + projectName + '_' + dateStr + '.dramera.json', 'application/json');
+        downloadFile(jsonStr, projectName + '_Dramera_' + dateStr + '.dramera.json', 'application/json');
         setFileIsDirty(false);
         setLastFileSaveTime(new Date());
         setSaveStatus('saved');
@@ -21251,7 +21303,7 @@ WICHTIGE REGELN:
       const url = URL.createObjectURL(content);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Dramera_Backup_${projectName}_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = `${projectName}_Dramera_${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -21271,13 +21323,23 @@ WICHTIGE REGELN:
       try {
         const [handle] = await window.showOpenFilePicker({
           types: [{
-            description: 'Dramera Projekt',
-            accept: { 'application/json': ['.dramera.json', '.json'] }
+            description: 'Dramera Projekt / Sicherung',
+            accept: { 'application/json': ['.dramera.json', '.json'], 'application/zip': ['.zip'] }
           }]
         });
         const file = await handle.getFile();
-        const text = await file.text();
-        let content = text;
+        let content;
+        if (/\.zip$/i.test(file.name)) {
+          if (typeof JSZip === 'undefined') { alert('ZIP-Bibliothek nicht geladen. Bitte Seite neu laden.'); return; }
+          const zip = await JSZip.loadAsync(file);
+          let entry = null;
+          zip.forEach((path, e) => { if (!e.dir && /\.dramera\.json$/i.test(path) && !entry) entry = e; });
+          if (!entry) zip.forEach((path, e) => { if (!e.dir && /\.json$/i.test(path) && !/exchange|nina|Version/i.test(path) && path.indexOf('Versionsverlauf/') !== 0 && !entry) entry = e; });
+          if (!entry) { alert('Im ZIP wurde keine Dramera-Projektdatei gefunden.'); return; }
+          content = await entry.async('string');
+        } else {
+          content = await file.text();
+        }
         if (content.charCodeAt(0) === 0xFEFF) {
           content = content.slice(1);
         }
@@ -24778,7 +24840,7 @@ STIL:
       </div>
       
       <h2 className="sidebar-title">MATERIAL</h2>
-      {['vorgaben', 'figuren', 'themen', 'szenenIdeen'].map(type => (
+      {['figuren', 'themen', 'szenenIdeen'].map(type => (
         <div key={type} className="sidebar-section">
           <div onClick={() => toggleSection(type)} className={`section-header ${expandedSections[type] ? 'expanded' : ''}`}>
             <span className="section-label">
@@ -24925,6 +24987,7 @@ STIL:
       case 'impulsfragen_situationen': return <ImpulsfragenTool rubrik="situationen" notizen={data.impulsfragen_notizen?.situationen} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
       case 'impulsfragen_raum_zeit': return <ImpulsfragenTool rubrik="raum_zeit" notizen={data.impulsfragen_notizen?.raum_zeit} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
       // Fundament
+      case 'vorgaben': return <VorgabenTool items={data.vorgaben || []} onChange={(items) => setData(p => ({ ...p, vorgaben: items }))} />;
       case 'autor': return <AutorTool value={data.autor} onChange={(v) => setData(p => ({ ...p, autor: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
       case 'titel': return <TitelTaglineTool value={data.fundament?.titel} onChange={(v) => setData(p => ({ ...p, fundament: { ...(p.fundament || {}), titel: v }}))} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
       case 'logline': return <LoglineTool value={data.fundament?.logline} onChange={(v) => setData(p => ({ ...p, fundament: { ...(p.fundament || {}), logline: v }}))} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
@@ -34691,7 +34754,7 @@ STIL:
                   {fileIsDirty ? (
                     <span style={{color: '#e8a838'}}> {'\u25cf'} Bearbeitet</span>
                   ) : (
-                    <span style={{color: '#4a9'}}> {'\u2713'} Gesichert{lastFileSaveTime ? (' ' + lastFileSaveTime.toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'})) : ''}</span>
+                    <span style={{color: '#4a9'}}> {'\u2713'} Gesichert{lastFileSaveTime ? (' ' + lastFileSaveTime.toLocaleTimeString('de-CH', {hour: '2-digit', minute: '2-digit'})) : ''}</span>
                   )}
                 </>
               ) : (
@@ -36748,7 +36811,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 </button>
                 {lastGdriveBackupTime && (
                   <span style={{fontSize:'0.7rem',color:'#6b7280',alignSelf:'center'}}>
-                    Letztes Drive-Backup: {lastGdriveBackupTime.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'})}
+                    Letztes Drive-Backup: {lastGdriveBackupTime.toLocaleTimeString('de-CH', {hour:'2-digit',minute:'2-digit'})}
                   </span>
                 )}
               </div>
@@ -36761,7 +36824,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 <div className="version-history-list">
                   {[...versionHistory].reverse().map((v, idx) => {
                     const d = new Date(v.timestamp);
-                    const timeStr = d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+                    const timeStr = d.toLocaleDateString('de-CH') + ' ' + d.toLocaleTimeString('de-CH', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
                     const figurenN = (v.data?.figuren || []).length;
                     const szenenN = (v.data?.felder || []).length;
                     const sourceIcon = v.source === 'drive' ? '\u2601\uFE0F' : v.source === 'file' ? '\uD83D\uDCC1' : '\uD83D\uDCBB';
@@ -36824,7 +36887,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 <div style={{background:'#f0f4ff',borderRadius:'8px',padding:'0.6rem 0.8rem',fontSize:'0.78rem',color:'#1e3a5f'}}>
                   <div><strong>Projekt:</strong> {recoveryData.data?.projektName || 'Unbekannt'}</div>
                   <div><strong>Figuren:</strong> {(recoveryData.data?.figuren || []).length} | <strong>Szenen:</strong> {(recoveryData.data?.felder || []).length}</div>
-                  <div><strong>Gespeichert:</strong> {recoveryData.savedAt ? new Date(recoveryData.savedAt).toLocaleString('de-DE') : 'Unbekannt'}</div>
+                  <div><strong>Gespeichert:</strong> {recoveryData.savedAt ? new Date(recoveryData.savedAt).toLocaleString('de-CH') : 'Unbekannt'}</div>
                 </div>
               </div>
               <div style={{display:'flex',gap:'0.5rem',justifyContent:'flex-end'}}>
@@ -37275,6 +37338,9 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 }} />
                 Beim nächsten Start nicht mehr zeigen
               </label>
+              <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#9ca3af', textAlign: 'center' }}>
+                Teil der N!NA-Werkzeuge auf <a href="https://dramera.ch" target="_blank" rel="noopener" style={{ color: '#8b5cf6' }}>dramera.ch</a> · entwickelt von Ueli Blum · <a href="https://ueliblum.ch/kontakt/" target="_blank" rel="noopener" style={{ color: '#8b5cf6' }}>Kontakt</a>
+              </p>
             </div>
           </>
         )}
@@ -38992,6 +39058,25 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<DrameraWerkbank />);
 
+  </script>
+  <script>
+    // Browser-Autofill überall abschalten (verhindert das «Turm»-Verhalten).
+    (function () {
+      var setze = function () {
+        document.querySelectorAll('input:not([autocomplete]), textarea:not([autocomplete])').forEach(function (el) {
+          el.setAttribute('autocomplete', 'off');
+        });
+      };
+      var start = function () {
+        setze();
+        try {
+          var obs = new MutationObserver(function () { setze(); });
+          obs.observe(document.body, { childList: true, subtree: true });
+        } catch (e) {}
+      };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+      else start();
+    })();
   </script>
 </body>
 </html>
