@@ -17522,6 +17522,36 @@ function DrameraWerkbank() {
   // Lade gespeicherte Daten aus localStorage oder verwende Default
   const [data, setData] = useState(savedState?.data || DEFAULT_DATA);
 
+  // Einmalige Reparatur beim Öffnen: doppelte oder fehlende IDs eindeutig machen.
+  // Früher konnten mehrere gleichzeitig übernommene KI-Figuren dieselbe ID
+  // (fig_ki_<Zeitstempel>) bekommen – doppelte IDs brechen Reacts Darstellung,
+  // sodass sich die Einträge nicht mehr löschen liessen.
+  useEffect(() => {
+    const listen = ['figuren', 'felder', 'szenenIdeen', 'themen', 'vorgaben', 'recherche'];
+    setData(prev => {
+      const next = { ...prev };
+      let geaendert = false;
+      listen.forEach(key => {
+        const arr = prev[key];
+        if (!Array.isArray(arr)) return;
+        const gesehen = new Set();
+        let lokal = false;
+        const neu = arr.map(item => {
+          if (!item || typeof item !== 'object') return item;
+          let id = item.id;
+          if (id == null || gesehen.has(id)) {
+            id = `${key}_fix_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+            lokal = true;
+          }
+          gesehen.add(id);
+          return id === item.id ? item : { ...item, id };
+        });
+        if (lokal) { next[key] = neu; geaendert = true; }
+      });
+      return geaendert ? next : prev;
+    });
+  }, []);
+
   const [phase, setPhase] = useState('sammeln');
   const [currentView, setCurrentView] = useState('werkbank'); // 'werkbank' | 'treatment'
   const [werkzeugKategorieOpen, setWerkzeugKategorieOpen] = useState(null);
@@ -19525,7 +19555,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         // Fallbacks fangen ältere/englische Schlüssel ab (beschreibung/want/need/ghost/biografie).
         const d = action.daten || {};
         const neueFigur = {
-          id: `fig_ki_${Date.now()}`,
+          id: `fig_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: d.name || 'Neue Figur',
           charakteristik: d.charakteristik || d.beschreibung || '',
           ziel: d.ziel || d.want || '',
@@ -19555,7 +19585,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
           }).filter(Boolean);
           
           const neueSzene = {
-            id: `feld_ki_${Date.now()}`,
+            id: `feld_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             titel: action.daten.titel || 'Neue Szene',
             position: data.felder.length,
             figuren: figurenIds,
@@ -19575,7 +19605,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         } else {
           // Standardmässig als Szenen-Idee ins Material
           const neueIdee = {
-            id: `sz_ki_${Date.now()}`,
+            id: `sz_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             titel: action.daten.titel || 'Neue Szene',
             notizen: [
               action.daten.zusammenfassung || '',
@@ -19724,7 +19754,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
       
       case 'thema_hinzufuegen': {
         const neuesThema = {
-          id: `th_ki_${Date.now()}`,
+          id: `th_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
           name: action.daten.name || 'Neues Thema'
         };
         setData(prev => ({ ...prev, themen: [...(prev.themen || []), neuesThema] }));
@@ -19880,7 +19910,7 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
       case 'vorgabe_hinzufuegen': {
         const t = action.daten?.text || action.daten?.name || action.daten?.titel || '';
         if (!t) return '❌ Keine Vorgabe angegeben';
-        const neu = { id: `vg_ki_${Date.now()}`, text: t };
+        const neu = { id: `vg_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, text: t };
         setData(prev => ({ ...prev, vorgaben: [...(prev.vorgaben || []), neu] }));
         return `✅ Vorgabe "${t}" hinzugefügt`;
       }
@@ -20980,20 +21010,37 @@ WICHTIGE REGELN:
   const deleteFromSammlung = (type, id) => setData(p => ({ ...p, [type]: (p[type] || []).filter(i => i.id !== id) }));
   const updateFigur = (updatedFigur) => { setData(p => ({ ...p, figuren: (p.figuren || []).map(f => f.id === updatedFigur.id ? updatedFigur : f) })); setSelectedFigur(updatedFigur); };
 
-  const extrahiereAlsFigur = () => { 
-    let s = window.getSelection()?.toString().trim(); 
+  const _uid = (p) => `${p}${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const extrahiereAlsFigur = (textArg) => {
+    let s = (textArg != null ? String(textArg) : window.getSelection()?.toString() || '').trim();
     if (!s) s = window.prompt('Name der Figur:');
-    if (s) setData(p => ({ ...p, figuren: [...(p.figuren || []), { id: `fig${Date.now()}`, name: s }] })); 
+    if (s) setData(p => ({ ...p, figuren: [...(p.figuren || []), { id: _uid('fig'), name: s }] }));
   };
-  const extrahiereAlsThema = () => { 
-    let s = window.getSelection()?.toString().trim(); 
+  const extrahiereAlsThema = (textArg) => {
+    let s = (textArg != null ? String(textArg) : window.getSelection()?.toString() || '').trim();
     if (!s) s = window.prompt('Name des Themas:');
-    if (s) setData(p => ({ ...p, themen: [...(p.themen || []), { id: `th${Date.now()}`, name: s }] })); 
+    if (s) setData(p => ({ ...p, themen: [...(p.themen || []), { id: _uid('th'), name: s }] }));
   };
-  const extrahiereAlsSzene = () => { 
-    let s = window.getSelection()?.toString().trim(); 
+  const extrahiereAlsSzene = (textArg) => {
+    let s = (textArg != null ? String(textArg) : window.getSelection()?.toString() || '').trim();
     if (!s) s = window.prompt('Titel der Szene:');
-    if (s) setData(p => ({ ...p, szenenIdeen: [...(p.szenenIdeen || []), { id: `sz${Date.now()}`, titel: s, notizen: '' }] })); 
+    if (s) {
+      // Erste Zeile als Titel, Rest als Notizen – praktisch bei einem Szenenbeschrieb.
+      const zeilen = s.split('\n');
+      const titel = zeilen[0].slice(0, 80);
+      const notizen = zeilen.length > 1 ? s : (s.length > 80 ? s : '');
+      setData(p => ({ ...p, szenenIdeen: [...(p.szenenIdeen || []), { id: _uid('sz'), titel, notizen }] }));
+    }
+  };
+  // Rechtsklick-Menü auf der Schreibfläche (Sammeln): markierten Text zuordnen.
+  const [schreibCtxMenu, setSchreibCtxMenu] = useState(null); // { x, y, text }
+  const oeffneSchreibCtxMenu = (e) => {
+    const el = e.target;
+    if (!el || typeof el.selectionStart !== 'number') return;
+    const sel = (el.value || '').substring(el.selectionStart, el.selectionEnd).trim();
+    if (!sel) return; // nichts markiert → normales Browser-Menü
+    e.preventDefault();
+    setSchreibCtxMenu({ x: e.clientX, y: e.clientY, text: sel });
   };
 
   // Speichern-Dialog State
@@ -29991,6 +30038,7 @@ STIL:
         .schreibflaeche-title { font-size: 0.875rem; font-weight: 600; color: #8b7355; }
         .extract-btns { display: flex; gap: 0.5rem; margin-left: auto; }
         .extract-btn { padding: 0.3rem 0.6rem; border-radius: 0.25rem; border: none; font-size: 0.7rem; font-weight: 500; cursor: pointer; }
+        .ctx-menu-item:hover { background: #f3f4f6 !important; }
         .extract-btn.figur { background: #fdf8f3; color: #6b4423; }
         .extract-btn.thema { background: #fff7ed; color: #9a3412; }
         .extract-btn.szene { background: #ecfdf5; color: #065f46; }
@@ -34931,6 +34979,7 @@ STIL:
                     <textarea
                       value={data.schreibflaeche || ''}
                       onChange={(e) => handleSchreibflaecheChange(e.target.value)}
+                      onContextMenu={oeffneSchreibCtxMenu}
                       placeholder={`📝 Willkommen bei Dramera!
 
 Wer schon weiss, was erzählt werden soll – hier direkt losschreiben.
@@ -34947,8 +34996,26 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
 
 📚 Wiki: Erklärungen zu allen Begriffen.
 ❓ Fragezeichen: Ausführliche Anleitung.
-🤖 KI-Funktionen: Einstellungen → API-Key.`} 
+🤖 KI-Funktionen: Einstellungen → API-Key.`}
                     />
+                    {schreibCtxMenu && (
+                      <>
+                        <div
+                          onClick={() => setSchreibCtxMenu(null)}
+                          onContextMenu={(e) => { e.preventDefault(); setSchreibCtxMenu(null); }}
+                          style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+                        />
+                        <div style={{ position: 'fixed', left: Math.min(schreibCtxMenu.x, window.innerWidth - 230), top: Math.min(schreibCtxMenu.y, window.innerHeight - 160), zIndex: 9999, background: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', padding: '6px', minWidth: '210px' }}>
+                          <div style={{ fontSize: '11px', color: '#9ca3af', padding: '4px 8px', maxWidth: '210px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>„{schreibCtxMenu.text}"</div>
+                          <button className="ctx-menu-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '6px', fontSize: '13px' }}
+                            onMouseDown={(e) => { e.preventDefault(); extrahiereAlsFigur(schreibCtxMenu.text); setSchreibCtxMenu(null); }}>👤 Als Figur ins Material</button>
+                          <button className="ctx-menu-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '6px', fontSize: '13px' }}
+                            onMouseDown={(e) => { e.preventDefault(); extrahiereAlsSzene(schreibCtxMenu.text); setSchreibCtxMenu(null); }}>🎬 Als Szene ins Material</button>
+                          <button className="ctx-menu-item" style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'none', cursor: 'pointer', borderRadius: '6px', fontSize: '13px' }}
+                            onMouseDown={(e) => { e.preventDefault(); extrahiereAlsThema(schreibCtxMenu.text); setSchreibCtxMenu(null); }}>💡 Als Thema ins Material</button>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
                 
