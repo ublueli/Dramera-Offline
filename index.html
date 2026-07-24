@@ -6497,8 +6497,16 @@ AKTIONS-BLÖCKE – Format EXAKT so:
 
 AKTIONS-TYPEN:
 - figur_hinzufuegen: daten wie oben. Nur "name" ist Pflicht; fülle die übrigen Felder aus, soweit du sie begründen kannst. Erfinde nichts Beliebiges.
-- szene_hinzufuegen: {"type": "szene_hinzufuegen", "daten": {"titel": "...", "zusammenfassung": "...", "ziel": "Ziel der Szene", "widerstand": "...", "wendepunkt": "..."}}
+- szene_hinzufuegen: {"type": "szene_hinzufuegen", "daten": {"titel": "...", "zusammenfassung": "...", "ziel": "Ziel der Szene", "widerstand": "...", "wendepunkt": "...", "figuren": ["Name1","Name2"], "in_zeitstrahl": true}}. "in_zeitstrahl": true legt die Szene direkt auf den Zeitstrahl (sonst als Szenen-Idee ins Material).
 - thema_hinzufuegen: {"type": "thema_hinzufuegen", "daten": {"name": "...", "contrast": "der Gegensatz/Widerspruch"}}
+- vorgabe_hinzufuegen: {"type": "vorgabe_hinzufuegen", "daten": {"text": "Rahmenbedingung, z.B. max. 5 Spielende"}}
+- fundament_setzen: {"type": "fundament_setzen", "daten": {"logline": "...", "titel": "...", "untertitel": "...", "tagline": "...", "kernthema": "...", "unaussprechliches": "..."}}. Nur die Felder angeben, die du wirklich setzen willst.
+- dialog_schreiben: {"type": "dialog_schreiben", "daten": {"szenen_index": 0, "dialog": "NAME: Text\n*(Regieanweisung)*\nNAME2: Text"}}. szenen_index ist 0-basiert (erste Szene = 0).
+- projekt_befuellen: {"type": "projekt_befuellen", "daten": {"figuren": [...], "themen": [...], "szenen": [...]}}. Für eine ganze Grundausstattung auf einmal.
+
+WENN DER AUTOR DICH BITTET, DIE APP ZU FÜLLEN:
+- Wenn der Autor sagt «trag das ein», «fülle die App», «leg die Figuren/Szenen an» o.Ä., dann BESCHREIBE es nicht nur – liefere die passenden Aktions-Blöcke, so viele wie nötig (je ein Block pro Figur, Szene, Thema). Der Autor sieht «Übernehmen»-Knöpfe und kann jede Übernahme auch wieder rückgängig machen.
+- Halte den erklärenden Text dann kurz; die Arbeit steckt in den Aktions-Blöcken.
 
 Für MEHRERE Elemente: je ein SEPARATER Aktions-Block pro Element.
 
@@ -18867,6 +18875,7 @@ function DrameraWerkbank() {
   const [dramaturgLoading, setDramaturgLoading] = useState(false);
   const [flowModeActive, setFlowModeActive] = useState(false); // KI-Hinweise ausblenden
   const [pendingActions, setPendingActions] = useState([]); // Aktionen die übernommen werden können
+  const [kiUndo, setKiUndo] = useState(null); // Schnappschuss vor der letzten Übernahme (für Rückgängig)
   const dramaturgEndRef = useRef(null); // Für Auto-Scroll
   
   // Auto-Scroll wenn neue Nachrichten kommen
@@ -19868,6 +19877,38 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         return `✅ Hinzugefügt: ${results.join(', ')}`;
       }
       
+      case 'vorgabe_hinzufuegen': {
+        const t = action.daten?.text || action.daten?.name || action.daten?.titel || '';
+        if (!t) return '❌ Keine Vorgabe angegeben';
+        const neu = { id: `vg_ki_${Date.now()}`, text: t };
+        setData(prev => ({ ...prev, vorgaben: [...(prev.vorgaben || []), neu] }));
+        return `✅ Vorgabe "${t}" hinzugefügt`;
+      }
+
+      case 'fundament_setzen': {
+        const d = action.daten || {};
+        const gesetzt = [];
+        if (d.logline) gesetzt.push('Logline');
+        if (d.titel != null || d.untertitel != null || d.tagline != null) gesetzt.push('Titel/Tagline');
+        if (d.kernthema) gesetzt.push('Kernthema');
+        if (d.unaussprechliches) gesetzt.push('Unaussprechliches');
+        if (!gesetzt.length) return 'ℹ️ Keine Fundament-Felder angegeben';
+        setData(prev => {
+          const f = { ...(prev.fundament || {}) };
+          if (d.logline) f.logline = { ...(f.logline && typeof f.logline === 'object' ? f.logline : {}), text: d.logline };
+          if (d.titel != null || d.untertitel != null || d.tagline != null) {
+            f.titel = { ...(f.titel && typeof f.titel === 'object' ? f.titel : {}) };
+            if (d.titel != null) f.titel.titel = d.titel;
+            if (d.untertitel != null) f.titel.untertitel = d.untertitel;
+            if (d.tagline != null) f.titel.tagline = d.tagline;
+          }
+          if (d.kernthema) f.kernthema = d.kernthema;
+          if (d.unaussprechliches) f.unaussprechliches = d.unaussprechliches;
+          return { ...prev, fundament: f };
+        });
+        return `✅ Fundament gesetzt: ${gesetzt.join(', ')}`;
+      }
+
       case 'parse_error':
         return `❌ Fehler beim Einsetzen\n\n${action.daten?.hinweis || 'Die KI-Antwort konnte nicht verarbeitet werden.'}\n\nTechnisch: ${action.daten?.error || '?'}`;
       
@@ -19894,6 +19935,17 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
     }
   };
   
+  // Vor einer Übernahme den ganzen Projektstand sichern, damit «Rückgängig» geht.
+  const snapshotVorUebernahme = () => {
+    try { setKiUndo({ data: JSON.parse(JSON.stringify(data)) }); } catch (e) { /* ignorieren */ }
+  };
+  const kiUndoRestore = () => {
+    if (!kiUndo) return;
+    setData(kiUndo.data);
+    setKiUndo(null);
+    setDramaturgMessages(prev => [...prev, { role: 'assistant', content: '↩ Rückgängig gemacht – der Stand vor der letzten Übernahme ist wiederhergestellt.' }]);
+  };
+
   // Dramaturg-Chat mit Web-Suche
   const sendDramaturgMessage = async (userMessage, opts = {}) => {
     if (!apiKey || !userMessage.trim()) return;
@@ -20005,7 +20057,7 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
       
       const requestBody = {
         model: getDrameraModell(),
-        max_tokens: 4000,
+        max_tokens: 8192,
         system: DRAMATURG_SYSTEM_PROMPT + '\n\n' + projektKontext,
         messages: (() => {
           const raw = [...dramaturgMessages.slice(-10), newUserMsg]
@@ -38141,6 +38193,8 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               'szene_update_titel': `📝 Titel: "${action.titel || '?'}"`,
                               'szene_update_zusammenfassung': `📋 Zusammenfassung übernehmen`,
                               'projekt_befuellen': `📦 Projekt befüllen`,
+                              'vorgabe_hinzufuegen': `➕ Vorgabe "${action.daten?.text || action.daten?.name || '?'}"`,
+                              'fundament_setzen': `🧱 Fundament setzen`,
                               'struktur_wechseln': `📐 Zu "${action.daten?.neues_raster || '?'}" wechseln`,
                               'parse_error': `⚠️ JSON-Fehler: ${action.daten?.error || '?'}`
                             };
@@ -38150,6 +38204,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                                 key={actionIdx}
                                 className="action-btn"
                                 onClick={() => {
+                                  snapshotVorUebernahme();
                                   const result = executeAction(action);
                                   // Feedback-Nachricht hinzufügen
                                   setDramaturgMessages(prev => [...prev, {
@@ -38168,6 +38223,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                           <button 
                             className="action-btn action-btn-all"
                             onClick={() => {
+                              snapshotVorUebernahme();
                               const results = msg.actions.map(a => executeAction(a));
                               setDramaturgMessages(prev => [...prev, {
                                 role: 'assistant',
@@ -38183,6 +38239,11 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     </div>
                   ))}
                   
+                  {kiUndo && !dramaturgLoading && (
+                    <div className="dramaturg-message assistant" style={{ background: 'transparent', boxShadow: 'none' }}>
+                      <button className="action-btn" onClick={kiUndoRestore}>↩ Letzte Übernahme rückgängig machen</button>
+                    </div>
+                  )}
                   {dramaturgLoading && (
                     <div className="dramaturg-message assistant loading">
                       <span className="typing-indicator">●●●</span>
