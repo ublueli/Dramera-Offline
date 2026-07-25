@@ -1369,6 +1369,7 @@ const WERKZEUG_KATEGORIEN = {
     id: 'reflexion', name: '📝 Dokumentation', color: '#8b5cf6',
     tooltip: 'Treatment und Förderdossier erstellen.',
     werkzeuge: [
+      { id: 'treatment_text', name: 'Treatment (Arbeitsfassung)', icon: '📜' },
       { id: 'treatment', name: 'Treatment erstellen', icon: '📝' },
       { id: 'dossier', name: 'Förderdossier', icon: '📋' },
     ]
@@ -1378,6 +1379,7 @@ const WERKZEUG_KATEGORIEN = {
     tooltip: 'Bilder, Links, Texte – alles was dich inspiriert.',
     werkzeuge: [
       { id: 'recherche', name: 'Material sammeln', icon: '📚' },
+      { id: 'parkplatz', name: 'Ideen-Parkplatz', icon: '🅿️' },
     ]
   }
 };
@@ -6482,9 +6484,26 @@ FORMDIAGNOSE:
 LÄNGE:
 - Standard: kurz und präzise (wenige Sätze). Nur bei ausdrücklicher Bitte um Analyse/Tiefe ("analysiere", "erkläre", "warum") nimmst du dir mehr Raum.
 
+WAS DU SIEHST:
+- Unter AKTUELLER PROJEKT-STAND bekommst du den vollständigen Inhalt der App: Fundament, alle Figurenfelder (Will, Braucht, Prägung, Backstory, Sprechweise, Beziehungen …), Themen, Vorgaben, Szenen samt Dialogtext, Szenen-Ideen, Treatment, Ideen-Parkplatz, Recherche, Dossier, Sammelfläche und Notizen. Was dort nicht steht, ist im Projekt wirklich leer.
+- Prüfe darum IMMER zuerst den Stand, bevor du etwas vorschlägst. Behaupte nie, du könntest ein Feld nicht sehen, und frag den Autor nicht nach etwas, das oben schon steht.
+- Bevor du eine Figur, ein Thema oder eine Szene anlegst: schau nach, ob es sie schon gibt. Wenn ja, ergänze sie (figur_aktualisieren, thema_aktualisieren, szenenidee_aktualisieren), statt sie doppelt anzulegen.
+- Du kannst in JEDES Werkzeug der App schreiben – auch in Schauplatz, Zeit, Musik, Wertequadrat, Märchenmodell, Archetypen, Kräfte, Thema-Details, Dossier und Sammelfläche. Dafür gibt es werkzeug_setzen. Sag also nie, ein Bereich sei für dich nicht erreichbar.
+
 VORSCHLÄGE – DER AUTOR ENTSCHEIDET:
 - Du fügst NICHTS eigenmächtig ins Projekt ein. Wenn du etwas Konkretes vorschlägst (Figur, Szene, Thema), biete es als AKTIONS-BLOCK an – der Autor sieht dann einen "Übernehmen"-Knopf und entscheidet selbst.
 - Nutze Aktions-Blöcke nur, wenn ein konkreter, übernehmbarer Vorschlag vorliegt – nicht für blosse Rückfragen.
+- HARTE REGEL: Kündige nie etwas an, was du nicht in derselben Nachricht als Aktions-Block mitlieferst. Sätze wie «ich lege dir die Szenen an» oder «ich trage das ein» sind nur erlaubt, wenn die Blöcke direkt darunter stehen. Ohne Block passiert nichts – der Autor wartet dann vergeblich. Im Zweifel: Block liefern statt ankündigen.
+
+DAS TREATMENT – DIE ARBEITSFASSUNG DER GESCHICHTE:
+- Das Treatment ist der laufende Erzähltext des Stücks, nicht eine Liste. Es steht im Projekt-Stand unter TREATMENT.
+- Es wächst mit der Arbeit mit. Wenn ihr eine Figur schärft und dabei etwas herauskommt, das dem Treatment widerspricht oder darin noch fehlt, dann SAGST du das und legst eine überarbeitete Fassung als treatment_schreiben-Block vor. Begründe im Feld "stand" in einem Satz, was du geändert hast und warum.
+- Du überschreibst das Treatment nie ungefragt: Der Autor entscheidet über den Übernehmen-Knopf. Die alte Fassung bleibt als Version erhalten.
+- Schreib das Treatment immer als ganzen Text neu, nicht als Änderungsliste – ausser der Autor will ausdrücklich nur etwas anhängen ("modus": "anhaengen").
+
+DER IDEEN-PARKPLATZ:
+- Für Einfälle, die noch keinen Ort haben, aber nicht verloren gehen dürfen, gibt es den Parkplatz (parkplatz_hinzufuegen). Wenn im Gespräch etwas Gutes auftaucht, das gerade nirgends hinpasst, biete es dort an, statt es zu vergessen oder es dem Treatment aufzuzwingen.
+- Schau von Zeit zu Zeit in den Parkplatz. Wenn eine geparkte Idee durch die neue Entwicklung plötzlich einen Platz hat, weise darauf hin.
 
 FIGUREN VOLLSTÄNDIG ENTWICKELN:
 - Wenn du eine Figur vorschlägst, fülle so viele Felder wie sinnvoll aus – nicht nur den Namen. Nutze die echten Feldnamen der App (siehe Schema). "ziel" = das bewusste Wollen, "beduerfnis" = das unbewusste Brauchen, "praegung" = die prägende Wunde/der Ghost.
@@ -6497,12 +6516,19 @@ AKTIONS-BLÖCKE – Format EXAKT so:
 
 AKTIONS-TYPEN:
 - figur_hinzufuegen: daten wie oben. Nur "name" ist Pflicht; fülle die übrigen Felder aus, soweit du sie begründen kannst. Erfinde nichts Beliebiges.
+- figur_aktualisieren: {"type": "figur_aktualisieren", "daten": {"name": "Maria", "beduerfnis": "...", "praegung": "..."}}. Für eine BESTEHENDE Figur. "name" identifiziert die Figur (exakt wie im Projekt-Stand), alle weiteren Schlüssel sind die zu setzenden Felder. Nutze das immer, wenn eine Figur schon existiert – lege sie NICHT ein zweites Mal an. Mit "neuer_name" kannst du sie umbenennen.
 - szene_hinzufuegen: {"type": "szene_hinzufuegen", "daten": {"titel": "...", "zusammenfassung": "...", "ziel": "Ziel der Szene", "widerstand": "...", "wendepunkt": "...", "figuren": ["Name1","Name2"], "in_zeitstrahl": true}}. "in_zeitstrahl": true legt die Szene direkt auf den Zeitstrahl (sonst als Szenen-Idee ins Material).
 - thema_hinzufuegen: {"type": "thema_hinzufuegen", "daten": {"name": "...", "contrast": "der Gegensatz/Widerspruch"}}
 - vorgabe_hinzufuegen: {"type": "vorgabe_hinzufuegen", "daten": {"text": "Rahmenbedingung, z.B. max. 5 Spielende"}}
-- fundament_setzen: {"type": "fundament_setzen", "daten": {"logline": "...", "titel": "...", "untertitel": "...", "tagline": "...", "kernthema": "...", "unaussprechliches": "..."}}. Nur die Felder angeben, die du wirklich setzen willst.
+- fundament_setzen: {"type": "fundament_setzen", "daten": {"logline": "...", "titel": "...", "untertitel": "...", "tagline": "...", "kernthema": "...", "unaussprechliches": "..."}}. Nur die Felder angeben, die du wirklich setzen willst. Weitere Fundament-Felder sind ebenfalls möglich, z.B. "kern", "konflikt", "emotionale_bewegung", "zumutung", "weltgesetz", "innerer_widerstand", "praemisse", "frage" – schreib den Schlüssel genau so, wie er im Projekt-Stand oben erscheint.
 - dialog_schreiben: {"type": "dialog_schreiben", "daten": {"szenen_index": 0, "dialog": "NAME: Text\n*(Regieanweisung)*\nNAME2: Text"}}. szenen_index ist 0-basiert (erste Szene = 0).
 - projekt_befuellen: {"type": "projekt_befuellen", "daten": {"figuren": [...], "themen": [...], "szenen": [...]}}. Für eine ganze Grundausstattung auf einmal.
+- thema_aktualisieren: {"type": "thema_aktualisieren", "daten": {"name": "Schuld", "contrast": "Vergebung", "beschreibung": "..."}}. Für ein BESTEHENDES Thema; "name" identifiziert es, "neuer_name" benennt es um.
+- szenenidee_aktualisieren: {"type": "szenenidee_aktualisieren", "daten": {"titel": "Am Grab", "notizen": "Hier muss Marias Prägung sichtbar werden.", "modus": "anhaengen"}}. Ergänzt eine bestehende Szenen-Idee im Material. "modus": "ersetzen" überschreibt die Notizen, sonst wird angehängt. Statt "titel" geht auch "index" (1-basiert), "neuer_titel" benennt um.
+- werkzeug_setzen: {"type": "werkzeug_setzen", "daten": {"werkzeug": "schauplatz", "werte": {"hauptort": "Eine Kiesgrube", "atmosphaere": "..."}}}. Schreibt in ein beliebiges Werkzeug. Erlaubt sind: wertequadrat, maerchenmodell, archetypen, kraefte, schauplatz, zeit, musik, themaDetails, dossier, impulsfragen_notizen, reflexionsNotizen, autor, schreibflaeche, projektName. Die Feldnamen innerhalb eines Werkzeugs entnimmst du dem Projekt-Stand oben – schreib sie exakt so. Objekte werden zusammengeführt, bestehende Felder bleiben also erhalten, sofern du sie nicht selbst überschreibst. Bei Texten (z.B. schreibflaeche) hängt "modus": "anhaengen" an, statt zu ersetzen.
+- treatment_schreiben: {"type": "treatment_schreiben", "daten": {"text": "Der ganze Treatment-Text …", "stand": "Warum diese Fassung anders ist"}}. Die bisherige Fassung wandert automatisch in die Versionen. Absätze im Text als \n\n schreiben (echte Zeilenumbrüche im JSON gehen verloren).
+- parkplatz_hinzufuegen: {"type": "parkplatz_hinzufuegen", "daten": {"titel": "Der Hund, der nicht bellt", "notiz": "Bild für das Schweigen der Familie", "herkunft": "Gespräch über Figur Maria"}}. Mehrere auf einmal: {"ideen": [{...}, {...}]}.
+- recherche_hinzufuegen: {"type": "recherche_hinzufuegen", "daten": {"titel": "...", "inhalt": "...", "quelle": "..."}}. Für Fakten und Fundstücke, die du beisteuerst.
 
 WENN DER AUTOR DICH BITTET, DIE APP ZU FÜLLEN:
 - Wenn der Autor sagt «trag das ein», «fülle die App», «leg die Figuren/Szenen an» o.Ä., dann BESCHREIBE es nicht nur – liefere die passenden Aktions-Blöcke, so viele wie nötig (je ein Block pro Figur, Szene, Thema). Der Autor sieht «Übernehmen»-Knöpfe und kann jede Übernahme auch wieder rückgängig machen.
@@ -12957,6 +12983,278 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
 };
 
 // Kleines Treatment-Tool für Werkzeug-Panel (öffnet Generator)
+// =====================================================
+// TREATMENT – ARBEITSFASSUNG
+// Der laufende Erzähltext des Stücks. Wächst mit der Arbeit mit,
+// jede Neufassung schiebt die vorherige ins Versionsarchiv.
+// =====================================================
+const TreatmentArbeitsfassungTool = ({ treatment, onChange, onAddToSchreibflaeche }) => {
+  const t = treatment || { text: '', stand: '', aktualisiert: '', versionen: [] };
+  const [entwurf, setEntwurf] = useState(t.text || '');
+  const [gespeichert, setGespeichert] = useState(true);
+  const [offeneVersion, setOffeneVersion] = useState(null);
+  const letzterText = useRef(t.text || '');
+
+  // Wenn die KI eine neue Fassung einspielt, den Editor nachziehen –
+  // aber nur, wenn der Autor nicht gerade selbst tippt.
+  useEffect(() => {
+    if ((t.text || '') !== letzterText.current) {
+      letzterText.current = t.text || '';
+      if (gespeichert) setEntwurf(t.text || '');
+    }
+  }, [t.text]);
+
+  const speichern = () => {
+    const alt = String(t.text || '');
+    const versionen = alt.trim() && alt !== entwurf
+      ? [{ text: alt, stand: t.stand || '', datum: t.aktualisiert || '' }, ...(t.versionen || [])].slice(0, 20)
+      : (t.versionen || []);
+    letzterText.current = entwurf;
+    onChange({
+      ...t,
+      text: entwurf,
+      aktualisiert: new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      versionen
+    });
+    setGespeichert(true);
+  };
+
+  const versionWiederherstellen = (v, idx) => {
+    const alt = String(t.text || '');
+    const versionen = [...(t.versionen || [])];
+    versionen.splice(idx, 1);
+    if (alt.trim()) versionen.unshift({ text: alt, stand: t.stand || '', datum: t.aktualisiert || '' });
+    setEntwurf(v.text);
+    letzterText.current = v.text;
+    onChange({
+      ...t,
+      text: v.text,
+      stand: v.stand ? `wiederhergestellt: ${v.stand}` : 'wiederhergestellte Fassung',
+      aktualisiert: new Date().toLocaleString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      versionen: versionen.slice(0, 20)
+    });
+    setGespeichert(true);
+    setOffeneVersion(null);
+  };
+
+  const zeichen = entwurf.length;
+  const woerter = entwurf.trim() ? entwurf.trim().split(/\s+/).length : 0;
+
+  return (
+    <div className="tool-content">
+      <p className="tool-intro">
+        Die Arbeitsfassung deiner Geschichte in Prosa. Der Dramaturg liest sie mit und
+        schlägt eine überarbeitete Fassung vor, wenn die Figurenarbeit etwas verändert –
+        übernehmen tust du sie selbst. Die vorherige Fassung bleibt jedes Mal erhalten.
+      </p>
+
+      <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', margin: '10px 0', fontSize: '12px', color: '#666' }}>
+        <span>{woerter} Wörter · {zeichen} Zeichen</span>
+        {t.aktualisiert && <span>zuletzt: {t.aktualisiert}</span>}
+        {!gespeichert && <span style={{ color: '#b45309', fontWeight: 600 }}>ungespeicherte Änderung</span>}
+      </div>
+
+      {t.stand && (
+        <div style={{ background: '#f8fafc', borderLeft: '3px solid #94a3b8', padding: '8px 12px', margin: '0 0 12px', fontSize: '13px', color: '#475569' }}>
+          <strong>Stand der letzten Fassung:</strong> {t.stand}
+        </div>
+      )}
+
+      <textarea
+        value={entwurf}
+        onChange={(e) => { setEntwurf(e.target.value); setGespeichert(false); }}
+        placeholder={'Hier steht die Geschichte, wie sie im Moment erzählt werden soll.\n\nDu kannst selbst schreiben – oder den Dramaturgen bitten: «Fass zusammen, was wir bis jetzt haben, und schreib mir daraus ein Treatment.»'}
+        style={{ width: '100%', minHeight: '420px', padding: '14px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '15px', lineHeight: '1.7', fontFamily: 'Georgia, serif', resize: 'vertical' }}
+      />
+
+      <div style={{ display: 'flex', gap: '8px', marginTop: '10px', flexWrap: 'wrap' }}>
+        <button
+          onClick={speichern}
+          disabled={gespeichert}
+          style={{ padding: '8px 16px', background: gespeichert ? '#e5e7eb' : '#1e3a5f', color: gespeichert ? '#9ca3af' : 'white', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: gespeichert ? 'default' : 'pointer' }}
+        >
+          {gespeichert ? '✓ Gespeichert' : '💾 Fassung speichern'}
+        </button>
+        {onAddToSchreibflaeche && entwurf.trim() && (
+          <button
+            onClick={() => onAddToSchreibflaeche({ type: 'text', title: 'Treatment', content: entwurf })}
+            style={{ padding: '8px 16px', background: '#f3f4f6', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', cursor: 'pointer' }}
+          >
+            ✍️ Auf die Sammelfläche
+          </button>
+        )}
+      </div>
+
+      {(t.versionen || []).length > 0 && (
+        <div style={{ marginTop: '28px', borderTop: '1px solid #e5e7eb', paddingTop: '16px' }}>
+          <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '10px' }}>
+            📚 Frühere Fassungen ({t.versionen.length})
+          </h4>
+          {t.versionen.map((v, i) => (
+            <div key={i} style={{ border: '1px solid #e5e7eb', borderRadius: '6px', padding: '10px 12px', marginBottom: '8px', background: '#fafafa' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <div style={{ fontSize: '13px', color: '#475569' }}>
+                  <strong>{v.datum || `Fassung ${t.versionen.length - i}`}</strong>
+                  {v.stand ? ` – ${v.stand}` : ''}
+                  <span style={{ color: '#94a3b8' }}> · {String(v.text || '').length} Zeichen</span>
+                </div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    onClick={() => setOffeneVersion(offeneVersion === i ? null : i)}
+                    style={{ padding: '4px 10px', background: 'white', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    {offeneVersion === i ? 'Zuklappen' : 'Ansehen'}
+                  </button>
+                  <button
+                    onClick={() => versionWiederherstellen(v, i)}
+                    style={{ padding: '4px 10px', background: '#1e3a5f', color: 'white', border: 'none', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+                  >
+                    Wiederherstellen
+                  </button>
+                </div>
+              </div>
+              {offeneVersion === i && (
+                <pre style={{ marginTop: '10px', whiteSpace: 'pre-wrap', fontFamily: 'Georgia, serif', fontSize: '13px', lineHeight: '1.6', color: '#374151', maxHeight: '320px', overflowY: 'auto' }}>
+                  {v.text}
+                </pre>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// =====================================================
+// IDEEN-PARKPLATZ
+// Einfälle, die noch keinen Ort haben, aber nicht verloren gehen dürfen.
+// =====================================================
+const ParkplatzTool = ({ items, onChange, onToSzenenidee, onAddToSchreibflaeche }) => {
+  const liste = items || [];
+  const [neuTitel, setNeuTitel] = useState('');
+  const [neuNotiz, setNeuNotiz] = useState('');
+  const [bearbeitet, setBearbeitet] = useState(null);
+
+  const hinzufuegen = () => {
+    if (!neuTitel.trim()) return;
+    onChange([...liste, {
+      id: `pp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      titel: neuTitel.trim(),
+      notiz: neuNotiz.trim(),
+      herkunft: '',
+      angelegt: new Date().toLocaleDateString('de-CH')
+    }]);
+    setNeuTitel('');
+    setNeuNotiz('');
+  };
+
+  const aendern = (id, feld, wert) => {
+    onChange(liste.map(p => p.id === id ? { ...p, [feld]: wert } : p));
+  };
+
+  const loeschen = (id) => onChange(liste.filter(p => p.id !== id));
+
+  return (
+    <div className="tool-content">
+      <p className="tool-intro">
+        Für alles, was gut ist, aber noch keinen Platz hat. Nichts davon muss ins Stück –
+        es soll nur nicht vergessen gehen. Der Dramaturg sieht den Parkplatz mit und meldet
+        sich, wenn eine Idee plötzlich irgendwo hingehört.
+      </p>
+
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '12px', marginBottom: '18px' }}>
+        <input
+          type="text"
+          value={neuTitel}
+          onChange={(e) => setNeuTitel(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); hinzufuegen(); } }}
+          placeholder="Die Idee in einem Halbsatz"
+          style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', marginBottom: '8px' }}
+        />
+        <textarea
+          value={neuNotiz}
+          onChange={(e) => setNeuNotiz(e.target.value)}
+          placeholder="Woher sie kommt, warum sie dich interessiert (optional)"
+          style={{ width: '100%', minHeight: '60px', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '14px', resize: 'vertical' }}
+        />
+        <button
+          onClick={hinzufuegen}
+          disabled={!neuTitel.trim()}
+          style={{ marginTop: '8px', padding: '7px 16px', background: neuTitel.trim() ? '#1e3a5f' : '#e5e7eb', color: neuTitel.trim() ? 'white' : '#9ca3af', border: 'none', borderRadius: '6px', fontSize: '14px', cursor: neuTitel.trim() ? 'pointer' : 'default' }}
+        >
+          🅿️ Parkieren
+        </button>
+      </div>
+
+      {liste.length === 0 ? (
+        <p style={{ color: '#94a3b8', fontSize: '14px' }}>Noch nichts parkiert.</p>
+      ) : (
+        liste.map((p) => (
+          <div key={p.id} style={{ border: '1px solid #e5e7eb', borderRadius: '8px', padding: '12px', marginBottom: '10px', background: 'white' }}>
+            {bearbeitet === p.id ? (
+              <>
+                <input
+                  type="text"
+                  value={p.titel}
+                  onChange={(e) => aendern(p.id, 'titel', e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '14px', fontWeight: 600, marginBottom: '6px' }}
+                />
+                <textarea
+                  value={p.notiz || ''}
+                  onChange={(e) => aendern(p.id, 'notiz', e.target.value)}
+                  style={{ width: '100%', minHeight: '60px', padding: '6px 8px', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '13px', resize: 'vertical' }}
+                />
+              </>
+            ) : (
+              <>
+                <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px' }}>{p.titel}</div>
+                {p.notiz && <div style={{ fontSize: '13px', color: '#475569', whiteSpace: 'pre-wrap' }}>{p.notiz}</div>}
+                {(p.herkunft || p.angelegt) && (
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '6px' }}>
+                    {p.herkunft ? `aus: ${p.herkunft}` : ''}{p.herkunft && p.angelegt ? ' · ' : ''}{p.angelegt || ''}
+                  </div>
+                )}
+              </>
+            )}
+            <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setBearbeitet(bearbeitet === p.id ? null : p.id)}
+                style={{ padding: '4px 10px', background: 'white', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                {bearbeitet === p.id ? '✓ Fertig' : '✏️ Bearbeiten'}
+              </button>
+              {onToSzenenidee && (
+                <button
+                  onClick={() => { onToSzenenidee(p); loeschen(p.id); }}
+                  style={{ padding: '4px 10px', background: 'white', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+                  title="Als Szenen-Idee ins Material verschieben"
+                >
+                  🎬 Ins Material
+                </button>
+              )}
+              {onAddToSchreibflaeche && (
+                <button
+                  onClick={() => onAddToSchreibflaeche({ type: 'text', title: p.titel, content: p.notiz || p.titel })}
+                  style={{ padding: '4px 10px', background: 'white', border: '1px solid #d1d5db', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+                >
+                  ✍️ Sammelfläche
+                </button>
+              )}
+              <button
+                onClick={() => loeschen(p.id)}
+                style={{ padding: '4px 10px', background: 'white', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: '5px', fontSize: '12px', cursor: 'pointer' }}
+              >
+                Löschen
+              </button>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+};
+
 const TreatmentTool = ({ onOpenGenerator }) => {
   return (
     <div className="treatment-tool-mini">
@@ -16698,6 +16996,16 @@ const DEFAULT_DATA = {
   reflexionsNotizen: {},
   recherche: [],
   kommentare: [],
+  // Arbeitsfassung der Geschichte. Wird mitentwickelt und versioniert:
+  // jede übernommene Neufassung schiebt die vorherige in versionen.
+  treatment: {
+    text: '',
+    stand: '',
+    aktualisiert: '',
+    versionen: []
+  },
+  // Ideen, die noch keinen Platz gefunden haben, aber nicht verloren gehen sollen.
+  parkplatz: [],
   dossier: {
     projektbeschreibung: '',
     warumJetzt: '',
@@ -16746,7 +17054,13 @@ const loadSavedState = () => {
           szenenIdeen: parsed.data.szenenIdeen || [],
           vorgaben: parsed.data.vorgaben || [],
           recherche: parsed.data.recherche || [],
+          parkplatz: parsed.data.parkplatz || [],
           // Objekte sicher initialisieren
+          treatment: {
+            ...DEFAULT_DATA.treatment,
+            ...(parsed.data.treatment || {}),
+            versionen: parsed.data.treatment?.versionen || []
+          },
           fundament: { ...DEFAULT_DATA.fundament, ...(parsed.data.fundament || {}) },
           dossier: { ...DEFAULT_DATA.dossier, ...(parsed.data.dossier || {}) },
           schreibflaecheInhalte: parsed.data.schreibflaecheInhalte || {},
@@ -19572,7 +19886,43 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         setData(prev => ({ ...prev, figuren: [...(prev.figuren || []), neueFigur] }));
         return `✅ Figur "${neueFigur.name}" hinzugefügt`;
       }
-      
+
+      case 'figur_aktualisieren': {
+        // Eine bestehende Figur ergänzen oder korrigieren – ohne sie neu anzulegen.
+        const d = action.daten || {};
+        const suchName = String(d.name || d.figur || '').trim();
+        const figIdx = (data.figuren || []).findIndex(
+          f => (f.name || '').toLowerCase().trim() === suchName.toLowerCase()
+        );
+        if (figIdx < 0) return `❌ Figur "${suchName || '?'}" nicht gefunden`;
+        const ALIAS = {
+          neuer_name: 'name', want: 'ziel', need: 'beduerfnis', ghost: 'praegung',
+          beschreibung: 'charakteristik', biografie: 'backstory', schwaeche: 'praegung',
+          geheimnis: 'geheimnisse', widerspruch: 'widersprueche'
+        };
+        const ERLAUBT = ['name', 'spitzname', 'alter', 'geschlecht', 'beruf', 'herkunft',
+          'charakteristik', 'erscheinung', 'physische_eigenheiten', 'sprechweise', 'ziel',
+          'beduerfnis', 'praegung', 'praegende_ereignisse', 'backstory', 'geheimnisse',
+          'widersprueche', 'archetyp'];
+        const updates = {};
+        const geaendert = [];
+        Object.keys(d).forEach(k => {
+          if (k === 'name' || k === 'figur') return;
+          const feld = ALIAS[k] || k;
+          if (!ERLAUBT.includes(feld)) return;
+          const v = d[k];
+          if (typeof v !== 'string' || !v.trim()) return;
+          updates[feld] = v;
+          geaendert.push(feld);
+        });
+        if (!geaendert.length) return `ℹ️ Keine gültigen Felder für "${suchName}" angegeben`;
+        setData(prev => ({
+          ...prev,
+          figuren: (prev.figuren || []).map((f, i) => i === figIdx ? { ...f, ...updates } : f)
+        }));
+        return `✅ Figur "${suchName}" ergänzt: ${geaendert.join(', ')}`;
+      }
+
       case 'szene_hinzufuegen': {
         // Prüfen ob explizit in Zeitstrahl gewünscht
         const inZeitstrahl = action.daten.in_zeitstrahl === true;
@@ -19916,27 +20266,247 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
       }
 
       case 'fundament_setzen': {
+        // Beliebige Fundament-Felder setzen – nicht nur die vier bekannten.
         const d = action.daten || {};
-        const gesetzt = [];
-        if (d.logline) gesetzt.push('Logline');
-        if (d.titel != null || d.untertitel != null || d.tagline != null) gesetzt.push('Titel/Tagline');
-        if (d.kernthema) gesetzt.push('Kernthema');
-        if (d.unaussprechliches) gesetzt.push('Unaussprechliches');
-        if (!gesetzt.length) return 'ℹ️ Keine Fundament-Felder angegeben';
+        const keys = Object.keys(d).filter(k => d[k] != null && d[k] !== '');
+        if (!keys.length) return 'ℹ️ Keine Fundament-Felder angegeben';
         setData(prev => {
           const f = { ...(prev.fundament || {}) };
-          if (d.logline) f.logline = { ...(f.logline && typeof f.logline === 'object' ? f.logline : {}), text: d.logline };
-          if (d.titel != null || d.untertitel != null || d.tagline != null) {
-            f.titel = { ...(f.titel && typeof f.titel === 'object' ? f.titel : {}) };
-            if (d.titel != null) f.titel.titel = d.titel;
-            if (d.untertitel != null) f.titel.untertitel = d.untertitel;
-            if (d.tagline != null) f.titel.tagline = d.tagline;
-          }
-          if (d.kernthema) f.kernthema = d.kernthema;
-          if (d.unaussprechliches) f.unaussprechliches = d.unaussprechliches;
+          keys.forEach(k => {
+            const v = d[k];
+            if (k === 'logline') {
+              f.logline = {
+                ...(f.logline && typeof f.logline === 'object' ? f.logline : {}),
+                ...(typeof v === 'object' ? v : { text: v })
+              };
+              return;
+            }
+            if (k === 'titel' || k === 'untertitel' || k === 'tagline') {
+              f.titel = { ...(f.titel && typeof f.titel === 'object' ? f.titel : {}) };
+              if (typeof v === 'object') Object.assign(f.titel, v);
+              else f.titel[k] = v;
+              return;
+            }
+            if (v && typeof v === 'object' && !Array.isArray(v) && f[k] && typeof f[k] === 'object') {
+              f[k] = { ...f[k], ...v };
+            } else {
+              f[k] = v;
+            }
+          });
           return { ...prev, fundament: f };
         });
-        return `✅ Fundament gesetzt: ${gesetzt.join(', ')}`;
+        return `✅ Fundament gesetzt: ${keys.join(', ')}`;
+      }
+
+      // Generischer Schreibzugriff auf alle übrigen Werkzeuge. Damit muss nicht
+      // für jedes Werkzeug eine eigene Aktion gebaut werden.
+      case 'werkzeug_setzen': {
+        const d = action.daten || {};
+        const ERLAUBTE_WERKZEUGE = {
+          wertequadrat: 'Wertequadrat',
+          wertequadrat_zuordnung: 'Wertequadrat-Zuordnung',
+          maerchenmodell: 'Märchenmodell',
+          archetypen: 'Archetypen',
+          kraefte: 'Kräfte',
+          schauplatz: 'Schauplatz',
+          zeit: 'Zeit',
+          musik: 'Musik',
+          themaDetails: 'Thema-Details',
+          dossier: 'Dossier',
+          impulsfragen_notizen: 'Impulsfragen-Notizen',
+          reflexionsNotizen: 'Reflexions-Notizen',
+          autor: 'Autor',
+          schreibflaeche: 'Schreibfläche',
+          aktuelle_szene: 'Szene (Werkzeug)',
+          projektName: 'Projektname'
+        };
+        const WERKZEUG_ALIAS = {
+          'märchenmodell': 'maerchenmodell', maerchen: 'maerchenmodell',
+          ort: 'schauplatz', setting: 'schauplatz', setting_place: 'schauplatz',
+          setting_time: 'zeit', zeitebene: 'zeit',
+          thema_details: 'themaDetails', themadetails: 'themaDetails', thema: 'themaDetails',
+          sammelflaeche: 'schreibflaeche', 'sammelfläche': 'schreibflaeche',
+          notizen: 'reflexionsNotizen', werte: 'wertequadrat',
+          konfliktkraefte: 'kraefte', 'kräfte': 'kraefte'
+        };
+        // Zwei Schreibweisen erlaubt: {"werkzeug": "schauplatz", "werte": {...}}
+        // oder direkt {"schauplatz": {...}, "zeit": {...}}
+        const auftraege = [];
+        if (d.werkzeug) {
+          auftraege.push([d.werkzeug, d.werte !== undefined ? d.werte : d.wert]);
+        } else {
+          Object.keys(d).forEach(k => {
+            if (k === 'modus') return;
+            auftraege.push([k, d[k]]);
+          });
+        }
+        const modus = String(d.modus || '').toLowerCase();
+        const gesetzt = [], abgelehnt = [];
+        const patches = [];
+        auftraege.forEach(([rohName, wert]) => {
+          const schluessel = ERLAUBTE_WERKZEUGE[rohName]
+            ? rohName
+            : WERKZEUG_ALIAS[String(rohName).toLowerCase()];
+          if (!schluessel || !ERLAUBTE_WERKZEUGE[schluessel]) {
+            abgelehnt.push(String(rohName));
+            return;
+          }
+          if (wert === undefined || wert === null || wert === '') return;
+          patches.push([schluessel, wert]);
+          gesetzt.push(ERLAUBTE_WERKZEUGE[schluessel]);
+        });
+        if (!patches.length) {
+          return abgelehnt.length
+            ? `❌ Unbekanntes Werkzeug: ${abgelehnt.join(', ')}`
+            : 'ℹ️ Keine Werte angegeben';
+        }
+        setData(prev => {
+          const next = { ...prev };
+          patches.forEach(([k, v]) => {
+            const alt = next[k];
+            if (typeof v === 'string') {
+              next[k] = (modus === 'anhaengen' && typeof alt === 'string' && alt.trim())
+                ? `${alt}\n\n${v}`
+                : v;
+              return;
+            }
+            if (Array.isArray(v)) {
+              next[k] = (modus === 'anhaengen' && Array.isArray(alt)) ? [...alt, ...v] : v;
+              return;
+            }
+            if (v && typeof v === 'object') {
+              next[k] = (alt && typeof alt === 'object' && !Array.isArray(alt))
+                ? { ...alt, ...v }
+                : v;
+              return;
+            }
+            next[k] = v;
+          });
+          return next;
+        });
+        const warnung = abgelehnt.length ? ` (ignoriert: ${abgelehnt.join(', ')})` : '';
+        return `✅ Eingetragen in: ${gesetzt.join(', ')}${warnung}`;
+      }
+
+      // Arbeitsfassung der Geschichte. Die alte Fassung wandert in die Versionen,
+      // damit nichts verloren geht.
+      case 'treatment_schreiben': {
+        const d = action.daten || {};
+        const neuerText = String(d.text || d.treatment || '').trim();
+        if (!neuerText) return 'ℹ️ Kein Treatment-Text angegeben';
+        const anhaengen = String(d.modus || '').toLowerCase() === 'anhaengen';
+        const stand = String(d.stand || d.begruendung || d.hinweis || '').trim();
+        const datum = new Date().toLocaleString('de-CH', {
+          day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        });
+        setData(prev => {
+          const alt = prev.treatment || { text: '', versionen: [] };
+          const altText = String(alt.text || '');
+          const versionen = altText.trim()
+            ? [{ text: altText, stand: alt.stand || '', datum: alt.aktualisiert || '' }, ...(alt.versionen || [])].slice(0, 20)
+            : (alt.versionen || []);
+          return {
+            ...prev,
+            treatment: {
+              ...alt,
+              text: anhaengen && altText.trim() ? `${altText}\n\n${neuerText}` : neuerText,
+              stand,
+              aktualisiert: datum,
+              versionen
+            }
+          };
+        });
+        const alteLaenge = (data.treatment?.text || '').trim().length;
+        return alteLaenge
+          ? `✅ Treatment ${anhaengen ? 'ergänzt' : 'neu gefasst'} (${neuerText.length} Zeichen). Die bisherige Fassung liegt als Version bereit.${stand ? `\nGrund: ${stand}` : ''}`
+          : `✅ Treatment angelegt (${neuerText.length} Zeichen)${stand ? `\nGrund: ${stand}` : ''}`;
+      }
+
+      case 'parkplatz_hinzufuegen': {
+        const d = action.daten || {};
+        const roh = Array.isArray(d.ideen) ? d.ideen : [d];
+        const neue = roh.map(e => {
+          const titel = String(e.titel || e.name || e.idee || e.text || '').trim();
+          if (!titel) return null;
+          return {
+            id: `pp_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            titel,
+            notiz: String(e.notiz || e.beschreibung || e.begruendung || '').trim(),
+            herkunft: String(e.herkunft || '').trim(),
+            angelegt: new Date().toLocaleDateString('de-CH')
+          };
+        }).filter(Boolean);
+        if (!neue.length) return 'ℹ️ Keine Idee angegeben';
+        setData(prev => ({ ...prev, parkplatz: [...(prev.parkplatz || []), ...neue] }));
+        return `✅ ${neue.length === 1 ? 'Idee' : neue.length + ' Ideen'} auf dem Parkplatz: ${neue.map(n => `"${n.titel}"`).join(', ')}`;
+      }
+
+      case 'thema_aktualisieren': {
+        const d = action.daten || {};
+        const such = String(d.name || d.thema || '').trim().toLowerCase();
+        const idx = (data.themen || []).findIndex(t => (t.name || '').trim().toLowerCase() === such);
+        if (idx < 0) return `❌ Thema "${d.name || d.thema || '?'}" nicht gefunden`;
+        const updates = {};
+        Object.keys(d).forEach(k => {
+          if (k === 'name' || k === 'thema' || k === 'id') return;
+          const feld = k === 'neuer_name' ? 'name' : (k === 'gegenbegriff' ? 'contrast' : k);
+          const v = d[k];
+          if (v === undefined || v === null || v === '') return;
+          updates[feld] = v;
+        });
+        const felder = Object.keys(updates);
+        if (!felder.length) return `ℹ️ Keine Felder für Thema "${d.name || ''}" angegeben`;
+        setData(prev => ({
+          ...prev,
+          themen: (prev.themen || []).map((t, i) => i === idx ? { ...t, ...updates } : t)
+        }));
+        return `✅ Thema "${data.themen[idx].name}" ergänzt: ${felder.join(', ')}`;
+      }
+
+      case 'szenenidee_aktualisieren': {
+        const d = action.daten || {};
+        const ideen = data.szenenIdeen || [];
+        const such = String(d.titel || d.name || '').trim().toLowerCase();
+        let idx = typeof d.index === 'number' ? d.index - 1 : -1;
+        if (idx < 0 && such) idx = ideen.findIndex(s => (s.titel || '').trim().toLowerCase() === such);
+        if (idx < 0 && such) idx = ideen.findIndex(s => (s.titel || '').toLowerCase().includes(such));
+        if (idx < 0 || idx >= ideen.length) return `❌ Szenen-Idee "${d.titel || d.name || d.index || '?'}" nicht gefunden`;
+        const anhaengen = String(d.modus || 'anhaengen').toLowerCase() !== 'ersetzen';
+        const neuerTitel = String(d.neuer_titel || '').trim();
+        const notizZusatz = String(d.notizen || d.notiz || d.beschreibung || d.zusammenfassung || '').trim();
+        if (!neuerTitel && !notizZusatz) return 'ℹ️ Keine Änderung angegeben';
+        setData(prev => ({
+          ...prev,
+          szenenIdeen: (prev.szenenIdeen || []).map((s, i) => {
+            if (i !== idx) return s;
+            const alt = String(s.notizen || '');
+            return {
+              ...s,
+              titel: neuerTitel || s.titel,
+              notizen: notizZusatz
+                ? (anhaengen && alt.trim() ? `${alt}\n${notizZusatz}` : notizZusatz)
+                : s.notizen
+            };
+          })
+        }));
+        return `✅ Szenen-Idee "${neuerTitel || ideen[idx].titel}" ${anhaengen ? 'ergänzt' : 'überschrieben'}`;
+      }
+
+      case 'recherche_hinzufuegen': {
+        const d = action.daten || {};
+        const titel = String(d.titel || d.name || '').trim();
+        const inhalt = String(d.inhalt || d.text || d.notiz || '').trim();
+        if (!titel && !inhalt) return 'ℹ️ Kein Recherche-Eintrag angegeben';
+        const neu = {
+          id: `re_ki_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          type: 'text',
+          titel: titel || 'Notiz',
+          inhalt,
+          quelle: String(d.quelle || '').trim(),
+          datum: new Date().toLocaleDateString('de-CH')
+        };
+        setData(prev => ({ ...prev, recherche: [...(prev.recherche || []), neu] }));
+        return `✅ Recherche-Eintrag "${neu.titel}" abgelegt`;
       }
 
       case 'parse_error':
@@ -20034,17 +20604,22 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         .replace(/\n{3,}/g, '\n\n').trim();
     };
 
+    // Szenentexte sind der mit Abstand grösste Posten im Kontext. Bei kleinen
+    // Projekten gehen sie immer mit; bei langen Stücken nur dann, wenn die Frage
+    // tatsächlich am Text hängt. Sonst reichen Titel und Zusammenfassung.
+    const dialogGesamtlaenge = (data.felder || []).reduce((sum, f) => sum + (f.inhalt || '').length, 0);
+    const dialogAngefragt = /dialog|szenentext|wortlaut|replik|passage|stelle|zitat|schreib|formulier|überarbeit|umschreib|kürz|streich|redigier|sprech|monolog|repliken|text\b|szene\s*\d|akt\s*\d/i.test(userMessage);
+    const dialogeMitschicken = dialogGesamtlaenge < 30000 || dialogAngefragt;
+
     // Szenen MIT Dialogtext aufbauen — intelligent kürzen bei langen Stücken
     const szenenMitDialog = (() => {
       const felder = data.felder || [];
       if (felder.length === 0) return 'Keine Szenen';
-      // Gesamtlänge abschätzen für Kürzung
-      const totalRaw = felder.reduce((sum, f) => sum + (f.inhalt || '').length, 0);
-      const maxPerScene = totalRaw > 80000 ? 1500 : 0; // Kürzen bei sehr langen Stücken
+      const maxPerScene = dialogGesamtlaenge > 80000 ? 1500 : 0; // Kürzen bei sehr langen Stücken
       return felder.map((f, i) => {
         const figuren = (f.figuren || []).map(fid => data.figuren?.find(fig => fig.id === fid)?.name).filter(Boolean);
         const figurenStr = figuren.length > 0 ? ` — Figuren: ${figuren.join(', ')}` : '';
-        let dialogText = htmlToText(f.inhalt || '');
+        let dialogText = dialogeMitschicken ? htmlToText(f.inhalt || '') : '';
         if (maxPerScene > 0 && dialogText.length > maxPerScene) {
           dialogText = dialogText.slice(0, maxPerScene) + '\n[... gekürzt]';
         }
@@ -20052,32 +20627,125 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
         if (dialogText) {
           block += `\n   --- SZENENTEXT ---\n${dialogText}\n   --- ENDE SZENE ${i+1} ---`;
         }
+        if (!dialogeMitschicken && (f.inhalt || '').trim()) {
+          block += `\n   (Szenentext vorhanden, ${htmlToText(f.inhalt).length} Zeichen – aus Spargründen nicht mitgeschickt. Frag danach, dann liefere ich ihn.)`;
+        }
         return block;
       }).join('\n\n');
     })();
 
+    // ---------------------------------------------------------------
+    // VOLLSTÄNDIGER PROJEKT-STAND
+    // Der Dramaturg soll alles sehen, was in der App gepflegt ist –
+    // nicht nur Name/Will/Spricht. Darum werden alle Werkzeug-Objekte
+    // generisch ausgelesen und lesbar aufbereitet.
+    // ---------------------------------------------------------------
+    const _kuerze = (s, max) => {
+      const t = String(s).trim();
+      return t.length > max ? t.slice(0, max) + ' […]' : t;
+    };
+    const _ignorierteSchluessel = ['id', 'portrait', 'portraitType', 'position', 'farbe', 'createdAt', 'updatedAt'];
+    // Beliebiges Objekt rekursiv in «pfad: wert»-Zeilen auflösen
+    const _flach = (obj, pfad = '', tiefe = 0) => {
+      const zeilen = [];
+      if (obj == null || tiefe > 4) return zeilen;
+      if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') {
+        const s = String(obj).trim();
+        if (s && s !== 'false' && s !== '0') zeilen.push(`${pfad}: ${_kuerze(s, 800)}`);
+        return zeilen;
+      }
+      if (Array.isArray(obj)) {
+        obj.forEach((v, i) => zeilen.push(..._flach(v, `${pfad}[${i + 1}]`, tiefe + 1)));
+        return zeilen;
+      }
+      if (typeof obj === 'object') {
+        Object.keys(obj).forEach(k => {
+          if (_ignorierteSchluessel.includes(k)) return;
+          zeilen.push(..._flach(obj[k], pfad ? `${pfad}.${k}` : k, tiefe + 1));
+        });
+      }
+      return zeilen;
+    };
+    const _block = (titel, obj) => {
+      const z = _flach(obj);
+      return z.length ? `\n${titel}:\n${z.join('\n')}\n` : '';
+    };
+
+    // Figuren mit ALLEN Feldern
+    const FIGUR_LABELS = {
+      spitzname: 'Spitzname', alter: 'Alter', geschlecht: 'Geschlecht', beruf: 'Beruf',
+      herkunft: 'Herkunft', charakteristik: 'Charakteristik', erscheinung: 'Erscheinung',
+      physische_eigenheiten: 'Physisches', sprechweise: 'Sprechweise',
+      ziel: 'Will (Want)', beduerfnis: 'Braucht (Need)', praegung: 'Prägung (Ghost)',
+      praegende_ereignisse: 'Prägende Ereignisse', backstory: 'Backstory',
+      geheimnisse: 'Geheimnis', widersprueche: 'Widerspruch', archetyp: 'Archetyp'
+    };
+    const figurenText = (data.figuren || []).map((f, i) => {
+      const zeilen = [];
+      Object.keys(FIGUR_LABELS).forEach(k => {
+        const v = f[k];
+        if (typeof v === 'string' && v.trim()) zeilen.push(`   ${FIGUR_LABELS[k]}: ${_kuerze(v, 800)}`);
+      });
+      // Beziehungen liegen als beziehung_<figurId> auf der Figur
+      Object.keys(f).filter(k => k.startsWith('beziehung_')).forEach(k => {
+        const b = f[k];
+        if (!b || (!b.art && !b.beschreibung)) return;
+        const andere = (data.figuren || []).find(x => x.id === k.replace('beziehung_', ''));
+        zeilen.push(`   Beziehung zu ${andere?.name || '?'}: ${[b.art, b.beschreibung].filter(Boolean).join(' – ')}`);
+      });
+      // Alles Übrige (z.B. Fünf Eckpfeiler) generisch mitgeben
+      Object.keys(f).forEach(k => {
+        if (k === 'name' || k in FIGUR_LABELS || k.startsWith('beziehung_') || _ignorierteSchluessel.includes(k)) return;
+        _flach(f[k], k).forEach(z => zeilen.push(`   ${z}`));
+      });
+      return `${i}. ${f.name || '(ohne Namen)'}\n${zeilen.join('\n') || '   (noch keine Angaben)'}`;
+    }).join('\n\n') || 'Keine Figuren';
+
+    // Themen mit allen gepflegten Feldern
+    const themenText = (data.themen || []).map((t, i) => {
+      const zeilen = _flach(t).filter(z => !z.startsWith('name:'));
+      return `${i + 1}. ${t.name || '(ohne Namen)'}${zeilen.length ? '\n   ' + zeilen.join('\n   ') : ''}`;
+    }).join('\n') || 'Keine';
+
+    // Szenen-Ideen inkl. Notizen
+    const szenenIdeenText = (data.szenenIdeen || []).map((s, i) => {
+      const zeilen = _flach(s).filter(z => !z.startsWith('titel:'));
+      return `${i + 1}. "${s.titel || '(ohne Titel)'}"${zeilen.length ? '\n   ' + zeilen.join('\n   ') : ''}`;
+    }).join('\n') || 'Keine';
+
+    const rechercheText = (data.recherche || []).map((r, i) =>
+      `${i + 1}. ${r.titel || r.name || 'Eintrag'}${r.quelle ? ` (${r.quelle})` : ''}${r.inhalt || r.text ? `\n   ${_kuerze(r.inhalt || r.text, 1200)}` : ''}`
+    ).join('\n') || '';
+
     // Detaillierten Kontext aufbauen
     const projektKontext = `
-AKTUELLER PROJEKT-STAND:
+AKTUELLER PROJEKT-STAND (vollständig – du siehst hier alles, was in der App gepflegt ist;
+was hier nicht steht, ist im Projekt tatsächlich noch leer):
 Titel: ${data.projektName}
+${_block('FUNDAMENT', data.fundament)}${_block('WERTEQUADRAT', data.wertequadrat)}${_block('MÄRCHENMODELL', data.maerchenmodell)}${_block('ARCHETYPEN', data.archetypen)}${_block('KRÄFTE', data.kraefte)}${_block('SCHAUPLATZ', data.schauplatz)}${_block('ZEIT', data.zeit)}${_block('THEMA-DETAILS', data.themaDetails)}
+FIGUREN (${(data.figuren || []).length}) – alle gepflegten Felder:
+${figurenText}
 
-FIGUREN (${data.figuren.length}):
-${(data.figuren || []).map((f, i) => `${i}. ${f.name}${f.ziel ? ` - Will: ${f.ziel}` : ''}${f.sprechweise ? ` - Spricht: ${f.sprechweise}` : ''}`).join('\n') || 'Keine Figuren'}
+THEMEN (${(data.themen || []).length}):
+${themenText}
 
-THEMEN (${data.themen.length}):
-${(data.themen || []).map(t => t.name).join(', ') || 'Keine'}
-
-SZENEN MIT DIALOGEN (${data.felder.length}):
+SZENEN MIT DIALOGEN (${(data.felder || []).length}):
 ${szenenMitDialog}
 
 SZENEN-IDEEN IM MATERIAL (${data.szenenIdeen?.length || 0}):
-${data.szenenIdeen?.map(s => `- "${s.titel}"`).join('\n') || 'Keine'}
+${szenenIdeenText}
 
-CONSTRAINTS:
-${data.vorgaben?.map(c => c.text || c.titel || c.name).join(', ') || 'Keine'}
+VORGABEN / CONSTRAINTS:
+${data.vorgaben?.map(c => `- ${c.text || c.titel || c.name}`).join('\n') || 'Keine'}
 
-SCHREIBFLÄCHE:
-${data.schreibflaeche?.substring(0, 500) || '(leer)'}${data.schreibflaeche?.length > 500 ? '...' : ''}
+TREATMENT (Arbeitsfassung der Geschichte${data.treatment?.aktualisiert ? `, zuletzt ${data.treatment.aktualisiert}` : ''}${(data.treatment?.versionen || []).length ? `, ${data.treatment.versionen.length} ältere Fassung(en) im Archiv` : ''}):
+${data.treatment?.text ? _kuerze(data.treatment.text, 24000) : '(noch keins – wenn ihr die Geschichte entwickelt habt, biete eine erste Fassung an)'}
+${data.treatment?.stand ? `Stand der letzten Fassung: ${data.treatment.stand}\n` : ''}
+IDEEN-PARKPLATZ (${(data.parkplatz || []).length}) – Einfälle ohne festen Ort, nicht vergessen:
+${(data.parkplatz || []).map((p, i) => `${i + 1}. ${p.titel}${p.notiz ? ` – ${_kuerze(p.notiz, 600)}` : ''}${p.herkunft ? ` (aus: ${p.herkunft})` : ''}`).join('\n') || 'Keine'}
+${rechercheText ? `\nRECHERCHE (${data.recherche.length}):\n${rechercheText}\n` : ''}${_block('DOSSIER', data.dossier)}${_block('NOTIZEN ZU IMPULSFRAGEN', data.impulsfragen_notizen)}${_block('REFLEXIONS-NOTIZEN', data.reflexionsNotizen)}
+SAMMELFLÄCHE / SCHREIBFLÄCHE (Notizfläche des Autors):
+${data.schreibflaeche ? _kuerze(data.schreibflaeche, 20000) : '(leer)'}
 ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${guidedAnswersText}` : ''}
     `.trim();
     
@@ -20088,7 +20756,13 @@ ${guidedAnswersText ? `\nGEFÜHRTE FRAGEN (Benutzer arbeitet gerade daran):${gui
       const requestBody = {
         model: getDrameraModell(),
         max_tokens: 8192,
-        system: DRAMATURG_SYSTEM_PROMPT + '\n\n' + projektKontext,
+        // Prompt Caching: Systemprompt und Projekt-Stand ändern sich zwischen zwei
+        // Fragen meist nicht. Als eigene Blöcke mit cache_control markiert kostet
+        // ihre Wiederverwendung nur noch einen Bruchteil des normalen Input-Preises.
+        system: [
+          { type: 'text', text: DRAMATURG_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
+          { type: 'text', text: projektKontext, cache_control: { type: 'ephemeral' } }
+        ],
         messages: (() => {
           const raw = [...dramaturgMessages.slice(-10), newUserMsg]
             .filter(m => m && m.content && String(m.content).trim())
@@ -25225,7 +25899,25 @@ STIL:
         apiKey={apiKey}
         data={data}
       />;
-      case 'treatment': return <TreatmentTool 
+      case 'treatment_text': return <TreatmentArbeitsfassungTool
+        treatment={data.treatment}
+        onChange={(v) => setData(p => ({ ...p, treatment: v }))}
+        onAddToSchreibflaeche={addToSchreibflaeche}
+      />;
+      case 'parkplatz': return <ParkplatzTool
+        items={data.parkplatz || []}
+        onChange={(v) => setData(p => ({ ...p, parkplatz: v }))}
+        onToSzenenidee={(p) => setData(prev => ({
+          ...prev,
+          szenenIdeen: [...(prev.szenenIdeen || []), {
+            id: `sz_pp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            titel: p.titel,
+            notizen: [p.notiz, p.herkunft ? `(aus: ${p.herkunft})` : ''].filter(Boolean).join('\n')
+          }]
+        }))}
+        onAddToSchreibflaeche={addToSchreibflaeche}
+      />;
+      case 'treatment': return <TreatmentTool
         onOpenGenerator={() => setCurrentView('treatment')}
       />;
       case 'dossier': return <DossierTool 
@@ -36823,6 +37515,8 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
               case 'zeit': case 'setting_time': return !!(data.zeit?.epoche || data.zeit?.zeitrahmen);
               case 'musik': return !!(data.musik?.konzept || (data.musik?.stuecke || []).length > 0);
               case 'recherche': case 'stoffrecherche': return (data.recherche || []).length > 0;
+              case 'treatment_text': return !!(data.treatment?.text || '').trim();
+              case 'parkplatz': return (data.parkplatz || []).length > 0;
               default: return false;
             }
           };
@@ -38028,6 +38722,15 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                             'szene_update_titel': `📝 Titel: "${action.titel || '?'}"`,
                             'szene_update_zusammenfassung': `📋 Zusammenfassung übernehmen`,
                             'projekt_befuellen': `📦 Projekt befüllen`,
+                            'figur_aktualisieren': `✏️ Figur "${action.daten?.name || '?'}" ergänzen`,
+                            'vorgabe_hinzufuegen': `➕ Vorgabe "${action.daten?.text || action.daten?.name || '?'}"`,
+                            'fundament_setzen': `🧱 Fundament setzen`,
+                            'werkzeug_setzen': `🔧 ${action.daten?.werkzeug || Object.keys(action.daten || {}).filter(k => k !== 'modus').join(', ') || 'Werkzeug'} eintragen`,
+                            'treatment_schreiben': `📜 Treatment ${action.daten?.modus === 'anhaengen' ? 'ergänzen' : 'neu fassen'}`,
+                            'parkplatz_hinzufuegen': `🅿️ Idee parkieren: "${action.daten?.titel || action.daten?.ideen?.[0]?.titel || '?'}"`,
+                            'thema_aktualisieren': `✏️ Thema "${action.daten?.name || '?'}" ergänzen`,
+                            'szenenidee_aktualisieren': `✏️ Szenen-Idee "${action.daten?.titel || action.daten?.index || '?'}" ergänzen`,
+                            'recherche_hinzufuegen': `📚 Recherche "${action.daten?.titel || '?'}" ablegen`,
                             'struktur_wechseln': `📐 Zu "${action.daten?.neues_raster || '?'}" wechseln`,
                             'parse_error': `⚠️ JSON-Fehler: ${action.daten?.error || '?'}`
                           };
@@ -38262,6 +38965,13 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               'projekt_befuellen': `📦 Projekt befüllen`,
                               'vorgabe_hinzufuegen': `➕ Vorgabe "${action.daten?.text || action.daten?.name || '?'}"`,
                               'fundament_setzen': `🧱 Fundament setzen`,
+                              'figur_aktualisieren': `✏️ Figur "${action.daten?.name || '?'}" ergänzen`,
+                              'werkzeug_setzen': `🔧 ${action.daten?.werkzeug || Object.keys(action.daten || {}).filter(k => k !== 'modus').join(', ') || 'Werkzeug'} eintragen`,
+                              'treatment_schreiben': `📜 Treatment ${action.daten?.modus === 'anhaengen' ? 'ergänzen' : 'neu fassen'}`,
+                              'parkplatz_hinzufuegen': `🅿️ Idee parkieren: "${action.daten?.titel || action.daten?.ideen?.[0]?.titel || '?'}"`,
+                              'thema_aktualisieren': `✏️ Thema "${action.daten?.name || '?'}" ergänzen`,
+                              'szenenidee_aktualisieren': `✏️ Szenen-Idee "${action.daten?.titel || action.daten?.index || '?'}" ergänzen`,
+                              'recherche_hinzufuegen': `📚 Recherche "${action.daten?.titel || '?'}" ablegen`,
                               'struktur_wechseln': `📐 Zu "${action.daten?.neues_raster || '?'}" wechseln`,
                               'parse_error': `⚠️ JSON-Fehler: ${action.daten?.error || '?'}`
                             };
