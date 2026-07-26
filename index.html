@@ -8021,10 +8021,17 @@ const LoglineTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick }) =>
 };
 
 // ========== KONFLIKT TOOL ==========
+// Leere Form des Konflikts – einzige Quelle. Das Werkzeug benutzt sie zur
+// Migration alter Projekte, TOOL_SCHEMA als Formbeschreibung.
+const KONFLIKT_LEERFORM = {
+  protagonisten: [], antagonisten: [], beschreibung: '',
+  umWas: '', stakes: '', eskalation: '', ausgang: ''
+};
+
 const KonfliktTool = ({ value, onChange, figuren, onAddToSchreibflaeche, onWikiClick }) => {
   // Migration: alte Single-Select zu neuen Arrays
   const migrateValue = (val) => {
-    if (!val) return { protagonisten: [], antagonisten: [], beschreibung: '', umWas: '', stakes: '', eskalation: '', ausgang: '' };
+    if (!val) return { ...KONFLIKT_LEERFORM };
     return {
       ...val,
       protagonisten: val.protagonisten || (val.protagonist ? [val.protagonist] : []),
@@ -8452,9 +8459,10 @@ const EmotionaleBewegungTool = ({ value, onChange, onAddToSchreibflaeche, onWiki
           → Schreibfläche
         </button>
       )}
+      {/* Nur von/zu ersetzen – «kostet» und «Wendepunkt» wurden sonst stillschweigend gelöscht. */}
       <div className="templates-grid">
         {EMOTIONALE_BEWEGUNG_TEMPLATES.map((t, i) => (
-          <button key={i} className="template-btn" onClick={() => onChange({ von: t.von, zu: t.zu })}>
+          <button key={i} className="template-btn" onClick={() => onChange({ ...value, von: t.von, zu: t.zu })}>
             {t.von} → {t.zu}
           </button>
         ))}
@@ -8645,17 +8653,94 @@ const ThemaTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick }) => {
   );
 };
 
+// Die Zuordnung wurde historisch in mehreren Formen gespeichert: als blosser
+// String ('virtue_a'), als {position, entwicklung} und als {haltung, veraendert,
+// warum}. Beim Laden alles auf die aktuelle Form bringen, damit nichts verloren geht.
+const _wqZuordnungNormalisieren = (roh) => {
+  const out = {};
+  Object.entries(roh || {}).forEach(([figurId, v]) => {
+    if (!v) return;
+    if (typeof v === 'string') { out[figurId] = { haltung: v, veraendert: false, warum: '' }; return; }
+    const warum = v.warum || v.entwicklung || '';
+    out[figurId] = {
+      haltung: v.haltung || v.position || '',
+      veraendert: v.veraendert !== undefined ? !!v.veraendert : !!warum,
+      warum
+    };
+  });
+  return out;
+};
+
+// Die vier Felder des Wertequadrats – einzige Quelle. Sowohl die
+// Normalisierung als auch TOOL_SCHEMA leiten sich hieraus ab. alt hält die
+// älteren Feldnamen, die in bestehenden Projekten noch vorkommen.
+const WERTEQUADRAT_FELDER = [
+  { key: 'virtue_a', label: 'Wert A (Tugend)', alt: [], platzhalter: 'z.B. Sparsamkeit' },
+  { key: 'virtue_b', label: 'Wert B (Schwester-Tugend)', alt: [], platzhalter: 'z.B. Grosszügigkeit' },
+  { key: 'exaggeration_a', label: 'Negative Übertreibung A', alt: ['excess_a'], platzhalter: 'z.B. Geiz' },
+  { key: 'exaggeration_b', label: 'Negative Übertreibung B', alt: ['excess_b'], platzhalter: 'z.B. Verschwendung' }
+];
+
+// Ein Eintrag in wertequadrat_zuordnung, ebenfalls als einzige Quelle.
+const WERTEQUADRAT_ZUORDNUNG_FELDER = [
+  { key: 'haltung', label: 'Haltung zum Wertepaar', alt: ['position'], vorgabe: '' },
+  { key: 'veraendert', label: 'Verändert sich im Verlauf', alt: [], vorgabe: false },
+  { key: 'warum', label: 'Warum / wodurch', alt: ['entwicklung'], vorgabe: '' }
+];
+
+const _wqQuadratNormalisieren = (q) => {
+  const out = {};
+  WERTEQUADRAT_FELDER.forEach(f => {
+    let v = q?.[f.key];
+    if (!v) { for (const a of f.alt) { if (q?.[a]) { v = q[a]; break; } } }
+    out[f.key] = v || '';
+  });
+  return out;
+};
+
+// Seit Auftrag 3 ist ein leeres Wertequadrat {} und nicht mehr null. Wer
+// wissen will, ob etwas drinsteht, muss darum den Inhalt prüfen statt die
+// Wahrheit des Objekts.
+const _wqHatInhalt = (q) => {
+  const n = _wqQuadratNormalisieren(q);
+  return WERTEQUADRAT_FELDER.some(f => !!n[f.key]);
+};
+
 const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuordnungChange, onAddToSchreibflaeche, onWikiClick }) => {
   const [modus, setModus] = useState('eigen'); // 'eigen' | 'vorlage'
   const [selectedCategory, setSelectedCategory] = useState(null);
-  const [eigenerWert, setEigenerWert] = useState({
-    virtue_a: '',
-    virtue_b: '',
-    exaggeration_a: '',
-    exaggeration_b: ''
-  });
-  const [figurenHaltungen, setFigurenHaltungen] = useState({});
-  
+  const [eigenerWert, setEigenerWert] = useState(() => _wqQuadratNormalisieren(selectedQuadrat));
+  const [figurenHaltungen, setFigurenHaltungen] = useState(() => _wqZuordnungNormalisieren(zuordnung));
+
+  // Merkt sich, was dieses Werkzeug zuletzt selber nach oben gegeben hat. So
+  // lässt sich unterscheiden, ob eine Prop-Änderung von aussen kommt (KI,
+  // Projekt geladen) oder nur das Echo der eigenen Eingabe ist.
+  const letzterPushWert = useRef(JSON.stringify(_wqQuadratNormalisieren(selectedQuadrat)));
+  const letzterPushZuordnung = useRef(JSON.stringify(_wqZuordnungNormalisieren(zuordnung)));
+
+  useEffect(() => {
+    const aussen = JSON.stringify(_wqQuadratNormalisieren(selectedQuadrat));
+    if (aussen === letzterPushWert.current) return;
+    letzterPushWert.current = aussen;
+    setEigenerWert(_wqQuadratNormalisieren(selectedQuadrat));
+  }, [selectedQuadrat]);
+
+  useEffect(() => {
+    const aussen = JSON.stringify(_wqZuordnungNormalisieren(zuordnung));
+    if (aussen === letzterPushZuordnung.current) return;
+    letzterPushZuordnung.current = aussen;
+    setFigurenHaltungen(_wqZuordnungNormalisieren(zuordnung));
+  }, [zuordnung]);
+
+  // Jede Eingabe geht sofort in den Projektstand. Vorher lebten die Werte nur
+  // lokal und waren beim Werkzeugwechsel weg.
+  const setzeWert = (patch) => {
+    const neu = { ...eigenerWert, ...patch };
+    letzterPushWert.current = JSON.stringify(neu);
+    setEigenerWert(neu);
+    if (onSelect) onSelect(neu);
+  };
+
   // Aktuelles Quadrat (entweder eigen oder aus Vorlage)
   const aktuellesQuadrat = modus === 'eigen' ? eigenerWert : selectedQuadrat;
   const hatWerte = aktuellesQuadrat?.virtue_a && aktuellesQuadrat?.virtue_b;
@@ -8692,10 +8777,13 @@ const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuo
   };
   
   const updateFigurHaltung = (figurId, updates) => {
-    setFigurenHaltungen(prev => ({
-      ...prev,
-      [figurId]: { ...prev[figurId], ...updates }
-    }));
+    const neu = {
+      ...figurenHaltungen,
+      [figurId]: { haltung: '', veraendert: false, warum: '', ...figurenHaltungen[figurId], ...updates }
+    };
+    letzterPushZuordnung.current = JSON.stringify(neu);
+    setFigurenHaltungen(neu);
+    if (onZuordnungChange) onZuordnungChange(neu);
   };
   
   return (
@@ -8739,7 +8827,7 @@ const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuo
                 <input 
                   type="text"
                   value={eigenerWert.virtue_a}
-                  onChange={e => setEigenerWert(prev => ({ ...prev, virtue_a: e.target.value }))}
+                  onChange={e => setzeWert({ virtue_a: e.target.value })}
                   placeholder="z.B. Sparsamkeit"
                 />
               </div>
@@ -8749,7 +8837,7 @@ const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuo
                 <input 
                   type="text"
                   value={eigenerWert.virtue_b}
-                  onChange={e => setEigenerWert(prev => ({ ...prev, virtue_b: e.target.value }))}
+                  onChange={e => setzeWert({ virtue_b: e.target.value })}
                   placeholder="z.B. Grosszügigkeit"
                 />
               </div>
@@ -8763,7 +8851,7 @@ const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuo
                 <input 
                   type="text"
                   value={eigenerWert.exaggeration_a}
-                  onChange={e => setEigenerWert(prev => ({ ...prev, exaggeration_a: e.target.value }))}
+                  onChange={e => setzeWert({ exaggeration_a: e.target.value })}
                   placeholder="z.B. Geiz"
                 />
               </div>
@@ -8773,7 +8861,7 @@ const WertequadratTool = ({ onSelect, selectedQuadrat, figuren, zuordnung, onZuo
                 <input 
                   type="text"
                   value={eigenerWert.exaggeration_b}
-                  onChange={e => setEigenerWert(prev => ({ ...prev, exaggeration_b: e.target.value }))}
+                  onChange={e => setzeWert({ exaggeration_b: e.target.value })}
                   placeholder="z.B. Verschwendung"
                 />
               </div>
@@ -8993,13 +9081,30 @@ const ThemenbrowserTool = ({ onSelect, selectedThemes, onAddToSchreibflaeche }) 
                 type="text" 
                 value={eigenesThema.contrast} 
                 onChange={(e) => setEigenesThema(prev => ({ ...prev, contrast: e.target.value }))} 
-                placeholder="z.B. Entfremdung" 
+                placeholder="z.B. Entfremdung"
               />
             </div>
           </div>
+          {/* Ohne diesen Knopf blieb das eigene Thema nur lokal und war beim
+              Werkzeugwechsel wieder weg. */}
+          <button
+            className="thema-uebernehmen-btn"
+            disabled={!eigenesThema.name.trim()}
+            onClick={() => {
+              onSelect({ name: eigenesThema.name.trim(), contrast: eigenesThema.contrast.trim() });
+              setEigenesThema({ name: '', contrast: '' });
+            }}
+          >
+            + Thema übernehmen
+          </button>
+          {(selectedThemes || []).length > 0 && (
+            <div className="thema-uebernommen">
+              Im Projekt: {(selectedThemes || []).map(t => t.name).filter(Boolean).join(', ')}
+            </div>
+          )}
         </div>
       )}
-      
+
       {/* VORLAGEN */}
       {modus === 'vorlage' && (
         <div className="thema-vorlage">
@@ -9070,14 +9175,22 @@ const MotivTool = ({ onSelect, selectedMotive, onAddToSchreibflaeche, value, onC
   const [eigenesMotiv, setEigenesMotiv] = useState({ title: '', desc: '' });
   const [eigeneMotivListe, setEigeneMotivListe] = useState(value?.eigene || []);
   const [notizen, setNotizen] = useState(value?.notizen || '');
-  
-  // Sync mit value prop
+
+  // Merkt sich, was zuletzt selber nach oben gegeben wurde. So lässt sich eine
+  // Änderung von aussen (KI, Projekt geladen) vom Echo der eigenen Eingabe
+  // unterscheiden – und ein geleertes Feld bleibt geleert.
+  const letzterPush = useRef(JSON.stringify({ eigene: value?.eigene || [], notizen: value?.notizen || '' }));
+
   useEffect(() => {
-    if (value?.eigene) setEigeneMotivListe(value.eigene);
-    if (value?.notizen) setNotizen(value.notizen);
+    const aussen = JSON.stringify({ eigene: value?.eigene || [], notizen: value?.notizen || '' });
+    if (aussen === letzterPush.current) return;
+    letzterPush.current = aussen;
+    setEigeneMotivListe(value?.eigene || []);
+    setNotizen(value?.notizen || '');
   }, [value]);
-  
+
   const saveToValue = (eigene, notizenText) => {
+    letzterPush.current = JSON.stringify({ eigene, notizen: notizenText });
     if (onChange) {
       onChange({ eigene, notizen: notizenText, ausgewaehlt: selectedMotive });
     }
@@ -9955,10 +10068,16 @@ const GeheimnisseTool = ({ figuren, geheimnisse, onChange, onAddToSchreibflaeche
   };
   
   const updateGeheimnis = (id, updates) => {
-    const updated = (geheimnisse || []).map(g => 
-      g.id === id ? { ...g, ...updates } : g
-    );
-    onChange(updated);
+    const liste = geheimnisse || [];
+    if (liste.some(g => g.id === id)) {
+      onChange(liste.map(g => g.id === id ? { ...g, ...updates } : g));
+      return;
+    }
+    // Aus den Figuren übernommenes Geheimnis: steht noch nicht in der Liste.
+    // Beim ersten Bearbeiten wird es aufgenommen, sonst geht die Änderung verloren.
+    const uebernommen = figurenGeheimnisse.find(g => g.id === id);
+    if (!uebernommen) return;
+    onChange([...liste, { ...uebernommen, ...updates }]);
   };
   
   const deleteGeheimnis = (id) => {
@@ -11534,59 +11653,55 @@ const KommentarButton = ({ elementType, elementId, kommentare, onAdd, onDelete }
 // =====================================================
 // BEZIEHUNGS-GRAFIK TOOL - Visuelles Netzwerk
 // =====================================================
-const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddToSchreibflaeche, felder }) => {
+const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddToSchreibflaeche, felder, positionen, onPositionenChange }) => {
   const svgRef = useRef(null);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [draggedFigur, setDraggedFigur] = useState(null);
   const [figurPositionen, setFigurPositionen] = useState({});
   const [isFullscreen, setIsFullscreen] = useState(false);
-  
+
   // SVG-Dimensionen basierend auf Modus
   const svgWidth = isFullscreen ? 800 : 400;
   const svgHeight = isFullscreen ? 600 : 360;
   const nodeRadius = isFullscreen ? 40 : 28;
   const fontSize = isFullscreen ? 14 : 11;
   const labelFontSize = isFullscreen ? 12 : 10;
-  
-  // Initiale Positionen im Kreis anordnen
+
+  // Gespeichert wird relativ (0 bis 1), damit das Layout in beiden Grössen
+  // stimmt. Vorher lebten die Positionen nur lokal und waren beim
+  // Werkzeugwechsel weg.
+  const posSignatur = JSON.stringify(positionen || {});
+  const letztesLayout = useRef(null);
+
   useEffect(() => {
-    if (figuren?.length > 0 && Object.keys(figurPositionen).length === 0) {
-      const centerX = svgWidth / 2;
-      const centerY = svgHeight / 2;
-      const radius = Math.min(svgWidth, svgHeight) * 0.35;
-      const newPositionen = {};
-      figuren.forEach((f, i) => {
+    if (!(figuren?.length > 0)) return;
+    const schluessel = posSignatur + '|' + isFullscreen;
+    if (schluessel === letztesLayout.current) return;
+    letztesLayout.current = schluessel;
+
+    const gespeichert = positionen || {};
+    const centerX = svgWidth / 2;
+    const centerY = svgHeight / 2;
+    const radius = Math.min(svgWidth, svgHeight) * 0.35;
+    const neu = {};
+    figuren.forEach((f, i) => {
+      const g = gespeichert[f.id];
+      if (g && typeof g.x === 'number' && typeof g.y === 'number') {
+        neu[f.id] = {
+          x: Math.max(nodeRadius + 10, Math.min(svgWidth - nodeRadius - 10, g.x * svgWidth)),
+          y: Math.max(nodeRadius + 10, Math.min(svgHeight - nodeRadius - 10, g.y * svgHeight))
+        };
+      } else {
         const angle = (i / figuren.length) * 2 * Math.PI - Math.PI / 2;
-        newPositionen[f.id] = {
+        neu[f.id] = {
           x: centerX + radius * Math.cos(angle),
           y: centerY + radius * Math.sin(angle)
         };
-      });
-      setFigurPositionen(newPositionen);
-    }
-  }, [figuren]);
-  
-  // Positionen neu berechnen bei Fullscreen-Wechsel
-  useEffect(() => {
-    if (figuren?.length > 0 && Object.keys(figurPositionen).length > 0) {
-      const oldWidth = isFullscreen ? 400 : 800;
-      const oldHeight = isFullscreen ? 360 : 600;
-      const scaleX = svgWidth / oldWidth;
-      const scaleY = svgHeight / oldHeight;
-      
-      setFigurPositionen(prev => {
-        const newPos = {};
-        Object.entries(prev).forEach(([id, pos]) => {
-          newPos[id] = {
-            x: Math.max(nodeRadius + 10, Math.min(svgWidth - nodeRadius - 10, pos.x * scaleX)),
-            y: Math.max(nodeRadius + 10, Math.min(svgHeight - nodeRadius - 10, pos.y * scaleY))
-          };
-        });
-        return newPos;
-      });
-    }
-  }, [isFullscreen]);
-  
+      }
+    });
+    setFigurPositionen(neu);
+  }, [figuren, isFullscreen, posSignatur]);
+
   // Beziehung zwischen zwei Figuren holen
   const getBeziehung = (figurId1, figurId2) => {
     const key = `${figurId1}_${figurId2}`;
@@ -11635,9 +11750,18 @@ const BeziehungsGrafikTool = ({ figuren, beziehungen, onBeziehungChange, onAddTo
   };
   
   const handleMouseUp = () => {
+    // Erst beim Loslassen speichern, nicht bei jeder Mausbewegung.
+    if (draggedFigur && onPositionenChange) {
+      const relativ = {};
+      Object.entries(figurPositionen).forEach(([id, p]) => {
+        relativ[id] = { x: p.x / svgWidth, y: p.y / svgHeight };
+      });
+      letztesLayout.current = JSON.stringify(relativ) + '|' + isFullscreen;
+      onPositionenChange(relativ);
+    }
     setDraggedFigur(null);
   };
-  
+
   // Linie anklicken um Beziehung zu bearbeiten
   const handleLineClick = (figur1Id, figur2Id) => {
     setSelectedConnection({ figur1Id, figur2Id });
@@ -11958,10 +12082,12 @@ const MaerchenModellTool = ({ projektData, onUpdate, onAddToSchreibflaeche, onWi
 // =====================================================
 // IMPULSFRAGEN TOOL
 // =====================================================
-const ImpulsfragenTool = ({ rubrik, notizen, onNotizenChange, onAddToSchreibflaeche }) => {
+const ImpulsfragenTool = ({ rubrik, notizen, onNotizenChange, onAddToSchreibflaeche, checked, onCheckedChange }) => {
   const [expandedKategorien, setExpandedKategorien] = useState({});
-  const [checkedFragen, setCheckedFragen] = useState({});
-  
+  // Die Häkchen liegen im Projektstand, nicht mehr nur lokal. Sonst zeigte der
+  // Zähler einen Fortschritt an, der beim Werkzeugwechsel verschwand.
+  const checkedFragen = checked || {};
+
   const fragen = IMPULSFRAGEN_MAP[rubrik] || [];
 
   const toggleKategorie = (kategorie) => {
@@ -11972,13 +12098,15 @@ const ImpulsfragenTool = ({ rubrik, notizen, onNotizenChange, onAddToSchreibflae
   };
 
   const toggleFrage = (frageId) => {
-    setCheckedFragen(prev => ({
-      ...prev,
-      [frageId]: !prev[frageId]
-    }));
+    if (!onCheckedChange) return;
+    const neu = { ...checkedFragen };
+    if (neu[frageId]) delete neu[frageId]; else neu[frageId] = true;
+    onCheckedChange(neu);
   };
 
-  const countChecked = () => Object.values(checkedFragen).filter(Boolean).length;
+  // Nur die Fragen dieser Rubrik zählen – die Ablage ist rubrikübergreifend.
+  const countChecked = () => Object.entries(checkedFragen)
+    .filter(([id, v]) => v && id.startsWith(`${rubrik}-`)).length;
   const totalFragen = fragen.reduce((sum, g) => sum + g.fragen.length, 0);
 
   return (
@@ -12388,7 +12516,15 @@ const TreatmentGenerator = ({ data, onClose, onSave, apiKey }) => {
   const [treatmentData, setTreatmentData] = useState(data.treatment?.kapitel || {});
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  
+
+  // Jede Änderung geht sofort in den Projektstand. Vorher wurde nur beim
+  // Verlassen gespeichert – ein Reload mitten im Schreiben kostete alles.
+  const setzeKapitel = (kapitelId, text) => {
+    const neu = { ...treatmentData, [kapitelId]: text };
+    setTreatmentData(neu);
+    if (onSave) onSave({ kapitel: neu, lastEdited: new Date().toISOString() });
+  };
+
   // Material für aktuelles Kapitel sammeln
   const getMaterialForKapitel = (kapitelId) => {
     const kapitel = TREATMENT_KAPITEL.find(k => k.id === kapitelId);
@@ -12464,10 +12600,13 @@ const TreatmentGenerator = ({ data, onClose, onSave, apiKey }) => {
               wqContent += '\n\nWie die Figuren zu den Werten stehen:';
               Object.entries(data.wertequadrat_zuordnung).forEach(([figurId, zuordnung]) => {
                 const figur = data.figuren?.find(f => f.id === figurId);
-                if (figur && zuordnung?.position) {
-                  wqContent += `\n• ${figur.name}: ${zuordnung.position}`;
-                  if (zuordnung.entwicklung) wqContent += ` → ${zuordnung.entwicklung}`;
-                }
+                if (!figur || !zuordnung) return;
+                // Alte und neue Speicherform verstehen (String, position/entwicklung, haltung/warum)
+                const haltung = typeof zuordnung === 'string' ? zuordnung : (zuordnung.haltung || zuordnung.position || '');
+                const wohin = typeof zuordnung === 'string' ? '' : (zuordnung.warum || zuordnung.entwicklung || '');
+                if (!haltung) return;
+                wqContent += `\n• ${figur.name}: ${haltung}`;
+                if (wohin) wqContent += ` → ${wohin}`;
               });
             }
             material.push({ 
@@ -12720,10 +12859,7 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
       if (!response.ok) throw new Error('API-Fehler');
       const result = await response.json();
 
-      setTreatmentData(prev => ({
-        ...prev,
-        [activeKapitel]: result.content[0].text
-      }));
+      setzeKapitel(activeKapitel, result.content[0].text);
     } catch (error) {
       console.error('KI-Generierung fehlgeschlagen:', error);
       alert('Fehler bei der KI-Generierung.');
@@ -12903,7 +13039,7 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
                     onClick={() => {
                       // Beim Klicken Text einfügen
                       const newText = (treatmentData[activeKapitel] || '') + '\n\n' + m.content;
-                      setTreatmentData(prev => ({ ...prev, [activeKapitel]: newText.trim() }));
+                      setzeKapitel(activeKapitel, newText.trim());
                     }}
                     title="Klicken um einzufügen"
                   >
@@ -12936,7 +13072,7 @@ ${existingText ? `BISHERIGER TEXT (überarbeiten/erweitern):\n${existingText}\n\
             
             <textarea
               value={treatmentData[activeKapitel] || ''}
-              onChange={(e) => setTreatmentData(prev => ({ ...prev, [activeKapitel]: e.target.value }))}
+              onChange={(e) => setzeKapitel(activeKapitel, e.target.value)}
               placeholder={`${currentKapitel?.hint}\n\nSchreibe hier oder klicke oben auf Material um es einzufügen...`}
               rows={12}
             />
@@ -14241,34 +14377,75 @@ const BegleiterTool = ({ archetypen, figuren, onChange, onAddToSchreibflaeche })
 };
 
 // Raum & Zeit
-const SchauplatzTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick }) => {
+// =====================================================
+// Auftrag 1/2 (26.07.2026): Die Felder dieser beiden Werkzeuge standen
+// bisher nur inline im JSX. Damit TOOL_SCHEMA aus derselben Quelle
+// abgeleitet werden kann, aus der die Oberfläche zeichnet, sind sie hier
+// als Konstanten geführt. Wer ein Feld ergänzt, ergänzt es genau einmal.
+// =====================================================
+const SCHAUPLATZ_FELDER = [
+  { key: 'hauptort', label: 'Hauptort', typ: 'text', platzhalter: 'z.B. Ein heruntergekommenes Landhaus' },
+  { key: 'atmosphaere', label: 'Atmosphäre', typ: 'text', platzhalter: 'z.B. Beklemmend, isoliert' },
+  { key: 'notizen', label: 'Notizen', typ: 'textarea', zeilen: 3, platzhalter: 'Was macht diesen Ort besonders? Was kann hier passieren, was anderswo nicht passieren könnte?' }
+];
+
+const ZEIT_FELDER = [
+  { key: 'epoche', label: 'Epoche', typ: 'text', platzhalter: 'z.B. Gegenwart, 1920er' },
+  { key: 'zeitrahmen', label: 'Zeitrahmen', typ: 'text', platzhalter: 'z.B. Ein Abend, drei Monate' },
+  { key: 'jahreszeit', label: 'Jahreszeit', typ: 'text', platzhalter: 'z.B. Winter' },
+  { key: 'notizen', label: 'Notizen', typ: 'textarea', zeilen: 2, platzhalter: 'Was bedeutet die Zeit für die Geschichte?' }
+];
+
+// Gemeinsamer Rumpf für Schauplatz und Zeit: gleiche Bauart, andere Felder.
+const RaumZeitFelderTool = ({ felder, value, onChange, onAddToSchreibflaeche, onWikiClick, intro, wikiId, fieldsClass, werkzeugId }) => {
   const generateText = () => {
     const lines = [];
-    if (value?.hauptort) lines.push(`Hauptort: ${value.hauptort}`);
-    if (value?.atmosphaere) lines.push(`Atmosphäre: ${value.atmosphaere}`);
-    if (value?.notizen) lines.push(value.notizen);
+    felder.forEach(f => {
+      const v = value?.[f.key];
+      if (!v) return;
+      lines.push(f.typ === 'textarea' ? String(v) : `${f.label}: ${v}`);
+    });
     return lines.join('\n');
   };
-  
-  const hasContent = value?.hauptort || value?.atmosphaere || value?.notizen;
-  
+
+  const hasContent = felder.some(f => !!value?.[f.key]);
+  const textFelder = felder.filter(f => f.typ !== 'textarea');
+  const areaFelder = felder.filter(f => f.typ === 'textarea');
+
   return (
     <div className="raum-zeit-tool">
       <div className="tool-intro-with-wiki">
-        <p className="tool-intro">Wo spielt die Geschichte? Der Ort ist mehr als Kulisse.</p>
+        <p className="tool-intro">{intro}</p>
         {onWikiClick && (
-          <button className="wiki-link-btn" onClick={() => onWikiClick('wiki_schauplatz')}>
+          <button className="wiki-link-btn" onClick={() => onWikiClick(wikiId)}>
             📚 Wiki
           </button>
         )}
       </div>
-      <div className="ort-fields">
-        <div className="field"><label>Hauptort</label><input type="text" value={value?.hauptort || ''} onChange={(e) => onChange({ ...value, hauptort: e.target.value })} placeholder="z.B. Ein heruntergekommenes Landhaus" /></div>
-        <div className="field"><label>Atmosphäre</label><input type="text" value={value?.atmosphaere || ''} onChange={(e) => onChange({ ...value, atmosphaere: e.target.value })} placeholder="z.B. Beklemmend, isoliert" /></div>
+      <div className={fieldsClass}>
+        {textFelder.map(f => (
+          <div className="field" key={f.key}>
+            <label>{f.label}</label>
+            <input
+              type="text"
+              value={value?.[f.key] || ''}
+              onChange={(e) => onChange({ ...value, [f.key]: e.target.value })}
+              placeholder={f.platzhalter}
+            />
+          </div>
+        ))}
       </div>
-      <textarea value={value?.notizen || ''} onChange={(e) => onChange({ ...value, notizen: e.target.value })} placeholder="Was macht diesen Ort besonders? Was kann hier passieren, was anderswo nicht passieren könnte?" rows={3} />
+      {areaFelder.map(f => (
+        <textarea
+          key={f.key}
+          value={value?.[f.key] || ''}
+          onChange={(e) => onChange({ ...value, [f.key]: e.target.value })}
+          placeholder={f.platzhalter}
+          rows={f.zeilen || 3}
+        />
+      ))}
       {hasContent && onAddToSchreibflaeche && (
-        <button className="add-to-schreibflaeche-btn" data-werkzeug="setting_place" onClick={() => onAddToSchreibflaeche(generateText(), 'setting_place')}>
+        <button className="add-to-schreibflaeche-btn" data-werkzeug={werkzeugId} onClick={() => onAddToSchreibflaeche(generateText(), werkzeugId)}>
           → Schreibfläche
         </button>
       )}
@@ -14276,42 +14453,27 @@ const SchauplatzTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick })
   );
 };
 
-const ZeitTool = ({ value, onChange, onAddToSchreibflaeche, onWikiClick }) => {
-  const generateText = () => {
-    const lines = [];
-    if (value?.epoche) lines.push(`Epoche: ${value.epoche}`);
-    if (value?.zeitrahmen) lines.push(`Zeitrahmen: ${value.zeitrahmen}`);
-    if (value?.jahreszeit) lines.push(`Jahreszeit: ${value.jahreszeit}`);
-    if (value?.notizen) lines.push(value.notizen);
-    return lines.join('\n');
-  };
-  
-  const hasContent = value?.epoche || value?.zeitrahmen || value?.jahreszeit || value?.notizen;
-  
-  return (
-    <div className="raum-zeit-tool">
-      <div className="tool-intro-with-wiki">
-        <p className="tool-intro">Wann spielt die Geschichte? Zeit ist Gestaltungsmittel.</p>
-        {onWikiClick && (
-          <button className="wiki-link-btn" onClick={() => onWikiClick('wiki_zeit')}>
-            📚 Wiki
-          </button>
-        )}
-      </div>
-      <div className="zeit-fields">
-        <div className="field"><label>Epoche</label><input type="text" value={value?.epoche || ''} onChange={(e) => onChange({ ...value, epoche: e.target.value })} placeholder="z.B. Gegenwart, 1920er" /></div>
-        <div className="field"><label>Zeitrahmen</label><input type="text" value={value?.zeitrahmen || ''} onChange={(e) => onChange({ ...value, zeitrahmen: e.target.value })} placeholder="z.B. Ein Abend, drei Monate" /></div>
-        <div className="field"><label>Jahreszeit</label><input type="text" value={value?.jahreszeit || ''} onChange={(e) => onChange({ ...value, jahreszeit: e.target.value })} placeholder="z.B. Winter" /></div>
-      </div>
-      <textarea value={value?.notizen || ''} onChange={(e) => onChange({ ...value, notizen: e.target.value })} placeholder="Was bedeutet die Zeit für die Geschichte?" rows={2} />
-      {hasContent && onAddToSchreibflaeche && (
-        <button className="add-to-schreibflaeche-btn" data-werkzeug="setting_time" onClick={() => onAddToSchreibflaeche(generateText(), 'setting_time')}>
-          → Schreibfläche
-        </button>
-      )}
-    </div>
-  );
-};
+const SchauplatzTool = (props) => (
+  <RaumZeitFelderTool
+    {...props}
+    felder={SCHAUPLATZ_FELDER}
+    intro="Wo spielt die Geschichte? Der Ort ist mehr als Kulisse."
+    wikiId="wiki_schauplatz"
+    fieldsClass="ort-fields"
+    werkzeugId="setting_place"
+  />
+);
+
+const ZeitTool = (props) => (
+  <RaumZeitFelderTool
+    {...props}
+    felder={ZEIT_FELDER}
+    intro="Wann spielt die Geschichte? Zeit ist Gestaltungsmittel."
+    wikiId="wiki_zeit"
+    fieldsClass="zeit-fields"
+    werkzeugId="setting_time"
+  />
+);
 
 // Musik & Sound Tool
 const MusikTool = ({ value, onChange, onAddToSchreibflaeche }) => {
@@ -14598,77 +14760,84 @@ const FINANZIERUNG_VORLAGE = {
   }
 };
 
+// =====================================================
+// Auftrag 1 (26.07.2026): Die Dossier-Vorlage stand bisher im Rumpf des
+// DossierAssistenten und war von aussen nicht erreichbar. Als Funktion auf
+// oberster Ebene dient sie jetzt beiden Zwecken: dem Werkzeug als
+// Startbelegung und TOOL_SCHEMA als abgeleitete Formbeschreibung.
+// =====================================================
+const DOSSIER_VORLAGE = () => ({
+  // Deckblatt
+  untertitel: '',
+  traegerschaft: '',
+  kontakt: { name: '', email: '', telefon: '', adresse: '' },
+  fassungsDatum: new Date().toISOString().split('T')[0],
+  
+  // In Kürze
+  kurzfassung: '',
+  
+  // Thema & Geschichte  
+  themaGesellschaft: '',
+  themaKuenstlerisch: '',
+  story: '',
+  
+  // Umsetzung
+  buehneKostueme: '',
+  textMusik: '',
+  besonderes: '',
+  
+  // Team (Mitwirkende)
+  mitwirkende: [
+    { rolle: 'Text und Regie', name: '' },
+    { rolle: 'Spiel', name: '' },
+    { rolle: 'Spiel', name: '' },
+    { rolle: 'Dramaturgie', name: '' },
+    { rolle: 'Ausstattung', name: '' },
+    { rolle: 'Lichtdesign', name: '' },
+    { rolle: 'Produktionsleitung', name: '' }
+  ],
+  
+  // Zeitplan
+  zeitplan: [
+    { phase: 'Konzeptentwicklung', zeitraum: '', status: 'geplant' },
+    { phase: 'Textarbeit / Stückentwicklung', zeitraum: '', status: 'geplant' },
+    { phase: 'Probenblock 1', zeitraum: '', status: 'geplant' },
+    { phase: 'Tryout / Werkschau', zeitraum: '', status: 'geplant' },
+    { phase: 'Probenblock 2', zeitraum: '', status: 'geplant' },
+    { phase: 'Premiere', zeitraum: '', status: 'geplant' },
+    { phase: 'Tournee / Gastspiele', zeitraum: '', status: 'geplant' }
+  ],
+  
+  // Aufführungen
+  auffuehrungen: [
+    { datum: '', ort: '', veranstalter: '', status: 'geplant' }
+  ],
+  geplanteVorstellungen: 0,
+  
+  // Budget
+  budget: JSON.parse(JSON.stringify(BUDGET_VORLAGE)),
+  
+  // Finanzierung
+  finanzierung: JSON.parse(JSON.stringify(FINANZIERUNG_VORLAGE)),
+  
+  // Biografien
+  biografien: [],
+  
+  // Track Record
+  bisherigeProduktionen: [],
+  
+  // Presse
+  presseZitate: [],
+  
+});
+
 const DossierAssistent = ({ data, dossier, onChange, onClose, apiKey }) => {
   const [abschnitt, setAbschnitt] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [exportError, setExportError] = useState(null);
   
   // Initialisiere Dossier mit Vorlagen falls leer
-  const initDossier = {
-    // Deckblatt
-    untertitel: '',
-    traegerschaft: '',
-    kontakt: { name: '', email: '', telefon: '', adresse: '' },
-    fassungsDatum: new Date().toISOString().split('T')[0],
-    
-    // In Kürze
-    kurzfassung: '',
-    
-    // Thema & Geschichte  
-    themaGesellschaft: '',
-    themaKuenstlerisch: '',
-    story: '',
-    
-    // Umsetzung
-    buehneKostueme: '',
-    textMusik: '',
-    besonderes: '',
-    
-    // Team (Mitwirkende)
-    mitwirkende: [
-      { rolle: 'Text und Regie', name: '' },
-      { rolle: 'Spiel', name: '' },
-      { rolle: 'Spiel', name: '' },
-      { rolle: 'Dramaturgie', name: '' },
-      { rolle: 'Ausstattung', name: '' },
-      { rolle: 'Lichtdesign', name: '' },
-      { rolle: 'Produktionsleitung', name: '' }
-    ],
-    
-    // Zeitplan
-    zeitplan: [
-      { phase: 'Konzeptentwicklung', zeitraum: '', status: 'geplant' },
-      { phase: 'Textarbeit / Stückentwicklung', zeitraum: '', status: 'geplant' },
-      { phase: 'Probenblock 1', zeitraum: '', status: 'geplant' },
-      { phase: 'Tryout / Werkschau', zeitraum: '', status: 'geplant' },
-      { phase: 'Probenblock 2', zeitraum: '', status: 'geplant' },
-      { phase: 'Premiere', zeitraum: '', status: 'geplant' },
-      { phase: 'Tournee / Gastspiele', zeitraum: '', status: 'geplant' }
-    ],
-    
-    // Aufführungen
-    auffuehrungen: [
-      { datum: '', ort: '', veranstalter: '', status: 'geplant' }
-    ],
-    geplanteVorstellungen: 0,
-    
-    // Budget
-    budget: JSON.parse(JSON.stringify(BUDGET_VORLAGE)),
-    
-    // Finanzierung
-    finanzierung: JSON.parse(JSON.stringify(FINANZIERUNG_VORLAGE)),
-    
-    // Biografien
-    biografien: [],
-    
-    // Track Record
-    bisherigeProduktionen: [],
-    
-    // Presse
-    presseZitate: [],
-    
-    ...dossier
-  };
+  const initDossier = { ...DOSSIER_VORLAGE(), ...dossier };
   
   const [localDossier, setLocalDossier] = useState(initDossier);
   
@@ -16981,8 +17150,11 @@ const DEFAULT_DATA = {
   szenenIdeen: [],
   felder: [],
   fundament: {},
-  wertequadrat: null,
-  wertequadrat_zuordnung: null,
+  // Auftrag 3 (26.07.2026): Leere Werkzeuge exportieren ihre leere Form,
+  // nie null. Maps als {}, Listen als []. So ist der erwartete Typ auch
+  // ohne Beispieleintrag erkennbar.
+  wertequadrat: {},
+  wertequadrat_zuordnung: {},
   maerchenmodell: {},
   archetypen: {},
   kraefte: {},
@@ -16991,11 +17163,27 @@ const DEFAULT_DATA = {
   schreibflaeche: '',
   schreibflaecheInhalte: {},
   impulsfragen_notizen: {},
+  impulsfragen_checked: {},
+  beziehungs_netzwerk: {},
+  beziehungs_positionen: {},
   figuren_tracking: {},
   themen_tracking: {},
   reflexionsNotizen: {},
   recherche: [],
   kommentare: [],
+  // Geheimnisse-Werkzeug. Wurde bisher nur geschrieben, nie vorbelegt.
+  geheimnisse: [],
+  // Auftrag 3: Diese sechs Werkzeuge schrieben bisher in Schluessel, die in
+  // DEFAULT_DATA fehlten. Im Export erschienen sie darum als undefined, also
+  // gar nicht – die Struktur war von aussen unsichtbar.
+  themaDetails: [],
+  intrigen: [],
+  spannungsIdeen: {},
+  musik: {},
+  stoffrecherche: {},
+  aktuelle_szene: {},
+  // Eigene Ueberschriften der Sammelflaechen-Bausteine.
+  schreibflaecheLabels: {},
   // Arbeitsfassung der Geschichte. Wird mitentwickelt und versioniert:
   // jede übernommene Neufassung schiebt die vorherige in versionen.
   treatment: {
@@ -17017,11 +17205,524 @@ const DEFAULT_DATA = {
   }
 };
 
+// =====================================================
+// Auftrag 3 (26.07.2026): Leere Strukturen statt null
+// =====================================================
+// Jeder bekannte Werkzeug-Schluessel erhaelt seine leere Form: [] fuer
+// Listen, {} fuer Maps. Damit ist der erwartete Typ im Export auch dann
+// erkennbar, wenn noch kein Eintrag vorhanden ist.
+// Unbekannte Schluessel bleiben unangetastet (Randbedingung 1) – der
+// Spread von roh reicht sie durch, und normalisiert wird nur, was in
+// den beiden Listen unten steht.
+const DATA_LISTEN_KEYS = [
+  'vorgaben', 'figuren', 'themen', 'szenenIdeen', 'felder',
+  'recherche', 'kommentare', 'geheimnisse', 'parkplatz',
+  'themaDetails', 'intrigen'
+];
+const DATA_MAP_KEYS = [
+  'fundament', 'wertequadrat', 'wertequadrat_zuordnung', 'maerchenmodell',
+  'archetypen', 'kraefte', 'schauplatz', 'zeit', 'schreibflaecheInhalte',
+  'impulsfragen_notizen', 'impulsfragen_checked', 'beziehungs_netzwerk',
+  'beziehungs_positionen', 'figuren_tracking', 'themen_tracking',
+  'reflexionsNotizen', 'spannungsIdeen', 'musik', 'stoffrecherche',
+  'aktuelle_szene', 'schreibflaecheLabels'
+];
+
+const _istMap = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+const normalisiereData = (roh) => {
+  const out = { ...DEFAULT_DATA, ...(roh || {}) };
+  DATA_LISTEN_KEYS.forEach(k => { if (!Array.isArray(out[k])) out[k] = []; });
+  DATA_MAP_KEYS.forEach(k => { if (!_istMap(out[k])) out[k] = {}; });
+  out.autor = { ...DEFAULT_DATA.autor, ...(_istMap(out.autor) ? out.autor : {}) };
+  out.treatment = {
+    ...DEFAULT_DATA.treatment,
+    ...(_istMap(out.treatment) ? out.treatment : {})
+  };
+  if (!Array.isArray(out.treatment.versionen)) out.treatment.versionen = [];
+  out.dossier = {
+    ...DEFAULT_DATA.dossier,
+    ...(_istMap(out.dossier) ? out.dossier : {})
+  };
+  if (!_istMap(out.dossier.figurBeschreibungen)) out.dossier.figurBeschreibungen = {};
+  if (!_istMap(out.dossier.produktion)) out.dossier.produktion = {};
+  if (!Array.isArray(out.dossier.team)) out.dossier.team = [];
+  if (typeof out.schreibflaeche !== 'string') out.schreibflaeche = '';
+  if (typeof out.projektName !== 'string' || !out.projektName) {
+    out.projektName = DEFAULT_DATA.projektName;
+  }
+  return out;
+};
+
+// =====================================================
+// Auftrag 1 + 2 (26.07.2026): TOOL_SCHEMA
+// =====================================================
+// Der Export beschreibt seine eigene Struktur. Wer von aussen an einem Projekt
+// arbeitet, soll fuer jedes Werkzeug einen gueltigen Eintrag schreiben koennen,
+// auch wenn im Projekt noch kein einziger Eintrag steht.
+//
+// Grundregel: abgeleitet, nicht von Hand gepflegt. Wo die Oberflaeche aus einer
+// Konstante rendert – ARCHETYPEN_DATA, HAUPTKRAEFTE, BEGLEITER_ARCHETYPEN,
+// MAERCHEN_MODELL, WERTEQUADRAT_FELDER, SCHAUPLATZ_FELDER, ZEIT_FELDER,
+// REFLEXIONS_FRAGEN, IMPULSFRAGEN_MAP, KOMMENTAR_ROLLEN, BEZIEHUNGS_TYPEN,
+// SPANNUNGS_TECHNIKEN, TREATMENT_KAPITEL, WERKZEUG_KATEGORIEN, DOSSIER_VORLAGE –
+// zieht das Schema seine Schluessel und Bezeichnungen genau von dort. Wo bisher
+// inline gerendert wurde, sind die Feldlisten unten die neue einzige Quelle;
+// die Oberflaeche und die Fabriken greifen darauf zu, nicht umgekehrt.
+
+// Aus einer Vorbelegung eine leere Form machen: Listen behalten die Gestalt
+// ihres ersten Elements, Zahlen werden 0, Wahrheitswerte false, alles andere ''.
+// So zeigt das Schema die Verschachtelung, ohne Beispieldaten mitzuschleppen.
+const _schemaLeerform = (v) => {
+  if (Array.isArray(v)) return v.length ? [_schemaLeerform(v[0])] : [];
+  if (v && typeof v === 'object') {
+    const out = {};
+    Object.keys(v).forEach(k => { out[k] = _schemaLeerform(v[k]); });
+    return out;
+  }
+  if (typeof v === 'number') return 0;
+  if (typeof v === 'boolean') return false;
+  return '';
+};
+
+// Bezeichnung eines Werkzeugs, so wie sie in der Seitenleiste steht.
+const _werkzeugName = (werkzeugId) => {
+  for (const kat of Object.values(WERKZEUG_KATEGORIEN)) {
+    const w = (kat.werkzeuge || []).find(x => x.id === werkzeugId);
+    if (w) return w.name.replace(/^[^\wÀ-ɏ]+/, '').trim() || w.name;
+  }
+  return werkzeugId;
+};
+
+// Alle Werkzeug-Ids der Oberflaeche – Schluesselvorrat von schreibflaecheInhalte.
+const ALLE_WERKZEUG_IDS = Object.values(WERKZEUG_KATEGORIEN)
+  .flatMap(k => (k.werkzeuge || []).map(w => w.id));
+
+// Feldliste -> leere Form bzw. Bezeichnungen.
+const _feldLeerform = (felder) => {
+  const out = {};
+  felder.forEach(f => {
+    const roh = 'leerform' in f ? f.leerform : ('vorgabe' in f ? f.vorgabe : '');
+    out[f.key] = _schemaLeerform(roh);
+  });
+  return out;
+};
+const _feldLabels = (felder) => Object.fromEntries(felder.map(f => [f.key, f.label]));
+
+// -----------------------------------------------------
+// Feldlisten, die es bisher nicht gab
+// -----------------------------------------------------
+
+// data.fundament – zehn Schluessel, alle ueber dasselbe Muster geschrieben.
+// Die Bezeichnungen kommen aus WERKZEUG_KATEGORIEN, wo es dort ein Werkzeug
+// gleichen Namens gibt.
+const FUNDAMENT_FELDER = [
+  { key: 'titel', leerform: { titel: '', untertitel: '', tagline: '', titelbild: '' } },
+  { key: 'logline', leerform: '' },
+  { key: 'konflikt', label: 'Der Konflikt', leerform: KONFLIKT_LEERFORM },
+  { key: 'kern', leerform: { zumutung: '', weltgesetz: '', widerstand: '' } },
+  { key: 'unaussprechliches', leerform: '' },
+  { key: 'emotionale_bewegung', leerform: { von: '', zu: '', kosten: '', wendepunkt: '' } },
+  { key: 'zumutung', label: 'Zumutung', leerform: '' },
+  { key: 'weltgesetz', label: 'Weltgesetz', leerform: '' },
+  { key: 'innerer_widerstand', label: 'Innerer Widerstand', leerform: '' },
+  { key: 'motive', label: 'Motive', leerform: { eigene: [{ title: '', desc: '' }], notizen: '', ausgewaehlt: [] } }
+].map(f => ({ ...f, label: f.label || _werkzeugName(f.key) }));
+
+// data.figuren[] – bisher 21 einzelne onChange({ ...figur, X: ... }) im FigurTool.
+// imKiDump: false heisst, das Feld gehoert nicht in die beschriftete Liste des
+// KI-Projektstands (Name steht dort separat, Bilddaten gar nicht).
+const FIGUR_FELDER_BASIS = [
+  { key: 'name', label: 'Name', imKiDump: false },
+  { key: 'spitzname', label: 'Spitzname' },
+  { key: 'alter', label: 'Alter' },
+  { key: 'geschlecht', label: 'Geschlecht' },
+  { key: 'beruf', label: 'Beruf' },
+  { key: 'herkunft', label: 'Herkunft' },
+  { key: 'charakteristik', label: 'Charakteristik' },
+  { key: 'erscheinung', label: 'Erscheinung' },
+  { key: 'physische_eigenheiten', label: 'Physisches' },
+  { key: 'sprechweise', label: 'Sprechweise' },
+  { key: 'ziel', label: 'Will (Want)' },
+  { key: 'beduerfnis', label: 'Braucht (Need)' },
+  { key: 'praegung', label: 'Prägung (Ghost)' },
+  { key: 'praegende_ereignisse', label: 'Prägende Ereignisse' },
+  { key: 'backstory', label: 'Backstory' },
+  { key: 'geheimnisse', label: 'Geheimnis' },
+  { key: 'widersprueche', label: 'Widerspruch' },
+  { key: 'archetyp', label: 'Archetyp' },
+  { key: 'portrait', label: 'Portrait (Bilddaten oder Emoji)', imKiDump: false },
+  { key: 'portraitType', label: 'Portrait-Art (image oder emoji)', imKiDump: false }
+];
+
+// Die fuenf Eckpfeiler liegen als eigene Felder auf der Figur. Ihre Ids kommen
+// aus FIVE_PILLARS, damit eine neue Saeule nicht am Schema vorbeigeht.
+const FIGUR_FELDER = [
+  ...FIGUR_FELDER_BASIS,
+  ...FIVE_PILLARS
+    .filter(p => !FIGUR_FELDER_BASIS.some(f => f.key === p.id))
+    .map(p => ({ key: p.id, label: p.label, imKiDump: false, quelle: 'eckpfeiler' }))
+];
+
+// Beziehungen liegen doppelt: als beziehung_<figurId> auf der Figur und als
+// "<id1>_<id2>" in data.beziehungs_netzwerk. Gleiche Form, eine Quelle.
+const BEZIEHUNG_LEERFORM = { art: '', beschreibung: '' };
+
+// figuren_tracking / themen_tracking – je Figur bzw. Thema und Szene.
+// inSeitenleiste: false heisst, das Feld erscheint nur in der grossen Karte.
+const FIGUREN_TRACKING_FELDER = [
+  { key: 'zustand', label: 'Zustand', platzhalter: 'Wie geht es ihr?' },
+  { key: 'will_hier', label: 'Will hier', platzhalter: 'Szenenziel' },
+  { key: 'hindernis', label: 'Hindernis', platzhalter: 'Was steht im Weg?', inSeitenleiste: false },
+  { key: 'veraenderung', label: 'Veränderung', platzhalter: 'Wie verlässt sie die Szene?' }
+];
+const THEMEN_TRACKING_FELDER = [
+  { key: 'wie_zeigt_es_sich', label: 'Wie zeigt es sich?', platzhalter: 'Wie zeigt es sich?' }
+];
+
+// -----------------------------------------------------
+// Fabriken: einzige Quelle fuer neue Eintraege
+// -----------------------------------------------------
+const _uidSchema = (praefix) => `${praefix}${Date.now()}`;
+
+// data.felder[] – eine Szene im Raster.
+const SZENE_VORLAGE = (titel = '', position = 0) => ({
+  id: _uidSchema('f'), titel, position,
+  figuren: [], themen: [], notizen: '', zusammenfassung: '',
+  ziel: '', widerstand: '', wendepunkt: '', figuren_ziele: [],
+  gespraechsart: '', status: 'idee', inhalt: ''
+});
+
+// data.szenenIdeen[] – eine noch nicht platzierte Situation.
+const SZENENIDEE_VORLAGE = (titel = '') => ({
+  id: _uidSchema('sz'), titel, text: titel, beschreibung: '',
+  notizen: '', figuren: [], themen: [], ort: ''
+});
+
+// data.recherche[] – ein Materialfund.
+const RECHERCHE_VORLAGE = () => ({
+  id: _uidSchema('rech'), type: '', title: '', content: '', note: '',
+  url: '', tags: [], imageData: null, source: '',
+  createdAt: new Date().toISOString(), used: false
+});
+
+// data.geheimnisse[] samt Momenten.
+const MOMENT_VORLAGE = () => ({
+  id: _uidSchema('mom'), beschreibung: '', wer_erfaehrt: [],
+  reaktion: '', szene_erstellt: false
+});
+const GEHEIMNIS_VORLAGE = () => ({
+  id: _uidSchema('geh'), inhalt: '', traeger: '', traegerName: '',
+  beteiligte: {}, momente: [], publikum: 'mit_figur'
+});
+
+// data.parkplatz[] – Ideen ohne Platz.
+const PARKPLATZ_VORLAGE = (titel = '', notiz = '') => ({
+  id: `pp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+  titel, notiz, herkunft: '', angelegt: new Date().toLocaleDateString('de-CH')
+});
+
+// data.kommentare[] – Randbemerkungen zu einem beliebigen Element.
+const KOMMENTAR_VORLAGE = (elementType = '', elementId = '', text = '', rolle = 'dramaturg') => ({
+  id: _uidSchema('k'), elementType, elementId, text, rolle,
+  timestamp: new Date().toISOString()
+});
+
+// data.vorgaben[] – der Rahmen des Projekts.
+const VORGABE_VORLAGE = (text = '') => ({ id: _uidSchema('c'), text });
+
+// data.themen[] – Themenliste der Seitenleiste.
+const THEMA_VORLAGE = (name = '', contrast = '') => ({
+  id: _uidSchema('th'), name, contrast, text: contrast ? `${name} ↔ ${contrast}` : name
+});
+
+// data.themaDetails[] – das ausfuehrliche Thema-Werkzeug.
+const THEMA_DETAIL_VORLAGE = () => ({
+  id: _uidSchema('td'), thema: '', contrast: '', notizen: ''
+});
+
+// data.intrigen[] – die Intrige.
+const INTRIGE_VORLAGE = () => ({
+  id: _uidSchema('int_'), name: '', notsituation: '', ziel: '', plan: '',
+  verstellung: { typ: '', beschreibung: '' },
+  intrigant: null, helfer: [], opfer: [], requisit: '', anagnorisis: ''
+});
+
+// data.musik.stuecke[]
+const MUSIKSTUECK_VORLAGE = () => ({
+  id: _uidSchema('musik_'), titel: '', beschreibung: '',
+  typ: 'instrumental', einsatz: ''
+});
+
+// -----------------------------------------------------
+// Das Schema selbst
+// -----------------------------------------------------
+const _labelsAusIds = (ids, quelle, feld = 'name') =>
+  Object.fromEntries(ids.map(id => [id, quelle[id]?.[feld] || id]));
+
+const TOOL_SCHEMA = {
+  // ---------- Fundament ----------
+  fundament: {
+    typ: 'map',
+    schluessel: FUNDAMENT_FELDER.map(f => f.key),
+    labels: _feldLabels(FUNDAMENT_FELDER),
+    eintrag: _feldLeerform(FUNDAMENT_FELDER),
+    hinweis: 'Ein einzelnes Objekt, keine Liste. Nur die Schluessel setzen, die gefuellt werden sollen – die uebrigen bleiben unberuehrt.'
+  },
+  vorgaben: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(VORGABE_VORLAGE()),
+    idMuster: 'c<millis>, von der KI vg_ki_<millis>_<6 Zeichen>',
+    hinweis: 'Rahmenbedingungen des Projekts: Auftrag, Spielort, Besetzung, Dauer, Budget.'
+  },
+  autor: {
+    typ: 'map',
+    schluessel: ['name', 'email', 'adresse', 'website', 'copyright'],
+    eintrag: { name: '', email: '', adresse: '', website: '', copyright: '' }
+  },
+
+  // ---------- Raum & Zeit ----------
+  schauplatz: {
+    typ: 'map',
+    schluessel: SCHAUPLATZ_FELDER.map(f => f.key),
+    labels: _feldLabels(SCHAUPLATZ_FELDER),
+    eintrag: _feldLeerform(SCHAUPLATZ_FELDER),
+    hinweis: 'Ein einzelnes Objekt. Werkzeug-Id in der Oberflaeche: setting_place.'
+  },
+  zeit: {
+    typ: 'map',
+    schluessel: ZEIT_FELDER.map(f => f.key),
+    labels: _feldLabels(ZEIT_FELDER),
+    eintrag: _feldLeerform(ZEIT_FELDER),
+    hinweis: 'Ein einzelnes Objekt. Werkzeug-Id in der Oberflaeche: setting_time.'
+  },
+  musik: {
+    typ: 'map',
+    schluessel: ['konzept', 'stuecke'],
+    eintrag: { konzept: '', stuecke: [_schemaLeerform(MUSIKSTUECK_VORLAGE())] },
+    hinweis: 'stuecke ist eine Liste; typ ist instrumental, lied, sound oder geraeusch.'
+  },
+
+  // ---------- Thema & Werte ----------
+  themen: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(THEMA_VORLAGE()),
+    idMuster: 'th<millis>, th-<millis>, von der KI th_ki_<millis>_<6 Zeichen>',
+    hinweis: 'Die Themenliste der Seitenleiste. contrast ist der Gegenbegriff; text ist die Anzeigeform "Thema ↔ Gegenbegriff".'
+  },
+  themaDetails: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(THEMA_DETAIL_VORLAGE()),
+    hinweis: 'Das ausfuehrliche Thema-Werkzeug – unabhaengig von data.themen. Achtung: hier heisst das Feld thema, nicht name.'
+  },
+  wertequadrat: {
+    typ: 'map',
+    schluessel: WERTEQUADRAT_FELDER.map(f => f.key),
+    labels: _feldLabels(WERTEQUADRAT_FELDER),
+    eintrag: _feldLeerform(WERTEQUADRAT_FELDER),
+    hinweis: 'Ein einzelnes Objekt mit vier Textfeldern, keine Liste. Die Zuordnung der Figuren steht getrennt in wertequadrat_zuordnung.'
+  },
+  wertequadrat_zuordnung: {
+    typ: 'map',
+    schluessel: ['<figurId>'],
+    eintrag: _feldLeerform(WERTEQUADRAT_ZUORDNUNG_FELDER),
+    labels: _feldLabels(WERTEQUADRAT_ZUORDNUNG_FELDER),
+    hinweis: 'Schluessel ist eine Id aus data.figuren[].id. haltung ist einer der vier Schluessel aus wertequadrat, veraendert ist ein Wahrheitswert.'
+  },
+  stoffrecherche: {
+    typ: 'map',
+    schluessel: ['kern', 'these', 'aspekte', 'quellen', 'zielgruppe'],
+    eintrag: { kern: '', these: '', aspekte: [''], quellen: '', zielgruppe: '' },
+    hinweis: 'aspekte ist der Themenstern, eine Liste von Texten.'
+  },
+
+  // ---------- Konflikt & Kraefte ----------
+  kraefte: {
+    typ: 'map',
+    schluessel: HAUPTKRAEFTE,
+    labels: _labelsAusIds(HAUPTKRAEFTE, ARCHETYPEN_DATA),
+    eintrag: { typ: 'figur', figurId: '', kraftName: '', kraftBeschreibung: '' },
+    hinweis: 'Die vier Hauptkraefte des Diagramms. typ ist figur oder kraft; bei figur zeigt figurId auf data.figuren[].id, bei kraft werden kraftName und kraftBeschreibung gefuellt.'
+  },
+  archetypen: {
+    typ: 'map',
+    schluessel: BEGLEITER_ARCHETYPEN,
+    labels: _labelsAusIds(BEGLEITER_ARCHETYPEN, ARCHETYPEN_DATA),
+    eintrag: { typ: 'figur', figurIds: [], figurId: '', begruendung: '', kraftName: '', kraftBeschreibung: '' },
+    hinweis: 'Schluessel ohne Umlaute, also schwellenhueter, gefaehrte, waechter. figurIds verweist auf data.figuren[].id; figurId ist die alte Einzelform und wird beim Laden nach figurIds migriert.'
+  },
+  maerchenmodell: {
+    typ: 'map',
+    schluessel: Object.keys(MAERCHEN_MODELL),
+    labels: Object.fromEntries(Object.entries(MAERCHEN_MODELL).map(([k, v]) => [k, v.label])),
+    eintrag: '',
+    hinweis: 'Die Werte sind einfache Texte, kein Objekt. Optional sind: ' +
+      Object.entries(MAERCHEN_MODELL).filter(([, v]) => v.optional).map(([k]) => k).join(', ') + '.'
+  },
+  spannungsIdeen: {
+    typ: 'map',
+    schluessel: SPANNUNGS_TECHNIKEN.map(t => t.id),
+    labels: Object.fromEntries(SPANNUNGS_TECHNIKEN.map(t => [t.id, t.name])),
+    eintrag: '',
+    hinweis: 'Je Spannungstechnik ein Text.'
+  },
+  intrigen: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(INTRIGE_VORLAGE()),
+    idMuster: 'int_<millis>',
+    hinweis: 'intrigant ist eine Figur-Id oder null; helfer und opfer sind Listen von Figur-Ids.'
+  },
+
+  // ---------- Figuren ----------
+  figuren: {
+    typ: 'liste',
+    schluessel: FIGUR_FELDER.map(f => f.key),
+    labels: _feldLabels(FIGUR_FELDER),
+    eintrag: { id: '', ..._feldLeerform(FIGUR_FELDER) },
+    idMuster: 'fig<millis>, von der KI fig_ki_<millis>_<6 Zeichen>, beim Import fig_imp_<millis>_<Index>',
+    hinweis: 'Zusaetzlich moeglich: beziehung_<figurId> mit { art, beschreibung } – dieselbe Form wie in beziehungs_netzwerk.'
+  },
+  beziehungs_netzwerk: {
+    typ: 'map',
+    schluessel: ['<figurId1>_<figurId2>'],
+    eintrag: { ...BEZIEHUNG_LEERFORM },
+    labels: Object.fromEntries(BEZIEHUNGS_TYPEN.map(b => [b.id, b.name])),
+    hinweis: 'art ist eine Id aus labels. Der Schluessel setzt die beiden Figur-Ids mit Unterstrich zusammen.'
+  },
+  beziehungs_positionen: {
+    typ: 'map',
+    schluessel: ['<figurId>'],
+    eintrag: { x: 0, y: 0 },
+    hinweis: 'Relative Position im Netzwerk, x und y jeweils zwischen 0 und 1.'
+  },
+
+  // ---------- Situationen ----------
+  felder: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(SZENE_VORLAGE()),
+    idMuster: 'f<millis>, von der KI feld_ki_<millis>_<6 Zeichen>, beim Import feld_imp_<millis>_<Index>',
+    hinweis: 'Die Szenen des Rasters. position bestimmt die Reihenfolge, figuren und themen sind Listen von Ids, inhalt ist der Szenentext als HTML, status ist idee, entwurf oder fertig.'
+  },
+  szenenIdeen: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(SZENENIDEE_VORLAGE()),
+    idMuster: 'sz<millis>, von der KI sz_ki_<millis>_<6 Zeichen>, aus dem Parkplatz sz_pp_<millis>_<6 Zeichen>',
+    hinweis: 'Noch nicht platzierte Situationen. titel und text halten denselben Text.'
+  },
+  aktuelle_szene: {
+    typ: 'map',
+    schluessel: ['einstieg', 'hoehepunkt', 'ausstieg', 'notizen'],
+    labels: { einstieg: 'Einstieg', hoehepunkt: 'Stärkster Moment', ausstieg: 'Ausstieg', notizen: 'Notizen' },
+    eintrag: { einstieg: '', hoehepunkt: '', ausstieg: '', notizen: '' },
+    hinweis: 'Der Notizblock des Szene-Werkzeugs, unabhaengig von felder.'
+  },
+  geheimnisse: {
+    typ: 'liste',
+    eintrag: _schemaLeerform({ ...GEHEIMNIS_VORLAGE(), momente: [MOMENT_VORLAGE()] }),
+    idMuster: 'geh_<millis>; aus einer Figur abgeleitet figur_<figurId>',
+    hinweis: 'traeger ist eine Figur-Id, beteiligte eine Zuordnung figurId → weiss davon (Wahrheitswert), publikum ist mit_figur, vor_figur oder nach_figur.'
+  },
+  figuren_tracking: {
+    typ: 'map',
+    schluessel: ['<figurId>', '<szeneId>'],
+    labels: _feldLabels(FIGUREN_TRACKING_FELDER),
+    eintrag: _feldLeerform(FIGUREN_TRACKING_FELDER),
+    hinweis: 'Zwei Ebenen: { <figurId>: { <szeneId>: { ... } } }. szeneId ist eine Id aus data.felder.'
+  },
+  themen_tracking: {
+    typ: 'map',
+    schluessel: ['<themaId>', '<szeneId>'],
+    labels: _feldLabels(THEMEN_TRACKING_FELDER),
+    eintrag: _feldLeerform(THEMEN_TRACKING_FELDER),
+    hinweis: 'Zwei Ebenen: { <themaId>: { <szeneId>: { ... } } }. In alten Projekten kommt zusaetzlich position_quadrat vor (Werte wie virtue_a, exaggeration_a) – ein Altbestand, den die App nicht mehr schreibt und nicht auswertet.'
+  },
+
+  // ---------- Reflexion und Dokumentation ----------
+  impulsfragen_notizen: {
+    typ: 'map',
+    schluessel: Object.keys(IMPULSFRAGEN_MAP),
+    labels: Object.fromEntries(Object.keys(IMPULSFRAGEN_MAP).map(k => [k, _werkzeugName(`impulsfragen_${k}`)])),
+    eintrag: '',
+    hinweis: 'Je Rubrik ein Text. Die abgehakten Fragen stehen getrennt in impulsfragen_checked.'
+  },
+  impulsfragen_checked: {
+    typ: 'map',
+    schluessel: ['<rubrik>_<Fragennummer>'],
+    eintrag: false,
+    hinweis: 'Wahrheitswerte zu den einzelnen Impulsfragen.'
+  },
+  reflexionsNotizen: {
+    typ: 'map',
+    schluessel: Object.keys(REFLEXIONS_FRAGEN),
+    labels: Object.fromEntries(Object.entries(REFLEXIONS_FRAGEN).map(([k, v]) => [k, v.name])),
+    eintrag: '',
+    hinweis: 'Je Reflexionskategorie ein Text.'
+  },
+  kommentare: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(KOMMENTAR_VORLAGE()),
+    idMuster: 'k<millis>',
+    labels: Object.fromEntries(Object.entries(KOMMENTAR_ROLLEN).map(([k, v]) => [k, v.name])),
+    hinweis: 'rolle ist eine Id aus labels. elementType ist zum Beispiel feld, figur oder thema, elementId die zugehoerige Id.'
+  },
+  treatment: {
+    typ: 'map',
+    schluessel: ['text', 'stand', 'aktualisiert', 'versionen'],
+    labels: { text: 'Arbeitsfassung', stand: 'Grund der Fassung', aktualisiert: 'Datum', versionen: 'Frühere Fassungen' },
+    eintrag: { text: '', stand: '', aktualisiert: '', versionen: [{ text: '', stand: '', datum: '' }] },
+    hinweis: 'Eine Arbeitsfassung mit Verlauf; hoechstens 20 Fassungen werden behalten. Die Kapitel des Treatment-Assistenten: ' +
+      TREATMENT_KAPITEL.map(k => k.id).join(', ') + '.'
+  },
+  dossier: {
+    typ: 'map',
+    schluessel: Object.keys({ ...DEFAULT_DATA.dossier, ...DOSSIER_VORLAGE() }),
+    eintrag: _schemaLeerform({ ...DEFAULT_DATA.dossier, ...DOSSIER_VORLAGE() }),
+    labels: Object.fromEntries(DOSSIER_ABSCHNITTE.map(a => [a.id, a.name])),
+    hinweis: 'labels beschreibt die Abschnitte der Oberflaeche, nicht die Datenschluessel – die stehen in schluessel. figurBeschreibungen ist eine Zuordnung figurId → Text.'
+  },
+
+  // ---------- Recherche ----------
+  recherche: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(RECHERCHE_VORLAGE()),
+    idMuster: 'rech_<millis>',
+    hinweis: 'type ist bild, link, text oder zitat. imageData haelt einen data:-URL oder null.'
+  },
+  parkplatz: {
+    typ: 'liste',
+    eintrag: _schemaLeerform(PARKPLATZ_VORLAGE()),
+    idMuster: 'pp_<millis>_<6 Zeichen>, von der KI pp_ki_<millis>_<6 Zeichen>',
+    hinweis: 'herkunft haelt fest, woher die Idee kam. angelegt ist ein Datum im Format TT.MM.JJJJ.'
+  },
+
+  // ---------- Sammelflaeche ----------
+  schreibflaeche: {
+    typ: 'text',
+    hinweis: 'Der zusammengesetzte Text der Sammelflaeche. Wird aus schreibflaecheInhalte neu erzeugt – nicht von Hand pflegen.'
+  },
+  schreibflaecheInhalte: {
+    typ: 'map',
+    schluessel: ALLE_WERKZEUG_IDS,
+    eintrag: '',
+    hinweis: 'Je Werkzeug ein Textbaustein. Zusaetzlich moeglich: figur_<figurId>, 5-eckpfeiler_<figurId> und guided_<kategorie>. Eigene Bezeichnungen stehen in schreibflaecheLabels.'
+  },
+  schreibflaecheLabels: {
+    typ: 'map',
+    schluessel: ['<werkzeugId>'],
+    eintrag: '',
+    hinweis: 'Ueberschreibt die Ueberschrift eines Bausteins auf der Sammelflaeche.'
+  }
+};
+
 const DEFAULT_GUIDED_MODE = {
   active: false,
   activePath: null,
   currentStep: 1,
   answers: { A: {}, B: {}, C: {}, D: {}, E: { variante: null } },
+  // Merkt sich pro Frage den Wortlaut, der bereits auf der Sammelfläche steht.
+  // Damit landet dieselbe Antwort nicht bei jeder Übertragung ein weiteres Mal
+  // dort, und geänderte Antworten gehen trotzdem noch einmal hinüber.
+  exportiert: { A: {}, B: {}, C: {}, D: {}, E: {} },
   showHelp: false
 };
 
@@ -17044,33 +17745,9 @@ const loadSavedState = () => {
       
       // Sicherstellen dass alle Arrays existieren (Migration von alten Projekten)
       if (parsed.data) {
-        parsed.data = {
-          ...DEFAULT_DATA,
-          ...parsed.data,
-          // Arrays sicher initialisieren
-          figuren: parsed.data.figuren || [],
-          themen: parsed.data.themen || [],
-          felder: parsed.data.felder || [],
-          szenenIdeen: parsed.data.szenenIdeen || [],
-          vorgaben: parsed.data.vorgaben || [],
-          recherche: parsed.data.recherche || [],
-          parkplatz: parsed.data.parkplatz || [],
-          // Objekte sicher initialisieren
-          treatment: {
-            ...DEFAULT_DATA.treatment,
-            ...(parsed.data.treatment || {}),
-            versionen: parsed.data.treatment?.versionen || []
-          },
-          fundament: { ...DEFAULT_DATA.fundament, ...(parsed.data.fundament || {}) },
-          dossier: { ...DEFAULT_DATA.dossier, ...(parsed.data.dossier || {}) },
-          schreibflaecheInhalte: parsed.data.schreibflaecheInhalte || {},
-          impulsfragen_notizen: parsed.data.impulsfragen_notizen || {},
-          figuren_tracking: parsed.data.figuren_tracking || {},
-          themen_tracking: parsed.data.themen_tracking || {},
-          reflexionsNotizen: parsed.data.reflexionsNotizen || {}
-        };
+        parsed.data = normalisiereData(parsed.data);
       }
-      
+
       return parsed;
     }
   } catch (e) {
@@ -17786,8 +18463,15 @@ function SzenenGuideModal({ feld, figuren, onSave, onClose }) {
     onClose();
   };
 
+  // Auch das × und der Klick daneben speichern. Vorher war alles Getippte weg,
+  // wenn nicht ausdrücklich «Speichern & schliessen» geklickt wurde.
+  const schliessen = () => {
+    const etwasGetippt = SZENEN_GUIDE_SCHRITTE.some(s => (antworten[s.key] || '').trim());
+    if (etwasGetippt) abschliessen(); else onClose();
+  };
+
   return (
-    <div className="szenenguide-overlay" onClick={onClose}>
+    <div className="szenenguide-overlay" onClick={schliessen}>
       <div className="szenenguide-modal" onClick={(e) => e.stopPropagation()}>
         <div className="szenenguide-header">
           <div>
@@ -17795,7 +18479,7 @@ function SzenenGuideModal({ feld, figuren, onSave, onClose }) {
             <div className="szenenguide-titel">{feld.titel || 'Unbenannte Szene'}</div>
             {figurenNamen.length > 0 && <div className="szenenguide-figuren">Figuren: {figurenNamen.join(', ')}</div>}
           </div>
-          <button className="szenenguide-close" onClick={onClose}>×</button>
+          <button className="szenenguide-close" onClick={schliessen}>×</button>
         </div>
 
         <div className="szenenguide-progress">
@@ -17980,9 +18664,12 @@ function DrameraWerkbank() {
     return {
       ...DEFAULT_GUIDED_MODE,
       ...saved,
-      answers: { ...DEFAULT_GUIDED_MODE.answers, ...(saved.answers || {}) }
+      answers: { ...DEFAULT_GUIDED_MODE.answers, ...(saved.answers || {}) },
+      exportiert: { ...DEFAULT_GUIDED_MODE.exportiert, ...(saved.exportiert || {}) }
     };
   });
+  // Kurze Rückmeldung nach dem Übertragen auf die Sammelfläche
+  const [guidedHinweis, setGuidedHinweis] = useState('');
   
   // === STRUKTURHILFE ===
   const [showStrukturhilfe, setShowStrukturhilfe] = useState(false);
@@ -18117,11 +18804,16 @@ function DrameraWerkbank() {
         _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
+        // Auftrag 1: Der Export beschreibt seine eigene Struktur.
+        _schema: TOOL_SCHEMA,
         data,
         guidedMode,
         strukturAntworten,
         offeneFormAbschnitte,
-        aktuellesRaster
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
       };
       gdriveAutoBackup(exportData).then(result => {
         if (result && result.success) {
@@ -18184,6 +18876,8 @@ function DrameraWerkbank() {
         _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
+        // Auftrag 1: Der Export beschreibt seine eigene Struktur.
+        _schema: TOOL_SCHEMA,
         data,
         guidedMode,
         strukturAntworten,
@@ -18610,7 +19304,7 @@ function DrameraWerkbank() {
           if (k.fundament?.unaussprechliches && !data.fundament?.unaussprechliches) { analysis.konzept.hatDaten = true; analysis.konzept.details.push('Unaussprechliches'); }
           if (k.fundament?.konflikt && !data.fundament?.konflikt && !data.konflikt) { analysis.konzept.hatDaten = true; analysis.konzept.details.push('Konflikt'); }
           if (k.treatment) { analysis.konzept.hatDaten = true; analysis.konzept.details.push('Treatment'); }
-          if (k.werte && k.werte.length > 0 && !data.wertequadrat) { analysis.konzept.hatDaten = true; analysis.konzept.details.push('Wertequadrat'); }
+          if (k.werte && k.werte.length > 0 && !_wqHatInhalt(data.wertequadrat)) { analysis.konzept.hatDaten = true; analysis.konzept.details.push('Wertequadrat'); }
         }
         
         // Recherche analysieren (v3.0)
@@ -19065,9 +19759,9 @@ function DrameraWerkbank() {
       }
       
       // Wertequadrat
-      if (k.werte && k.werte.length > 0 && !data.wertequadrat) {
+      if (k.werte && k.werte.length > 0 && !_wqHatInhalt(data.wertequadrat)) {
         const w = k.werte[0];
-        updatedData.wertequadrat = { virtue_a: w.virtue_a, virtue_b: w.virtue_b, excess_a: w.excess_a, excess_b: w.excess_b };
+        updatedData.wertequadrat = { virtue_a: w.virtue_a, virtue_b: w.virtue_b, exaggeration_a: w.exaggeration_a || w.excess_a || '', exaggeration_b: w.exaggeration_b || w.excess_b || '' };
         if (w.zuordnung) updatedData.wertequadrat_zuordnung = w.zuordnung;
         importedKonzept = true;
       }
@@ -19217,7 +19911,16 @@ function DrameraWerkbank() {
   const [dramaturgMessages, setDramaturgMessages] = useState([]);
   const [dramaturgInput, setDramaturgInput] = useState('');
   const [dramaturgLoading, setDramaturgLoading] = useState(false);
-  const [flowModeActive, setFlowModeActive] = useState(false); // KI-Hinweise ausblenden
+  // KI-Hinweise ausblenden – die Einstellung überlebt jetzt den Reload.
+  const [flowModeActive, setFlowModeActive] = useState(() => {
+    try {
+      const saved = localStorage.getItem('dramera-flowmode');
+      return saved !== null ? JSON.parse(saved) : false;
+    } catch (e) { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('dramera-flowmode', JSON.stringify(flowModeActive)); } catch (e) {}
+  }, [flowModeActive]);
   const [pendingActions, setPendingActions] = useState([]); // Aktionen die übernommen werden können
   const [kiUndo, setKiUndo] = useState(null); // Schnappschuss vor der letzten Übernahme (für Rückgängig)
   const dramaturgEndRef = useRef(null); // Für Auto-Scroll
@@ -19299,8 +20002,14 @@ function DrameraWerkbank() {
   const applyIdbRecovery = () => {
     if (!idbRecovery) return;
     try {
-      setData({ ...DEFAULT_DATA, ...idbRecovery.data });
+      setData(normalisiereData(idbRecovery.data));
       if (idbRecovery.guidedMode) setGuidedMode(idbRecovery.guidedMode);
+      if (idbRecovery.strukturAntworten) setStrukturAntworten(idbRecovery.strukturAntworten);
+      if (idbRecovery.offeneFormAbschnitte) setOffeneFormAbschnitte(idbRecovery.offeneFormAbschnitte);
+      if (idbRecovery.aktuellesRaster) setAktuellesRaster(idbRecovery.aktuellesRaster);
+      if (idbRecovery.materialSidebarWidth) setMaterialSidebarWidth(idbRecovery.materialSidebarWidth);
+      if (idbRecovery.werkzeugSidebarWidth) setWerkzeugSidebarWidth(idbRecovery.werkzeugSidebarWidth);
+      if (idbRecovery.bearbeitenSidebarWidth) setBearbeitenSidebarWidth(idbRecovery.bearbeitenSidebarWidth);
     } catch (e) {}
     setIdbRecovery(null);
   };
@@ -20672,14 +21381,11 @@ Ersetze den Dialog im JSON mit dem tatsächlichen Dialog den du geschrieben hast
     };
 
     // Figuren mit ALLEN Feldern
-    const FIGUR_LABELS = {
-      spitzname: 'Spitzname', alter: 'Alter', geschlecht: 'Geschlecht', beruf: 'Beruf',
-      herkunft: 'Herkunft', charakteristik: 'Charakteristik', erscheinung: 'Erscheinung',
-      physische_eigenheiten: 'Physisches', sprechweise: 'Sprechweise',
-      ziel: 'Will (Want)', beduerfnis: 'Braucht (Need)', praegung: 'Prägung (Ghost)',
-      praegende_ereignisse: 'Prägende Ereignisse', backstory: 'Backstory',
-      geheimnisse: 'Geheimnis', widersprueche: 'Widerspruch', archetyp: 'Archetyp'
-    };
+    // Abgeleitet aus FIGUR_FELDER, damit ein neues Figurenfeld hier nicht
+    // vergessen wird. imKiDump: false laesst Name und Bilddaten weg.
+    const FIGUR_LABELS = Object.fromEntries(
+      FIGUR_FELDER.filter(f => f.imKiDump !== false).map(f => [f.key, f.label])
+    );
     const figurenText = (data.figuren || []).map((f, i) => {
       const zeilen = [];
       Object.keys(FIGUR_LABELS).forEach(k => {
@@ -21317,8 +22023,7 @@ WICHTIGE REGELN:
     };
 
     // NEUES PROJEKT erstellen (mit allen DEFAULT_DATA Feldern!)
-    setData({
-      ...DEFAULT_DATA,
+    setData(normalisiereData({
       projektName: importAnalysis.titel || 'Importiertes Stück',
       fundament,
       figuren: neueFiguren,
@@ -21328,8 +22033,8 @@ WICHTIGE REGELN:
       beziehungs_netzwerk: Object.keys(neueBeziehungen).length > 0 ? neueBeziehungen : {},
       schreibflaeche: '',
       schreibflaecheInhalte: {}
-    });
-    
+    }));
+
     // Dialog schliessen
     setShowImportDialog(false);
     setImportStep('upload');
@@ -22047,11 +22752,16 @@ WICHTIGE REGELN:
         _app: 'dramera',
         version: '4.16',
         exportDate: new Date().toISOString(),
+        // Auftrag 1: Der Export beschreibt seine eigene Struktur.
+        _schema: TOOL_SCHEMA,
         data,
         guidedMode,
         strukturAntworten,
         offeneFormAbschnitte,
-        aktuellesRaster
+        aktuellesRaster,
+        materialSidebarWidth,
+        werkzeugSidebarWidth,
+        bearbeitenSidebarWidth
       };
       zip.file(`${projectName}.dramera.json`, JSON.stringify(exportData, null, 2));
 
@@ -22317,7 +23027,7 @@ WICHTIGE REGELN:
       if (meta?.data) {
         try {
           const parsed = JSON.parse(meta.data);
-          loadedData = { ...DEFAULT_DATA, ...parsed.data };
+          loadedData = normalisiereData(parsed.data);
           if (parsed.guidedMode) loadedGuidedMode = { ...DEFAULT_GUIDED_MODE, ...parsed.guidedMode };
           if (parsed.strukturAntworten) loadedStrukturAntworten = parsed.strukturAntworten;
           if (parsed.offeneFormAbschnitte) loadedOffeneFormAbschnitte = parsed.offeneFormAbschnitte;
@@ -22637,11 +23347,11 @@ WICHTIGE REGELN:
             JSON.stringify(data.fundament.konflikt) :
             (data.fundament?.konflikt || data.konflikt || '')
         },
-        werte: data.wertequadrat ? [{
+        werte: _wqHatInhalt(data.wertequadrat) ? [{
           virtue_a: data.wertequadrat.virtue_a || '',
           virtue_b: data.wertequadrat.virtue_b || '',
-          excess_a: data.wertequadrat.excess_a || '',
-          excess_b: data.wertequadrat.excess_b || '',
+          excess_a: data.wertequadrat.exaggeration_a || data.wertequadrat.excess_a || '',
+          excess_b: data.wertequadrat.exaggeration_b || data.wertequadrat.excess_b || '',
           zuordnung: data.wertequadrat_zuordnung || {}
         }] : [],
         motive: (data.themen || []).map(t => ({
@@ -22927,7 +23637,21 @@ WICHTIGE REGELN:
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
-  
+
+  // Auftrag 5 (26.07.2026): «Struktur exportieren».
+  // Gibt ausschliesslich _schema aus – keine Projektdaten. Damit beginnt eine
+  // externe Arbeitssitzung mit wenigen Kilobyte statt einem Megabyte.
+  const exportStruktur = () => {
+    const struktur = {
+      _app: 'dramera-struktur',
+      version: '4.16',
+      exportDate: new Date().toISOString(),
+      hinweis: 'Beschreibung der Datenstruktur, keine Projektdaten. typ ist map (Objekt) oder liste (Array). schluessel nennt die internen Ids, labels die Bezeichnungen der Oberfläche, eintrag die leere Form eines Eintrags.',
+      _schema: TOOL_SCHEMA
+    };
+    downloadFile(JSON.stringify(struktur, null, 2), `Dramera_Struktur_4.16.json`, 'application/json');
+  };
+
   // Hilfsfunktion: Generiere PDF über Print-Dialog
   const openPrintWindow = (htmlContent, title) => {
     const fullHtml = `
@@ -24659,7 +25383,7 @@ STIL:
     }
     
     // WERTEQUADRAT
-    if (data.wertequadrat) {
+    if (_wqHatInhalt(data.wertequadrat)) {
       lines.push('WERTEQUADRAT');
       lines.push(hr2);
       const wq = data.wertequadrat;
@@ -24865,12 +25589,16 @@ STIL:
           // Skip markieren
           skipNextChangeRef.current = true;
           
-          // States setzen
-          setData(newData);
+          // States setzen – DEFAULT_DATA untermischen, damit Schlüssel aus
+          // neueren App-Fassungen nicht fehlen.
+          setData(normalisiereData(newData));
           if (imported.guidedMode) setGuidedMode(imported.guidedMode);
           if (imported.strukturAntworten) setStrukturAntworten(imported.strukturAntworten);
           if (imported.offeneFormAbschnitte) setOffeneFormAbschnitte(imported.offeneFormAbschnitte);
           if (imported.aktuellesRaster) setAktuellesRaster(imported.aktuellesRaster);
+          if (imported.materialSidebarWidth) setMaterialSidebarWidth(imported.materialSidebarWidth);
+          if (imported.werkzeugSidebarWidth) setWerkzeugSidebarWidth(imported.werkzeugSidebarWidth);
+          if (imported.bearbeitenSidebarWidth) setBearbeitenSidebarWidth(imported.bearbeitenSidebarWidth);
           
           setHasUnsavedChanges(false);
           setSaveStatus('saved');
@@ -24990,9 +25718,11 @@ STIL:
     setShowLoadDemoDialog(false);
   };
   
-  // Wechsel von geführtem zu freiem Modus - Antworten NACH KATEGORIE sortiert in Schreibfläche
-  const wechsleZuFreiemModus = async () => {
-    // Sammle alle Antworten sortiert nach Kategorie
+  // Sammelt die Antworten der angegebenen Pfade und schreibt sie auf die
+  // Sammelfläche. Eine Antwort geht nur hinüber, wenn sie dort noch nicht in
+  // genau diesem Wortlaut steht – mehrfaches Übertragen verdoppelt also nichts.
+  // Die Antworten selbst bleiben im geführten Modus stehen.
+  const uebertrageGefuehrteAntworten = async (pathIds) => {
     const kategorieAntworten = {
       fundament: [],
       thema: [],
@@ -25000,197 +25730,105 @@ STIL:
       situationen: [],
       raum_zeit: []
     };
-    
-    Object.entries(guidedMode.answers).forEach(([pathId, answers]) => {
+    const neuExportiert = {};
+
+    pathIds.forEach(pathId => {
+      const answers = guidedMode.answers?.[pathId];
       const pfad = GEFUEHRTE_PFADE[pathId];
-      if (!pfad) return;
-      
-      // Fragen für diesen Pfad holen
+      if (!pfad || !answers) return;
+
       let fragen = [];
       let variantenMapping = null;
-      
       if (pathId === 'E' && answers.variante) {
         fragen = pfad.fragen[answers.variante] || [];
         variantenMapping = E_VARIANTEN_MAPPING[answers.variante];
       } else if (pfad.fragen && Array.isArray(pfad.fragen)) {
         fragen = pfad.fragen;
       }
-      
-      // Jede Frage einzeln der richtigen Kategorie zuordnen
+
+      const bereits = (guidedMode.exportiert || {})[pathId] || {};
       fragen.forEach(f => {
         const antwort = answers[f.nr];
         if (!antwort?.trim()) return;
-        
-        // Kategorie bestimmen
+        if (bereits[f.nr] === antwort) return; // steht schon so auf der Sammelfläche
+
         let kategorie;
         if (pathId === 'E' && variantenMapping) {
           kategorie = variantenMapping[f.nr] || 'fundament';
         } else {
           kategorie = FRAGEN_KATEGORIE_MAPPING[pathId]?.[f.nr] || 'fundament';
         }
-        
-        kategorieAntworten[kategorie].push({
-          impuls: f.impuls,
-          antwort: antwort,
-          pfad: pfad.name
-        });
+        if (!kategorieAntworten[kategorie]) kategorie = 'fundament';
+
+        kategorieAntworten[kategorie].push({ impuls: f.impuls, antwort });
+        if (!neuExportiert[pathId]) neuExportiert[pathId] = {};
+        neuExportiert[pathId][f.nr] = antwort;
       });
     });
-    
-    // Neue Inhalte erstellen
-    const neueInhalte = { ...(data.schreibflaecheInhalte || {}) };
-    
-    // KI-Transformation aktivieren wenn KI an
+
+    const anzahl = Object.values(kategorieAntworten).reduce((n, l) => n + l.length, 0);
+    if (anzahl === 0) return 0;
+
     const useKI = kiModus !== 'aus' && apiKey;
-    if (useKI) {
-      setKiTransformLoading(true);
-    }
-    
+    if (useKI) setKiTransformLoading(true);
+
     try {
-      // Für jede Kategorie mit Antworten einen Text generieren
-      for (const [kategorie, antworten] of Object.entries(kategorieAntworten)) {
-        if (antworten.length === 0) continue;
-        
-        const lines = [];
-        antworten.forEach(a => {
-          lines.push(`${a.impuls}`);
-          lines.push(a.antwort);
-          lines.push('');
-        });
-        
-        let finalContent = lines.join('\n').trim();
-        
-        // KI-Transformation wenn aktiv
-        if (useKI) {
-          const werkzeugId = `guided_${kategorie}`;
-          finalContent = await transformiereZuText(finalContent, werkzeugId);
-        }
-        
-        // Bestehenden Inhalt ergänzen oder neu anlegen
-        const key = `guided_${kategorie}`;
-        const existingContent = neueInhalte[key] || '';
-        
-        neueInhalte[key] = existingContent 
-          ? `${existingContent}\n\n${finalContent}`
-          : finalContent;
-      }
-    } finally {
-      if (useKI) {
-        setKiTransformLoading(false);
-      }
-    }
-    
-    // Generiere die formatierte Schreibfläche
-    const formattedContent = generateFormattedSchreibflaeche(neueInhalte, data);
-    
-    setData(prev => ({
-      ...prev,
-      schreibflaecheInhalte: neueInhalte,
-      schreibflaeche: formattedContent
-    }));
-    
-    // Antworten leeren und Modus wechseln
-    setGuidedMode(prev => ({
-      ...prev,
-      active: false,
-      answers: { A: {}, B: {}, C: {}, D: {}, E: { variante: null } }
-    }));
-  };
-  
-  // Einzelnen geführten Pfad zur Schreibfläche exportieren (ohne Moduswechsel)
-  const exportierePfadZuSchreibflaeche = async (pathId) => {
-    const answers = guidedMode.answers[pathId];
-    const pfad = GEFUEHRTE_PFADE[pathId];
-    if (!pfad || !answers) return;
-    
-    // Sammle Antworten sortiert nach Kategorie
-    const kategorieAntworten = {
-      fundament: [],
-      thema: [],
-      figuren: [],
-      situationen: [],
-      raum_zeit: []
-    };
-    
-    // Fragen für diesen Pfad holen
-    let fragen = [];
-    let variantenMapping = null;
-    
-    if (pathId === 'E' && answers.variante) {
-      fragen = pfad.fragen[answers.variante] || [];
-      variantenMapping = E_VARIANTEN_MAPPING[answers.variante];
-    } else if (pfad.fragen && Array.isArray(pfad.fragen)) {
-      fragen = pfad.fragen;
-    }
-    
-    // Jede Frage einzeln der richtigen Kategorie zuordnen
-    fragen.forEach(f => {
-      const antwort = answers[f.nr];
-      if (!antwort?.trim()) return;
-      
-      // Kategorie bestimmen
-      let kategorie;
-      if (pathId === 'E' && variantenMapping) {
-        kategorie = variantenMapping[f.nr] || 'fundament';
-      } else {
-        kategorie = FRAGEN_KATEGORIE_MAPPING[pathId]?.[f.nr] || 'fundament';
-      }
-      
-      kategorieAntworten[kategorie].push({
-        impuls: f.impuls,
-        antwort: antwort
-      });
-    });
-    
-    // KI-Transformation aktivieren wenn KI an
-    const useKI = kiModus !== 'aus' && apiKey;
-    if (useKI) {
-      setKiTransformLoading(true);
-    }
-    
-    try {
-      // Neue Inhalte vorbereiten
       const neueInhalte = { ...(data.schreibflaecheInhalte || {}) };
-      
-      // Für jede Kategorie mit Antworten verarbeiten
+
       for (const [kategorie, antworten] of Object.entries(kategorieAntworten)) {
         if (antworten.length === 0) continue;
-        
+
         const lines = [];
         antworten.forEach(a => {
           lines.push(`${a.impuls}`);
           lines.push(a.antwort);
           lines.push('');
         });
-        
         let finalContent = lines.join('\n').trim();
-        
-        // KI-Transformation wenn aktiv
+
         if (useKI) {
-          const werkzeugId = `guided_${kategorie}`;
-          finalContent = await transformiereZuText(finalContent, werkzeugId);
+          finalContent = await transformiereZuText(finalContent, `guided_${kategorie}`);
         }
-        
+
         const key = `guided_${kategorie}`;
         const existingContent = neueInhalte[key] || '';
-        neueInhalte[key] = existingContent 
+        neueInhalte[key] = existingContent
           ? `${existingContent}\n\n${finalContent}`
           : finalContent;
       }
-      
-      // Einmal setData mit allen Änderungen
+
       const formattedContent = generateFormattedSchreibflaeche(neueInhalte, data);
       setData(prev => ({
         ...prev,
         schreibflaecheInhalte: neueInhalte,
         schreibflaeche: formattedContent
       }));
-      
+
+      setGuidedMode(prev => {
+        const ex = { ...(prev.exportiert || {}) };
+        Object.entries(neuExportiert).forEach(([pathId, eintraege]) => {
+          ex[pathId] = { ...(ex[pathId] || {}), ...eintraege };
+        });
+        return { ...prev, exportiert: ex };
+      });
     } finally {
-      if (useKI) {
-        setKiTransformLoading(false);
-      }
+      if (useKI) setKiTransformLoading(false);
     }
+
+    return anzahl;
+  };
+
+  // Wechsel von geführtem zu freiem Modus. Überträgt alles noch nicht
+  // Übertragene und lässt die Antworten im geführten Modus stehen, damit man
+  // sie später noch nachlesen und ergänzen kann.
+  const wechsleZuFreiemModus = async () => {
+    await uebertrageGefuehrteAntworten(Object.keys(guidedMode.answers || {}));
+    setGuidedMode(prev => ({ ...prev, active: false }));
+  };
+
+  // Einzelnen geführten Pfad zur Sammelfläche übertragen (ohne Moduswechsel)
+  const exportierePfadZuSchreibflaeche = async (pathId) => {
+    return uebertrageGefuehrteAntworten([pathId]);
   };
 
   const handleDragStart = (e, i) => { setDraggedIndex(i); e.dataTransfer.effectAllowed = 'move'; };
@@ -25198,7 +25836,8 @@ STIL:
   const handleDrop = (e, targetIndex) => { e.preventDefault(); if (draggedIndex === null || draggedIndex === targetIndex) return; const f = [...(data.felder || [])]; const [d] = f.splice(draggedIndex, 1); f.splice(targetIndex, 0, d); f.forEach((x, i) => x.position = i); setData(p => ({ ...p, felder: f })); setDraggedIndex(null); };
 
   const updateFeld = (feldId, updates) => { setData(p => ({ ...p, felder: (p.felder || []).map(f => f.id === feldId ? { ...f, ...updates } : f) })); if (ausgewaehltesFeld?.id === feldId) setAusgewaehltesFeld(p => ({ ...p, ...updates })); };
-  const addFeld = (titel) => { const n = { id: `f${Date.now()}`, titel, position: (data.felder || []).length, figuren: [], themen: [], notizen: '', zusammenfassung: '', ziel: '', widerstand: '', wendepunkt: '', figuren_ziele: [], gespraechsart: '', status: 'idee', inhalt: '' }; setData(p => ({ ...p, felder: [...(p.felder || []), n] })); };
+  // Form der Szene kommt aus SZENE_VORLAGE – dieselbe Quelle wie das Schema.
+  const addFeld = (titel) => { const n = SZENE_VORLAGE(titel, (data.felder || []).length); setData(p => ({ ...p, felder: [...(p.felder || []), n] })); };
   
   // Szene aus Zeitstrahl entfernen und zurück zu Szenenideen verschieben
   const feldZurueckZuIdeen = (id) => { 
@@ -25754,11 +26393,11 @@ STIL:
   const renderWerkzeugInhalt = () => {
     switch (aktivesWerkzeug) {
       // Impulsfragen
-      case 'impulsfragen_fundament': return <ImpulsfragenTool rubrik="fundament" notizen={data.impulsfragen_notizen?.fundament} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
-      case 'impulsfragen_thema': return <ImpulsfragenTool rubrik="thema" notizen={data.impulsfragen_notizen?.thema} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
-      case 'impulsfragen_figuren': return <ImpulsfragenTool rubrik="figuren" notizen={data.impulsfragen_notizen?.figuren} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
-      case 'impulsfragen_situationen': return <ImpulsfragenTool rubrik="situationen" notizen={data.impulsfragen_notizen?.situationen} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
-      case 'impulsfragen_raum_zeit': return <ImpulsfragenTool rubrik="raum_zeit" notizen={data.impulsfragen_notizen?.raum_zeit} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'impulsfragen_fundament': return <ImpulsfragenTool rubrik="fundament" notizen={data.impulsfragen_notizen?.fundament} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} checked={data.impulsfragen_checked || {}} onCheckedChange={(v) => setData(p => ({ ...p, impulsfragen_checked: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'impulsfragen_thema': return <ImpulsfragenTool rubrik="thema" notizen={data.impulsfragen_notizen?.thema} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} checked={data.impulsfragen_checked || {}} onCheckedChange={(v) => setData(p => ({ ...p, impulsfragen_checked: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'impulsfragen_figuren': return <ImpulsfragenTool rubrik="figuren" notizen={data.impulsfragen_notizen?.figuren} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} checked={data.impulsfragen_checked || {}} onCheckedChange={(v) => setData(p => ({ ...p, impulsfragen_checked: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'impulsfragen_situationen': return <ImpulsfragenTool rubrik="situationen" notizen={data.impulsfragen_notizen?.situationen} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} checked={data.impulsfragen_checked || {}} onCheckedChange={(v) => setData(p => ({ ...p, impulsfragen_checked: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'impulsfragen_raum_zeit': return <ImpulsfragenTool rubrik="raum_zeit" notizen={data.impulsfragen_notizen?.raum_zeit} onNotizenChange={(rubrik, text) => setData(p => ({ ...p, impulsfragen_notizen: { ...(p.impulsfragen_notizen || {}), [rubrik]: text }}))} checked={data.impulsfragen_checked || {}} onCheckedChange={(v) => setData(p => ({ ...p, impulsfragen_checked: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
       // Fundament
       case 'vorgaben': return <VorgabenTool items={data.vorgaben || []} onChange={(items) => setData(p => ({ ...p, vorgaben: items }))} />;
       case 'autor': return <AutorTool value={data.autor} onChange={(v) => setData(p => ({ ...p, autor: v }))} onAddToSchreibflaeche={addToSchreibflaeche} />;
@@ -25783,8 +26422,14 @@ STIL:
         onAddToSchreibflaeche={addToSchreibflaeche}
         onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }}
       />;
-      case 'themenbrowser': return <ThemenbrowserTool onSelect={handleThemeSelect} selectedThemes={data.themen.filter(t => t.contrast)} onAddToSchreibflaeche={addToSchreibflaeche} />;
-      case 'motiv': return <MotivTool onSelect={handleMotivSelect} selectedMotive={data.selectedMotive || []} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'themenbrowser': return <ThemenbrowserTool onSelect={handleThemeSelect} selectedThemes={data.themen || []} onAddToSchreibflaeche={addToSchreibflaeche} />;
+      case 'motiv': return <MotivTool
+        onSelect={handleMotivSelect}
+        selectedMotive={data.selectedMotive || []}
+        onAddToSchreibflaeche={addToSchreibflaeche}
+        value={data.fundament?.motive || {}}
+        onChange={(v) => setData(p => ({ ...p, fundament: { ...(p.fundament || {}), motive: v } }))}
+      />;
       case 'motivketten': return <MotivkettenTool themen={data.themen} felder={data.felder} onNavigate={(f) => { setPhase('ordnen'); setAusgewaehltesFeld(f); }} />;
       // Figuren
       case 'figur': return <FigurTool figur={selectedFigur || data.figuren[0]} onChange={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
@@ -25796,6 +26441,8 @@ STIL:
         onBeziehungChange={(v) => setData(p => ({ ...p, beziehungs_netzwerk: v }))}
         onAddToSchreibflaeche={addToSchreibflaeche}
         felder={data.felder}
+        positionen={data.beziehungs_positionen || {}}
+        onPositionenChange={(v) => setData(p => ({ ...p, beziehungs_positionen: v }))}
       />;
       case 'maerchenmodell': return <MaerchenModellTool projektData={data} onUpdate={(updates) => setData(p => ({ ...p, ...updates }))} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
       case '5-eckpfeiler': return <FiveEckpfeilerTool figur={selectedFigur || data.figuren[0]} onUpdate={updateFigur} onAddToSchreibflaeche={addToSchreibflaeche} onWikiClick={(slug) => { setWikiInitialSlug(slug); setWikiOpen(true); }} />;
@@ -28159,6 +28806,14 @@ STIL:
         .quadrat-card:hover, .theme-item:hover, .motiv-item:hover, .polti-item:hover, .situation-item:hover { background: #fdf8f3; border-color: #c9a96e; }
         .quadrat-card.selected, .theme-item.selected, .motiv-item.selected, .situation-item.selected { background: #fdf8f3; border-color: #6b4423; border-width: 2px; }
         
+        .answer-saved-hint { margin-top: 0.35rem; font-size: 0.75rem; color: #9ca3af; }
+        .guided-hinweis { margin-top: 0.6rem; padding: 0.45rem 0.7rem; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 0.375rem; font-size: 0.82rem; color: #065f46; }
+
+        .thema-uebernehmen-btn { margin-top: 0.75rem; padding: 0.5rem 0.9rem; border: 1px solid #d1d5db; border-radius: 0.375rem; background: #fff; cursor: pointer; font-size: 0.85rem; }
+        .thema-uebernehmen-btn:hover:not(:disabled) { background: #f3f4f6; }
+        .thema-uebernehmen-btn:disabled { opacity: 0.45; cursor: default; }
+        .thema-uebernommen { margin-top: 0.5rem; font-size: 0.8rem; color: #6b7280; }
+
         /* Neues Wertequadrat */
         .wertequadrat-tool-neu { }
         .wertequadrat-modus { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
@@ -35474,7 +36129,7 @@ STIL:
         <TreatmentGenerator 
           data={data}
           onClose={() => setCurrentView('werkbank')}
-          onSave={(treatmentData) => setData(prev => ({ ...prev, treatment: treatmentData }))}
+          onSave={(treatmentData) => setData(prev => ({ ...prev, treatment: { ...(prev.treatment || {}), ...treatmentData } }))}
           apiKey={apiKey}
         />
       )}
@@ -35970,6 +36625,9 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                             }}
                             placeholder="Deine Antwort..."
                           />
+                          <div className="answer-saved-hint">
+                            Antworten werden laufend gespeichert – du kannst das Werkzeug jederzeit wechseln.
+                          </div>
                           
                           {/* Hilfe & Beispiel */}
                           <div className="help-section">
@@ -36019,13 +36677,27 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               Überspringen
                             </button>
                             
+                            {/* Übertragen geht in jedem Schritt, nicht erst am Schluss.
+                                Doppelt übertragene Antworten werden dabei erkannt. */}
+                            <button
+                              className="nav-btn export"
+                              onClick={async () => {
+                                const n = await exportierePfadZuSchreibflaeche(guidedMode.activePath);
+                                setGuidedHinweis(n > 0
+                                  ? `${n} Antwort${n === 1 ? '' : 'en'} auf die Sammelfläche übertragen.`
+                                  : 'Alle beantworteten Fragen stehen bereits auf der Sammelfläche.');
+                                setTimeout(() => setGuidedHinweis(''), 4000);
+                              }}
+                            >
+                              → Sammelfläche
+                            </button>
+
                             {guidedMode.currentStep >= totalSteps ? (
                               <>
                                 <button 
-                                  className="nav-btn export"
-                                  onClick={() => {
-                                    exportierePfadZuSchreibflaeche(guidedMode.activePath);
-                                    // Zurück zur Pfadauswahl
+                                  className="nav-btn"
+                                  onClick={async () => {
+                                    await exportierePfadZuSchreibflaeche(guidedMode.activePath);
                                     setGuidedMode(prev => ({ 
                                       ...prev, 
                                       activePath: null,
@@ -36033,7 +36705,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                                     }));
                                   }}
                                 >
-                                  → Schreibfläche (weiterer Pfad)
+                                  Weiterer Pfad
                                 </button>
                                 <button 
                                   className="nav-btn next"
@@ -36051,7 +36723,11 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               </button>
                             )}
                           </div>
-                          
+
+                          {guidedHinweis && (
+                            <div className="guided-hinweis">{guidedHinweis}</div>
+                          )}
+
                           {/* Fortschrittsanzeige */}
                           <div className="progress-dots">
                             {fragen.map((_, i) => (
@@ -37269,23 +37945,14 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                                   <div className="figur-tracking-header">
                                     <span className="figur-name" style={{ color: farbe.text }}>{figur.name}</span>
                                   </div>
+                                  {/* Felder kommen aus FIGUREN_TRACKING_FELDER – dieselbe Quelle wie das Schema. */}
                                   <div className="tracking-fields-grid">
-                                    <div className="tracking-field-mini">
-                                      <label>Zustand</label>
-                                      <input type="text" value={tracking.zustand || ''} onChange={(e) => updateFigurenTracking(figurId, ausgewaehltesFeld.id, 'zustand', e.target.value)} placeholder="Wie geht es ihr?" />
-                                    </div>
-                                    <div className="tracking-field-mini">
-                                      <label>Will hier</label>
-                                      <input type="text" value={tracking.will_hier || ''} onChange={(e) => updateFigurenTracking(figurId, ausgewaehltesFeld.id, 'will_hier', e.target.value)} placeholder="Szenenziel" />
-                                    </div>
-                                    <div className="tracking-field-mini">
-                                      <label>Hindernis</label>
-                                      <input type="text" value={tracking.hindernis || ''} onChange={(e) => updateFigurenTracking(figurId, ausgewaehltesFeld.id, 'hindernis', e.target.value)} placeholder="Was steht im Weg?" />
-                                    </div>
-                                    <div className="tracking-field-mini">
-                                      <label>Veränderung</label>
-                                      <input type="text" value={tracking.veraenderung || ''} onChange={(e) => updateFigurenTracking(figurId, ausgewaehltesFeld.id, 'veraenderung', e.target.value)} placeholder="Wie verlässt sie die Szene?" />
-                                    </div>
+                                    {FIGUREN_TRACKING_FELDER.map(f => (
+                                      <div className="tracking-field-mini" key={f.key}>
+                                        <label>{f.label}</label>
+                                        <input type="text" value={tracking[f.key] || ''} onChange={(e) => updateFigurenTracking(figurId, ausgewaehltesFeld.id, f.key, e.target.value)} placeholder={f.platzhalter} />
+                                      </div>
+                                    ))}
                                   </div>
                                 </div>
                               );
@@ -37313,9 +37980,9 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               </div>
                               {inSzene && (
                                 <div className="tracking-sidebar-fields">
-                                  <input type="text" placeholder="Zustand" value={tData.zustand || ''} onChange={(e) => updateFigurenTracking(fid, ausgewaehltesFeld.id, 'zustand', e.target.value)} />
-                                  <input type="text" placeholder="Will hier" value={tData.will_hier || ''} onChange={(e) => updateFigurenTracking(fid, ausgewaehltesFeld.id, 'will_hier', e.target.value)} />
-                                  <input type="text" placeholder="Veränderung" value={tData.veraenderung || ''} onChange={(e) => updateFigurenTracking(fid, ausgewaehltesFeld.id, 'veraenderung', e.target.value)} />
+                                  {FIGUREN_TRACKING_FELDER.filter(f => f.inSeitenleiste !== false).map(f => (
+                                    <input key={f.key} type="text" placeholder={f.label} value={tData[f.key] || ''} onChange={(e) => updateFigurenTracking(fid, ausgewaehltesFeld.id, f.key, e.target.value)} />
+                                  ))}
                                 </div>
                               )}
                             </div>
@@ -37335,7 +38002,9 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                               </div>
                               {inSzene && (
                                 <div className="tracking-sidebar-fields">
-                                  <input type="text" placeholder="Wie zeigt es sich?" value={tData.wie_zeigt_es_sich || ''} onChange={(e) => updateThemenTracking(tid, ausgewaehltesFeld.id, 'wie_zeigt_es_sich', e.target.value)} />
+                                  {THEMEN_TRACKING_FELDER.filter(f => f.inSeitenleiste !== false).map(f => (
+                                    <input key={f.key} type="text" placeholder={f.platzhalter || f.label} value={tData[f.key] || ''} onChange={(e) => updateThemenTracking(tid, ausgewaehltesFeld.id, f.key, e.target.value)} />
+                                  ))}
                                 </div>
                               )}
                             </div>
@@ -37668,7 +38337,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                             className="version-restore-btn"
                             onClick={() => {
                               if (window.confirm('Version vom ' + timeStr + ' wiederherstellen? Aktuelle Daten werden überschrieben.')) {
-                                setData({...DEFAULT_DATA, ...v.data});
+                                setData(normalisiereData(v.data));
                                 setShowVersionHistory(false);
                               }
                             }}
@@ -37709,11 +38378,14 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 </button>
                 <button onClick={() => {
                   if (recoveryData.data) {
-                    setData({...DEFAULT_DATA, ...recoveryData.data});
+                    setData(normalisiereData(recoveryData.data));
                     if (recoveryData.guidedMode) setGuidedMode(prev => ({...prev, ...recoveryData.guidedMode}));
                     if (recoveryData.strukturAntworten) setStrukturAntworten(recoveryData.strukturAntworten);
                     if (recoveryData.offeneFormAbschnitte) setOffeneFormAbschnitte(recoveryData.offeneFormAbschnitte);
                     if (recoveryData.aktuellesRaster) setAktuellesRaster(recoveryData.aktuellesRaster);
+                    if (recoveryData.materialSidebarWidth) setMaterialSidebarWidth(recoveryData.materialSidebarWidth);
+                    if (recoveryData.werkzeugSidebarWidth) setWerkzeugSidebarWidth(recoveryData.werkzeugSidebarWidth);
+                    if (recoveryData.bearbeitenSidebarWidth) setBearbeitenSidebarWidth(recoveryData.bearbeitenSidebarWidth);
                   }
                   setShowRecoveryDialog(false);
                   setRecoveryData(null);
@@ -37767,6 +38439,19 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                         <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Projekt inkl. Versionsverlauf als Archiv</div>
                       </div>
                       <span style={{fontSize:'0.8rem'}}>📦</span>
+                    </div>
+                  </div>
+
+                  {/* Auftrag 5 (26.07.2026): nur die Struktur, ohne Inhalt.
+                      Wenige Kilobyte statt eines ganzen Projekts – genug, damit
+                      von aussen gültige Einträge geschrieben werden können. */}
+                  <div style={{padding:'0.7rem',borderRadius:'8px',border:'1px solid #d8b4fe',background:'#faf5ff',cursor:'pointer'}} onClick={() => { exportStruktur(); setShowImportExportModal(false); }}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:500,fontSize:'0.82rem',color:'#6b21a8'}}>🧩 Nur Struktur exportieren</div>
+                        <div style={{fontSize:'0.7rem',color:'#666',marginTop:'2px'}}>Feldnamen und Schlüssel aller Werkzeuge, ohne Projektinhalt</div>
+                      </div>
+                      <span style={{fontSize:'0.8rem'}}>🧩</span>
                     </div>
                   </div>
 
@@ -38251,13 +38936,18 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     onClick={() => {
                       const exportData = {
                         _app: 'dramera',
-                        version: '4.15',
+                        version: '4.16',
                         exportDate: new Date().toISOString(),
+                        // Auftrag 1: Der Export beschreibt seine eigene Struktur.
+                        _schema: TOOL_SCHEMA,
                         data: data,
                         guidedMode: guidedMode,
                         strukturAntworten: strukturAntworten,
                         offeneFormAbschnitte: offeneFormAbschnitte,
-                        aktuellesRaster: aktuellesRaster
+                        aktuellesRaster: aktuellesRaster,
+                        materialSidebarWidth: materialSidebarWidth,
+                        werkzeugSidebarWidth: werkzeugSidebarWidth,
+                        bearbeitenSidebarWidth: bearbeitenSidebarWidth
                       };
                       const jsonStr = JSON.stringify(exportData, null, 2);
                       downloadFile(jsonStr, saveFileName, 'application/json');
@@ -38284,13 +38974,18 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                         onClick={async () => {
                           const exportData = {
                             _app: 'dramera',
-                            version: '4.15',
+                            version: '4.16',
                             exportDate: new Date().toISOString(),
+                            // Auftrag 1: Der Export beschreibt seine eigene Struktur.
+                            _schema: TOOL_SCHEMA,
                             data: data,
                             guidedMode: guidedMode,
                             strukturAntworten: strukturAntworten,
                             offeneFormAbschnitte: offeneFormAbschnitte,
-                            aktuellesRaster: aktuellesRaster
+                            aktuellesRaster: aktuellesRaster,
+                            materialSidebarWidth: materialSidebarWidth,
+                            werkzeugSidebarWidth: werkzeugSidebarWidth,
+                            bearbeitenSidebarWidth: bearbeitenSidebarWidth
                           };
                           const jsonStr = JSON.stringify(exportData, null, 2);
                           try {
