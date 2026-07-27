@@ -31,13 +31,38 @@
     var Block = Quill.import('blots/block');
     var Inline = Quill.import('blots/inline');
 
-    // camelCase-Keys (SCHREIBTISCH_FORMATVORLAGEN) → CSS-Suffix
-    var KEY_TO_CSS = {
-      standard: 'standard', figurenname: 'figurenname', dialog: 'dialog',
-      regieanweisung: 'regieanweisung', szeneTitel: 'szene-titel', aktTitel: 'akt-titel',
-      vers: 'vers', lied: 'lied', pause: 'pause', musik: 'musik', sound: 'sound',
-      notiz: 'notiz', nebentext: 'nebentext'
-    };
+    // === ABSATZTYPEN DES SZENENEDITORS – EINZIGE QUELLE ===
+    // Hieraus rendern das Format-Menue im Ordnen-Modus, die Auswahlliste in der
+    // Bearbeiten-Sidebar, die Format-Anzeige, die Leader-Tasten, die Blot-Klassen
+    // des Schreibtischs, die Konvertierung fmt-* <-> format-*, die Positivliste
+    // der Bereinigung und der Eintrag felder.absatzTypen im TOOL_SCHEMA. Wer
+    // einen Absatztyp ergaenzt, ergaenzt ihn hier – und nirgends sonst.
+    // taste:  Leader-Taste, null wenn der Typ nur ueber die Auswahlliste kommt.
+    // klasse: was im Datenmodell steht (data.felder[].inhalt), null bei Normal.
+    // quill:  Blot-Wert im Schreibtisch. css: dort geschrieben als format-<css>.
+    window.SZENE_ABSATZ_TYPEN = [
+      { taste: 'f',  klasse: 'fmt-figurenname',  quill: 'figurenname',    css: 'figurenname',    name: 'Figurenname',    symbol: '👤' },
+      { taste: 'd',  klasse: 'fmt-dialog',       quill: 'dialog',         css: 'dialog',         name: 'Dialog',         symbol: '💬' },
+      { taste: 'r',  klasse: 'fmt-regie',        quill: 'regieanweisung', css: 'regieanweisung', name: 'Regieanweisung', symbol: '🎬' },
+      { taste: 't',  klasse: 'fmt-szenen-titel', quill: 'szeneTitel',     css: 'szene-titel',    name: 'Szenen-Titel',   symbol: '📄' },
+      { taste: 'a',  klasse: 'fmt-akt-titel',    quill: 'aktTitel',       css: 'akt-titel',      name: 'Akt-Titel',      symbol: '📕' },
+      { taste: 'l',  klasse: 'fmt-lied',         quill: 'lied',           css: 'lied',           name: 'Lied',           symbol: '🎵' },
+      { taste: 'v',  klasse: 'fmt-vers',         quill: 'vers',           css: 'vers',           name: 'Vers',           symbol: '📜' },
+      { taste: 'p',  klasse: 'fmt-pause',        quill: 'pause',          css: 'pause',          name: 'Pause',          symbol: '⏸' },
+      { taste: null, klasse: 'fmt-nebentext',    quill: 'nebentext',      css: 'nebentext',      name: 'Nebentext',      symbol: '📝' },
+      { taste: null, klasse: 'fmt-musik',        quill: 'musik',          css: 'musik',          name: 'Musik',          symbol: '🎼' },
+      { taste: null, klasse: 'fmt-sound',        quill: 'sound',          css: 'sound',          name: 'Sound',          symbol: '🔊' },
+      { taste: null, klasse: 'fmt-notiz',        quill: 'notiz',          css: 'notiz',          name: 'Notiz',          symbol: '💡' },
+      { taste: 'n',  klasse: null,               quill: 'standard',       css: 'standard',       name: 'Normal',         symbol: '' }
+    ];
+
+    // Klasse im Datenmodell, auch fuer Normal: fmt-standard. Fuer Menues bleibt
+    // klasse bei Normal null, weil dort die Auszeichnung entfernt wird.
+    window.SZENE_KLASSE_VON = function (t) { return t.klasse || 'fmt-' + t.css; };
+
+    // camelCase-Keys (SCHREIBTISCH_FORMATVORLAGEN) → CSS-Suffix – abgeleitet.
+    var KEY_TO_CSS = {};
+    window.SZENE_ABSATZ_TYPEN.forEach(function(t) { KEY_TO_CSS[t.quill] = t.css; });
     var CSS_TO_KEY = {};
     Object.keys(KEY_TO_CSS).forEach(function(k) { CSS_TO_KEY[KEY_TO_CSS[k]] = k; });
 
@@ -117,18 +142,85 @@
     window.__leaderTimer = null;
     window.__leaderContext = null; // gespeicherter Editor-Kontext bei Esc
 
-    // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname)
-    var LEADER_QUILL_MAP = {
-      'f': 'figurenname', 'd': 'dialog', 'r': 'regieanweisung',
-      't': 'szeneTitel', 'a': 'aktTitel', 'l': 'lied',
-      'v': 'vers', 'p': 'pause', 'n': 'standard'
+    // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname) – abgeleitet.
+    var LEADER_QUILL_MAP = {};
+    window.SZENE_ABSATZ_TYPEN.forEach(function (t) {
+      if (t.taste) LEADER_QUILL_MAP[t.taste] = t.quill;
+    });
+
+    // Formatvorlagen-Namen für Toast – abgeleitet.
+    var FORMAT_NAMEN = {};
+    window.SZENE_ABSATZ_TYPEN.forEach(function (t) { FORMAT_NAMEN[t.quill] = t.name; });
+    FORMAT_NAMEN.standard = 'Standard';
+
+    // === POSITIVLISTE FÜR DIE BEREINIGUNG DES SZENENTEXTS ===
+    // Auftrag vom 27.07.2026: Beim Laden darf die Auszeichnung nicht verworfen
+    // werden. Erlaubt sind die Absatzklassen oben, die Marken, die die App im
+    // Dialogblock selber schreibt, und eine kleine Liste von Elementen.
+    window.SZENE_ERLAUBTE_KLASSEN = window.SZENE_ABSATZ_TYPEN
+      .map(window.SZENE_KLASSE_VON)
+      .concat(window.SZENE_ABSATZ_TYPEN.map(function (t) { return 'format-' + t.css; }))
+      .concat(['figur', 'text', 'figur-name', 'dialog-text', 'inline-regie', 'placeholder']);
+    window.SZENE_ERLAUBTE_TAGS = ['DIV', 'BR', 'B', 'I', 'U', 'S', 'P', 'EM', 'STRONG', 'SPAN'];
+
+    // === KLASSENWECHSEL fmt-* <-> format-* – ebenfalls abgeleitet ===
+    // Frueher standen hier zwei von Hand gefuehrte Ketten von .replace(); dabei
+    // fehlten Nebentext, Musik, Sound und Notiz, die der Schreibtisch deshalb
+    // stillschweigend verworfen hat. Normal bleibt aussen vor: fmt-standard ist
+    // im Datenmodell die leere Auszeichnung.
+    window.SZENE_KLASSEN_PAARE = window.SZENE_ABSATZ_TYPEN
+      .filter(function (t) { return t.klasse; })
+      .map(function (t) { return { fmt: t.klasse, format: 'format-' + t.css }; });
+    window.szeneKlassenTauschen = function (html, nachFormat) {
+      return window.SZENE_KLASSEN_PAARE.reduce(function (s, p) {
+        var von = nachFormat ? p.fmt : p.format;
+        var nach = nachFormat ? p.format : p.fmt;
+        return s.replace(new RegExp('\\b' + von + '\\b', 'g'), nach);
+      }, String(html == null ? '' : html));
     };
 
-    // Formatvorlagen-Namen für Toast
-    var FORMAT_NAMEN = {
-      figurenname: 'Figurenname', dialog: 'Dialog', regieanweisung: 'Regieanweisung',
-      szeneTitel: 'Szenen-Titel', aktTitel: 'Akt-Titel', lied: 'Lied',
-      vers: 'Vers', pause: 'Pause', standard: 'Standard'
+    // Bereinigt Szenentext, ohne die Auszeichnung zu verlieren:
+    // unbekannte Elemente werden ausgepackt (Inhalt bleibt), unbekannte Klassen
+    // und alle Ereignis-Attribute fallen weg, gefaehrliche Elemente ganz.
+    window.bereinigeSzenenHtml = function (schmutzig) {
+      if (!schmutzig) return '';
+      var wurzel = document.createElement('div');
+      wurzel.innerHTML = String(schmutzig);
+      wurzel.querySelectorAll('script, iframe, object, embed, link, style, meta, base, form, input, textarea, svg')
+        .forEach(function (el) { el.remove(); });
+      var erlaubteTags = window.SZENE_ERLAUBTE_TAGS;
+      var erlaubteKlassen = window.SZENE_ERLAUBTE_KLASSEN;
+      var gehe = function (knoten) {
+        Array.prototype.slice.call(knoten.children).forEach(gehe);
+        if (knoten === wurzel) return;
+        if (erlaubteTags.indexOf(knoten.tagName) === -1) {
+          // Auspacken statt wegwerfen – der Text bleibt erhalten.
+          var eltern = knoten.parentNode;
+          if (!eltern) return;
+          while (knoten.firstChild) eltern.insertBefore(knoten.firstChild, knoten);
+          eltern.removeChild(knoten);
+          return;
+        }
+        Array.prototype.slice.call(knoten.attributes).forEach(function (attr) {
+          var n = attr.name.toLowerCase();
+          if (n === 'class') return;
+          if (n === 'style') { knoten.removeAttribute(attr.name); return; }
+          if (n.indexOf('on') === 0) { knoten.removeAttribute(attr.name); return; }
+          if ((n === 'href' || n === 'src') && /^\s*javascript:/i.test(attr.value)) {
+            knoten.removeAttribute(attr.name);
+            return;
+          }
+          if (n !== 'href' && n !== 'title') knoten.removeAttribute(attr.name);
+        });
+        if (knoten.hasAttribute('class')) {
+          var behalten = Array.prototype.slice.call(knoten.classList)
+            .filter(function (c) { return erlaubteKlassen.indexOf(c) !== -1; });
+          if (behalten.length) knoten.setAttribute('class', behalten.join(' '));
+          else knoten.removeAttribute('class');
+        }
+      };
+      gehe(wurzel);
+      return wurzel.innerHTML;
     };
 
     // Toast-Meldung (app-weit)
@@ -255,11 +347,8 @@
             setBlockFormat(ctxQuill, LEADER_QUILL_MAP[lkey]);
           } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
             // Ordnen mode: use saved node (Chrome clears selection on Esc blur)
-            var ordnenMap = {
-              'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
-              't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
-              'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
-            };
+            var ordnenMap = {};
+            window.SZENE_ABSATZ_TYPEN.forEach(function (t) { ordnenMap[t.taste] = t.klasse; });
             Array.from(ctxNode.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { ctxNode.classList.remove(c); });
             if (ordnenMap[lkey]) ctxNode.classList.add(ordnenMap[lkey]);
           }
@@ -1004,7 +1093,10 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
   const historyIndexRef = useRef(-1);
   const isUndoRedoRef = useRef(false);
   const isMountedRef = useRef(true);
-  
+  // Was dieser Editor zuletzt selber nach data geschrieben hat. Daran erkennt
+  // er, ob eine Aenderung von aussen kommt – und nur dann zieht er nach.
+  const letzterEigenerStand = useRef(null);
+
   // History speichern
   const saveToHistory = () => {
     if (isUndoRedoRef.current || !editorRef.current || !isMountedRef.current) return;
@@ -1041,8 +1133,9 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
       isUndoRedoRef.current = true;
       historyIndexRef.current--;
       editorRef.current.innerHTML = historyRef.current[historyIndexRef.current];
+      letzterEigenerStand.current = editorRef.current.innerHTML;
       onSave(feldId, editorRef.current.innerHTML);
-      
+
       setTimeout(() => { isUndoRedoRef.current = false; }, 100);
     } catch (e) {
       console.warn('undo error:', e);
@@ -1058,8 +1151,9 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
       isUndoRedoRef.current = true;
       historyIndexRef.current++;
       editorRef.current.innerHTML = historyRef.current[historyIndexRef.current];
+      letzterEigenerStand.current = editorRef.current.innerHTML;
       onSave(feldId, editorRef.current.innerHTML);
-      
+
       setTimeout(() => { isUndoRedoRef.current = false; }, 100);
     } catch (e) {
       console.warn('redo error:', e);
@@ -1067,38 +1161,53 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
     }
   };
   
-  // Inhalt nur einmal beim Mount setzen
+  // Anmelden und aufraeumen – hieran haengt der Lebenslauf des Editors.
   useEffect(() => {
     isMountedRef.current = true;
-    
-    if (editorRef.current) {
-      try {
-        // XSS-Schutz: Sanitize HTML vor dem Einfügen
-        const safeContent = DOMPurify.sanitize(initialContent || '<div class="placeholder">Hier schreiben oder Text einfügen...</div>');
-        editorRef.current.innerHTML = safeContent;
-        // Initial-State in History speichern
-        historyRef.current = [safeContent];
-        historyIndexRef.current = 0;
-        // Ref auch in der Map speichern für applyFormat
-        if (editorRefsMap && editorRefsMap.current) {
-          editorRefsMap.current[feldId] = editorRef.current;
-        }
-      } catch (e) {
-        console.warn('SzeneEditor init error:', e);
-      }
+    if (editorRef.current && editorRefsMap && editorRefsMap.current) {
+      editorRefsMap.current[feldId] = editorRef.current;
     }
-    // Cleanup Timer und Refs bei Unmount
     return () => {
       isMountedRef.current = false;
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
-      // Ref aus Map entfernen
       if (editorRefsMap && editorRefsMap.current && editorRefsMap.current[feldId]) {
         delete editorRefsMap.current[feldId];
       }
     };
-  }, [feldId]); // Nur bei Feld-Wechsel neu setzen
+  }, [feldId]);
+
+  // Inhalt in den Editor uebernehmen – beim Aufbau und immer dann, wenn
+  // feld.inhalt von aussen geaendert wurde (Projekt geladen, KI-Entwurf
+  // eingespielt, Wiederherstellung). Was der Editor selber zuletzt
+  // herausgegeben hat, wird nicht noch einmal hineingeschrieben, sonst
+  // springt die Schreibmarke bei jedem Zwischenspeichern.
+  useEffect(() => {
+    if (!editorRef.current) return;
+    const eingang = initialContent || '';
+    if (letzterEigenerStand.current !== null && eingang === letzterEigenerStand.current) return;
+    // Waehrend der Autor tippt, nichts ueberschreiben.
+    if (letzterEigenerStand.current !== null &&
+        typeof document !== 'undefined' && document.activeElement === editorRef.current) return;
+    try {
+      // Auftrag 27.07.2026: Positivliste statt Kahlschlag – die Absatzklassen
+      // fmt-* bleiben erhalten, gefaehrliche Elemente fallen weg.
+      const safeContent = eingang
+        ? window.bereinigeSzenenHtml(eingang)
+        : '<div class="placeholder">Hier schreiben oder Text einfügen...</div>';
+      if (editorRef.current.innerHTML === safeContent) {
+        letzterEigenerStand.current = eingang;
+        return;
+      }
+      editorRef.current.innerHTML = safeContent;
+      letzterEigenerStand.current = eingang;
+      historyRef.current = [safeContent];
+      historyIndexRef.current = 0;
+    } catch (e) {
+      console.warn('SzeneEditor init error:', e);
+    }
+  }, [feldId, initialContent]);
   
   const detectFormat = () => {
     const selection = window.getSelection();
@@ -1128,7 +1237,9 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
   const handleSave = () => {
     if (editorRef.current && isMountedRef.current) {
       try {
-        onSave(feldId, editorRef.current.innerHTML);
+        const html = editorRef.current.innerHTML;
+        letzterEigenerStand.current = html;
+        onSave(feldId, html);
       } catch (e) {
         console.warn('handleSave error:', e);
       }
@@ -1275,8 +1386,13 @@ const SzeneEditor = React.memo(({ feldId, initialContent, onSave, onFocus, onFor
     />
   );
 }, (prevProps, nextProps) => {
-  // Nur re-rendern wenn sich feldId ändert (nicht bei content-Änderungen)
-  return prevProps.feldId === nextProps.feldId;
+  // Neu rendern, wenn das Feld wechselt – oder wenn sich sein Inhalt geaendert
+  // hat. Frueher stand hier nur der Vergleich der feldId; damit blieb ein von
+  // aussen geladener Szenentext fuer immer draussen (Auftrag vom 27.07.2026).
+  // Beim eigenen Zwischenspeichern faengt der Effekt den Fall ab, das kostet
+  // nur einen Durchlauf der Renderfunktion, keine Aenderung am DOM.
+  return prevProps.feldId === nextProps.feldId
+      && prevProps.initialContent === nextProps.initialContent;
 });
 
 // =====================================================
@@ -17601,7 +17717,14 @@ const TOOL_SCHEMA = {
     typ: 'liste',
     eintrag: _schemaLeerform(SZENE_VORLAGE()),
     idMuster: 'f<millis>, von der KI feld_ki_<millis>_<6 Zeichen>, beim Import feld_imp_<millis>_<Index>',
-    hinweis: 'Die Szenen des Rasters. position bestimmt die Reihenfolge, figuren und themen sind Listen von Ids, inhalt ist der Szenentext als HTML, status ist idee, entwurf oder fertig.'
+    hinweis: 'Die Szenen des Rasters. position bestimmt die Reihenfolge, figuren und themen sind Listen von Ids, inhalt ist der Szenentext als HTML, status ist idee, entwurf oder fertig.',
+    // Aus derselben Konstante wie das Format-Menue – nie von Hand fuehren.
+    absatzTypen: (window.SZENE_ABSATZ_TYPEN || [])
+      .filter(t => t.klasse)
+      .reduce((m, t) => { m[t.klasse] = t.name; return m; }, {}),
+    hinweisAufbau: 'Je Block ein <div class="fmt-…">, dazwischen <div><br></div>. '
+                 + 'Figurenname steht allein auf einer Zeile mit Doppelpunkt, '
+                 + 'darunter folgt der Dialog. Absaetze ohne Klasse sind Normaltext.'
   },
   szenenIdeen: {
     typ: 'liste',
@@ -17927,18 +18050,11 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       // Datenmodell verwendet <div>, Quill TheaterBlock erwartet <p>
       .replace(/<div\b/g, '<p')
       .replace(/<\/div>/g, '</p>')
-      // fmt-* Klassen → format-* Klassen
-      .replace(/\bfmt-dialog\b/g, 'format-dialog')
-      .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
-      .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
-      .replace(/\bfmt-akt-titel\b/g, 'format-akt-titel')
-      .replace(/\bfmt-vers\b/g, 'format-vers')
-      .replace(/\bfmt-lied\b/g, 'format-lied')
-      .replace(/\bfmt-figurenname\b/g, 'format-figurenname')
-      .replace(/\bfmt-pause\b/g, 'format-pause')
       .replace(/\bfmt-standard\b/g, 'format-standard')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
+    // fmt-* → format-*, abgeleitet aus SZENE_ABSATZ_TYPEN
+    c = window.szeneKlassenTauschen(c, true);
     return wrapInlineRegie(c);
   }, [wrapInlineRegie]);
 
@@ -17960,19 +18076,12 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
       }
     });
     cleaned = temp.innerHTML;
+    // format-* → fmt-*, abgeleitet aus SZENE_ABSATZ_TYPEN
+    cleaned = window.szeneKlassenTauschen(cleaned, false);
     return cleaned
       // Quill erzeugt <p>, Datenmodell erwartet <div>
       .replace(/<p\b/g, '<div')
       .replace(/<\/p>/g, '</div>')
-      // format-* Klassen → fmt-* Klassen
-      .replace(/\bformat-dialog\b/g, 'fmt-dialog')
-      .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
-      .replace(/\bformat-szene-titel\b/g, 'fmt-szenen-titel')
-      .replace(/\bformat-akt-titel\b/g, 'fmt-akt-titel')
-      .replace(/\bformat-vers\b/g, 'fmt-vers')
-      .replace(/\bformat-lied\b/g, 'fmt-lied')
-      .replace(/\bformat-figurenname\b/g, 'fmt-figurenname')
-      .replace(/\bformat-pause\b/g, 'fmt-pause')
       .replace(/\bformat-standard\b/g, '')
       .replace(/class="figur-name"/g, 'class="figur"')
       .replace(/class="dialog-text"/g, 'class="text"');
@@ -19384,19 +19493,8 @@ function DrameraWerkbank() {
   // === FORMATVORLAGEN-KONVERTIERUNG zwischen Apps ===
   const convertContentToWerkbank = (html) => {
     if (!html || typeof html !== 'string') return html;
-    // Rebu-Klassen → Werkbank-Klassen
-    return html
-      .replace(/\bformat-dialog\b/g, 'fmt-dialog')
-      .replace(/\bformat-regieanweisung\b/g, 'fmt-regie')
-      .replace(/\bformat-szene-titel\b/g, 'fmt-szenen-titel')
-      .replace(/\bformat-akt-titel\b/g, 'fmt-akt-titel')
-      .replace(/\bformat-lied\b/g, 'fmt-lied')
-      .replace(/\bformat-vers\b/g, 'fmt-vers')
-      .replace(/\bformat-pause\b/g, 'fmt-pause')
-      .replace(/\bformat-musik\b/g, 'fmt-musik')
-      .replace(/\bformat-sound\b/g, 'fmt-sound')
-      .replace(/\bformat-notiz\b/g, 'fmt-notiz')
-      .replace(/\bformat-nebentext\b/g, 'fmt-nebentext')
+    // Rebu-Klassen → Werkbank-Klassen, abgeleitet aus SZENE_ABSATZ_TYPEN
+    return window.szeneKlassenTauschen(html, false)
       .replace(/\bformat-standard\b/g, 'fmt-standard')
       .replace(/\bfigur-name\b/g, 'figur')
       .replace(/\bdialog-text\b/g, 'text');
@@ -19404,19 +19502,8 @@ function DrameraWerkbank() {
   
   const convertContentToRebu = (html) => {
     if (!html || typeof html !== 'string') return html;
-    // Werkbank-Klassen → Rebu-Klassen
-    return html
-      .replace(/\bfmt-dialog\b/g, 'format-dialog')
-      .replace(/\bfmt-regie\b/g, 'format-regieanweisung')
-      .replace(/\bfmt-szenen-titel\b/g, 'format-szene-titel')
-      .replace(/\bfmt-akt-titel\b/g, 'format-akt-titel')
-      .replace(/\bfmt-lied\b/g, 'format-lied')
-      .replace(/\bfmt-vers\b/g, 'format-vers')
-      .replace(/\bfmt-pause\b/g, 'format-pause')
-      .replace(/\bfmt-musik\b/g, 'format-musik')
-      .replace(/\bfmt-sound\b/g, 'format-sound')
-      .replace(/\bfmt-notiz\b/g, 'format-notiz')
-      .replace(/\bfmt-nebentext\b/g, 'format-nebentext')
+    // Werkbank-Klassen → Rebu-Klassen, abgeleitet aus SZENE_ABSATZ_TYPEN
+    return window.szeneKlassenTauschen(html, true)
       .replace(/\bfmt-standard\b/g, 'format-standard')
       .replace(/class="figur"/g, 'class="figur-name"')
       .replace(/class="text"/g, 'class="dialog-text"');
@@ -37314,18 +37401,15 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                           }
                         }}
                       >
-                        <option value="normal">Normal</option>
-                        <option value="fmt-akt-titel">📕 Akt-Titel</option>
-                        <option value="fmt-szenen-titel">📄 Szenen-Titel</option>
-                        <option value="fmt-figurenname">👤 Figurenname</option>
-                        <option value="fmt-dialog">💬 Dialog</option>
-                        <option value="fmt-regie">🎬 Regieanweisung</option>
-                        <option value="fmt-nebentext">📝 Nebentext</option>
-                        <option value="fmt-vers">📜 Vers</option>
-                        <option value="fmt-lied">🎵 Lied</option>
-                        <option value="fmt-musik">🎼 Musik</option>
-                        <option value="fmt-sound">🔊 Sound</option>
-                        <option value="fmt-notiz">💡 Notiz</option>
+                        {/* Aus derselben Konstante wie das Format-Menue im Ordnen-Modus.
+                            Normal steht zuoberst, danach die ausgezeichneten Typen. */}
+                        {(window.SZENE_ABSATZ_TYPEN || []).slice()
+                          .sort((a, b) => (a.klasse ? 1 : 0) - (b.klasse ? 1 : 0))
+                          .map(t => (
+                          <option key={t.quill} value={t.klasse || 'normal'}>
+                            {t.symbol ? t.symbol + ' ' + t.name : t.name}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     
@@ -37523,18 +37607,13 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                     {/* Format-Anzeige */}
                     <div className="current-format-display">
                       {currentFormat ? (
+                        // Beschriftung aus derselben Konstante wie die Auswahlliste.
                         <span className="format-badge">
-                          {currentFormat === 'fmt-akt-titel' && '📕 Akt-Titel'}
-                          {currentFormat === 'fmt-szenen-titel' && '📄 Szenen-Titel'}
-                          {currentFormat === 'fmt-figurenname' && '👤 Figurenname'}
-                          {currentFormat === 'fmt-dialog' && '💬 Dialog'}
-                          {currentFormat === 'fmt-regie' && '🎬 Regie'}
-                          {currentFormat === 'fmt-nebentext' && '📝 Nebentext'}
-                          {currentFormat === 'fmt-vers' && '📜 Vers'}
-                          {currentFormat === 'fmt-lied' && '🎵 Lied'}
-                          {currentFormat === 'fmt-musik' && '🎼 Musik'}
-                          {currentFormat === 'fmt-sound' && '🔊 Sound'}
-                          {currentFormat === 'fmt-notiz' && '💡 Notiz'}
+                          {(() => {
+                            const t = (window.SZENE_ABSATZ_TYPEN || []).find(x => x.klasse === currentFormat);
+                            if (!t) return currentFormat;
+                            return t.symbol ? t.symbol + ' ' + t.name : t.name;
+                          })()}
                         </span>
                       ) : (
                         <span className="format-badge format-none">Normal</span>
@@ -37644,17 +37723,7 @@ FERTIG GESAMMELT? Zu «Ordnen» wechseln und den Zeitstrahl bauen.
                 {/* Format-Shortcuts Box — fixed unten rechts (Ordnen-Modus) */}
                 <div className="format-shortcut-box">
                   <div className="fbox-title">Esc → …</div>
-                  {[
-                    ['F', 'Figurenname', 'fmt-figurenname'],
-                    ['D', 'Dialog', 'fmt-dialog'],
-                    ['R', 'Regieanweisung', 'fmt-regie'],
-                    ['T', 'Szenen-Titel', 'fmt-szenen-titel'],
-                    ['A', 'Akt-Titel', 'fmt-akt-titel'],
-                    ['L', 'Lied', 'fmt-lied'],
-                    ['V', 'Vers', 'fmt-vers'],
-                    ['P', 'Pause', 'fmt-pause'],
-                    ['N', 'Normal', null],
-                  ].map(([key, name, fmt]) => (
+                  {(window.SZENE_ABSATZ_TYPEN || []).filter(t => t.taste).map(t => [t.taste.toUpperCase(), t.name, t.klasse]).map(([key, name, fmt]) => (
                     <div key={key}
                       className={`format-shortcut-item ${currentFormat === fmt ? 'active' : ''}`}
                       onClick={() => {
