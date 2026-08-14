@@ -4403,7 +4403,7 @@ const WIKI_ENTRIES = {
       { heading: 'Der Dialog und die Formatvorlagen', text: 'In der Mitte, unter dem Zeitstrahl, liegt die Fläche, in der der eigentliche Text geschrieben wird. Sie arbeitet mit Formatvorlagen, die man nicht mit der Maus zuweist, sondern mit der Escape-Taste und einem Buchstaben. Rechts unten steht dauernd eine kleine Box mit der Übersicht:\n\n**F** Figurenname · **D** Dialog · **R** Regieanweisung · **T** Szenen-Titel · **A** Akt-Titel · **L** Lied · **V** Vers · **P** Pause · **N** Normal\n\nDazu kopiert **K** das Format der aktuellen Zeile und **E** setzt es an anderer Stelle wieder ein. Ohne Tastenkürzel, nur über die Auswahlliste, gibt es zusätzlich Nebentext, Musik, Sound und Notiz – wobei die Notiz eine Regiebemerkung ist, die im Druck nicht erscheint.\n\nDer Sinn dieser Vorlagen ist nicht die Optik, sondern die Struktur: Weil die App weiss, was Figurenname und was Dialog ist, kann sie den Text sauber exportieren, ans Regiebuch übergeben und Sprechanteile auszählen.' },
       { heading: 'Der Schreibtisch', text: 'Der dritte Reiter zeigt dasselbe Stück als ein einziges durchlaufendes Dokument, gesetzt wie eine A4-Seite: Titelblatt mit Stücktitel, Logline als Untertitel und Autorenname, dann die Personenliste, dann Szene für Szene der Text.\n\nHier schreibt und redigiert man im Zusammenhang, statt Szene für Szene. Dieselben Formatvorlagen gelten, dieselbe Escape-Logik. Eine Leiste zeigt laufend an, an welcher Stelle im Stück man sich befindet. Oben rechts stehen zwei Knöpfe: **PDF** druckt die Fassung als PDF, **DOCX** exportiert sie als Word-Datei.\n\nDer Schreibtisch ist der Ort für den letzten Durchgang – wenn die Struktur steht und es nur noch um die Sprache geht.' },
       { heading: 'Das Projektmenü', text: 'Ganz oben links, über der Materialspalte, steht ein Knopf mit Ordnersymbol und Projektnamen. Er klappt das Projektmenü auf.\n\nUnter **📁 PROJEKT**: **📄 Neu...** legt ein leeres Projekt an. **🎭 Demo: Romeo & Julia** lädt ein vollständig ausgearbeitetes Beispielprojekt – der schnellste Weg, um zu sehen, wie ein gefülltes Projekt aussieht, bevor man selber anfängt. **💾 Sichern** (⌘S) speichert das Projekt. **🔄 Öffnen, Sichern unter & Teilen...** öffnet das Import-/Export-Fenster. **⚙️ Einstellungen...** führt unter anderem zum API-Schlüssel für die KI-Funktionen.' },
-      { heading: 'Sichern, Öffnen, Teilen', text: 'Im Import-/Export-Fenster läuft alles zusammen, was mit Dateien zu tun hat.\n\n**💾 Als Datei sichern** schreibt das ganze Projekt in eine Datei mit der Endung .dramera.json – das ist das sichere Format, mit dem nichts verloren geht. **📂 Projekt öffnen** lädt ein Projekt oder ein älteres Backup wieder ein. **📦 Alles als ZIP** packt das Projekt samt Versionsgeschichte in ein Archiv. **🧩 Nur Struktur exportieren** gibt bloss die Feldnamen und Schlüssel aller Werkzeuge aus, ohne Inhalt – wenige Kilobyte, gedacht für den Fall, dass von aussen gültige Einträge geschrieben werden sollen.\n\n**🤖 Mit KI importieren** analysiert einen bestehenden Text, ein PDF oder eine Word-Datei und zieht daraus Figuren, Szenen und Themen; das setzt einen hinterlegten API-Schlüssel voraus.\n\n**⚡ In Rebu öffnen** überträgt das Projekt direkt ins Regiebuch. Ein zweiter Weg exportiert es im gemeinsamen Austauschformat, das auch der Probenplaner liest.\n\nWichtig zum Verständnis: Die Werkbank läuft ganz im Browser. Es gibt keinen Server, auf dem die Projekte liegen. Was gespeichert werden soll, muss als Datei gesichert werden – darum steht «Als Datei sichern» im Import-/Export-Fenster zuoberst und ist grün markiert.' },
+      { heading: 'Sichern, Öffnen, Teilen', text: 'Im Import-/Export-Fenster läuft alles zusammen, was mit Dateien zu tun hat.\n\n**💾 Als Datei sichern** schreibt das ganze Projekt in eine Datei mit der Endung .dramera.json – das ist das sichere Format, mit dem nichts verloren geht. **📂 Projekt öffnen** lädt ein Projekt oder ein älteres Backup wieder ein. **📦 Alles als ZIP** packt das Projekt samt Versionsgeschichte in ein Archiv. **🧩 Nur Struktur exportieren** gibt bloss die Feldnamen und Schlüssel aller Werkzeuge aus, ohne Inhalt – wenige Kilobyte, gedacht für den Fall, dass von aussen gültige Einträge geschrieben werden sollen.\n\n**🤖 Mit KI importieren** analysiert einen bestehenden Text, ein PDF oder eine Word-Datei und zieht daraus Figuren, Szenen und Themen; das setzt einen hinterlegten API-Schlüssel voraus.\n\n**⚡ In Rebu öffnen** überträgt das Projekt direkt ins Regiebuch. Ein zweiter Weg exportiert es im gemeinsamen Austauschformat, das auch der Probenplaner liest.\n\n**☁️ Google Drive** steht als eigener Abschnitt weiter unten im selben Fenster. Verbindet man sich einmal und wählt einen Ordner, legt die Werkbank Austausch-Datei und Backup direkt in diesen geteilten Ordner und lädt Projekte auch wieder von dort. Ist Drive verbunden, schreibt sie zusätzlich alle fünf Minuten von selbst ein Backup nach Dramera/Backups und behält die letzten zwanzig Stände.\n\nWichtig zum Verständnis: Einen Dramera-Server, auf dem die Projekte liegen, gibt es nicht. Solange nichts gesichert wird, liegt das Projekt allein im Speicher des Browsers. Dort wird es zwar dauernd automatisch mitgeschrieben – und zwar doppelt, im lokalen Speicher und in einer Browser-Datenbank, aus der die Werkbank ein verlorenes Projekt wieder anbieten kann –, aber dieser Speicher ist knapp bemessen und verschwindet, sobald man Browserdaten löscht oder das Gerät wechselt. Darum steht **💾 Als Datei sichern** zuoberst und ist grün markiert.\n\nDas Sichern als Datei ist dabei einmalige Arbeit, keine dauernde. Sobald das Projekt einmal in eine Datei geschrieben ist, hält die Werkbank diese Datei selber aktuell: Sie schreibt alle dreissig Sekunden zurück, sobald etwas geändert wurde. Das funktioniert in Chrome und Edge; Firefox und Safari kennen den nötigen Dateizugriff nicht, dort wird bei jedem Sichern eine neue Datei heruntergeladen, um die man sich selber kümmern muss. Links in der Kopfleiste steht, woran man ist: ein oranger Punkt heisst bearbeitet, ein grüner Haken mit Uhrzeit heisst gesichert, ein leerer Kreis heisst, dass noch gar keine Datei besteht. Liegt das letzte Backup mehr als eine Woche zurück, erinnert die Werkbank daran.' },
       { heading: 'Dokumente', text: 'Der untere Teil des Projektmenüs erzeugt Dokumente aus dem Projekt. **📝 Stücktext** gibt den Stücktext aus. **📋 Treatment (aus Projekt)** baut aus den ausgefüllten Werkzeugen ein Treatment. **📚 Recherche (als Dokument)** stellt das gesammelte Recherchematerial zusammen. **🗂️ Gesamtübersicht (Word)** exportiert wirklich alles – sämtliche Felder und Szenen – als Word-Dokument; das ist die Gesamtsicherung zum Nachlesen. **📑 Förderdossier** öffnet einen Assistenten, der aus dem Projekt ein Dossier für Fördereingaben zusammenstellt.' }
     ],
     questions: ['Hast du dein Projekt als Datei gesichert?', 'Hast du genug Szenen-Ideen gesammelt, um mit dem Ordnen zu beginnen?', 'Welches Werkzeug könnte dir jetzt weiterhelfen?'],
@@ -17938,6 +17938,13 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const quillEditors = useRef({});
   const lastSyncedContent = useRef({});
   const [quillReady, setQuillReady] = useState(!!window.__quillLoaded);
+  // === SUCHEN UND ERSETZEN ===
+  const [suchOffen, setSuchOffen] = useState(false);
+  const [suchText, setSuchText] = useState('');
+  const [ersetzText, setErsetzText] = useState('');
+  const [suchIndex, setSuchIndex] = useState(0);
+  const [suchGrossKlein, setSuchGrossKlein] = useState(false);
+  const [suchRefresh, setSuchRefresh] = useState(0);
 
   // Szenen nach Position sortiert
   const sortedFelder = useMemo(() =>
@@ -18187,6 +18194,77 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     };
   }, []);
 
+  // === SUCHEN UND ERSETZEN im Schreibtisch ===
+  // Sucht ueber alle Szenen-Editoren hinweg. Die Trefferliste wird bei jeder
+  // Ersetzung neu aufgebaut (suchRefresh), weil sich die Textpositionen dann
+  // verschieben.
+  const trefferListe = useMemo(() => {
+    const q = suchText;
+    if (!q) return [];
+    const treffer = [];
+    sortedFelder.forEach(feld => {
+      const ed = quillEditors.current[feld.id];
+      if (!ed || !ed.getText) return;
+      const text = ed.getText();
+      const heu = suchGrossKlein ? text : text.toLowerCase();
+      const nadel = suchGrossKlein ? q : q.toLowerCase();
+      let von = 0;
+      let i = heu.indexOf(nadel, von);
+      while (i !== -1) {
+        treffer.push({ sceneId: feld.id, index: i, len: nadel.length });
+        von = i + nadel.length;
+        i = heu.indexOf(nadel, von);
+      }
+    });
+    return treffer;
+  }, [suchText, suchGrossKlein, sortedFelder, quillReady, suchRefresh]);
+
+  const springeZuTreffer = useCallback((n) => {
+    const liste = trefferListe;
+    if (!liste.length) return;
+    const i = ((n % liste.length) + liste.length) % liste.length;
+    const t = liste[i];
+    const ed = quillEditors.current[t.sceneId];
+    if (!ed) return;
+    setSuchIndex(i);
+    setActiveSceneId(t.sceneId);
+    const el = sceneRefs.current[t.sceneId];
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => {
+      try { ed.focus(); ed.setSelection(t.index, t.len); } catch (e) {}
+    }, 80);
+  }, [trefferListe]);
+
+  const ersetzeEinen = useCallback((t) => {
+    const ed = quillEditors.current[t.sceneId];
+    if (!ed) return false;
+    let fmt = {};
+    try { fmt = ed.getFormat(t.index, t.len) || {}; } catch (e) {}
+    ed.deleteText(t.index, t.len, 'user');
+    if (ersetzText) ed.insertText(t.index, ersetzText, fmt, 'user');
+    return true;
+  }, [ersetzText]);
+
+  const ersetzeAktuellen = useCallback(() => {
+    const liste = trefferListe;
+    if (!liste.length) return;
+    const t = liste[Math.min(suchIndex, liste.length - 1)];
+    if (ersetzeEinen(t)) setSuchRefresh(v => v + 1);
+  }, [trefferListe, suchIndex, ersetzeEinen]);
+
+  const ersetzeAlle = useCallback(() => {
+    const liste = trefferListe;
+    if (!liste.length) return;
+    // Von hinten nach vorne, damit die Positionen der noch offenen Treffer stimmen.
+    let n = 0;
+    for (let i = liste.length - 1; i >= 0; i--) {
+      if (ersetzeEinen(liste[i])) n++;
+    }
+    setSuchIndex(0);
+    setSuchRefresh(v => v + 1);
+    if (window.__showFormatToast) window.__showFormatToast(n + ' Stellen ersetzt');
+  }, [trefferListe, ersetzeEinen]);
+
   // Kontextmenü
   const handleContextMenu = useCallback((e, sceneId, elementType) => {
     e.preventDefault();
@@ -18355,10 +18433,58 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           <div style={{ flex: 1 }} />
 
           <div className="schreibtisch-toolbar-group">
+            <button
+              className="schreibtisch-toolbar-btn"
+              onClick={() => setSuchOffen(o => !o)}
+              title="Suchen und ersetzen"
+              style={suchOffen ? { background: '#e8e0d0' } : undefined}
+            >{'\uD83D\uDD0D'}</button>
             <button className="schreibtisch-toolbar-btn" onClick={exportPDF} title="Als PDF drucken">PDF</button>
             <button className="schreibtisch-toolbar-btn" onClick={onExportDocx} title="Als DOCX exportieren">DOCX</button>
           </div>
         </div>
+
+        {/* Suchen und ersetzen */}
+        {suchOffen && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap',
+            padding: '0.45rem 0.7rem', background: '#faf7f0',
+            borderBottom: '1px solid #e0d8c8', fontSize: '0.78rem'
+          }}>
+            <input
+              type="text"
+              value={suchText}
+              autoFocus
+              placeholder="Suchen"
+              onChange={(e) => { setSuchText(e.target.value); setSuchIndex(0); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { e.preventDefault(); springeZuTreffer(e.shiftKey ? suchIndex - 1 : suchIndex + 1); }
+                if (e.key === 'Escape') { e.preventDefault(); setSuchOffen(false); }
+              }}
+              style={{ padding: '0.25rem 0.4rem', fontSize: '0.78rem', width: '160px', border: '1px solid #d8cfbe', borderRadius: '4px' }}
+            />
+            <input
+              type="text"
+              value={ersetzText}
+              placeholder="Ersetzen durch"
+              onChange={(e) => setErsetzText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); setSuchOffen(false); } }}
+              style={{ padding: '0.25rem 0.4rem', fontSize: '0.78rem', width: '160px', border: '1px solid #d8cfbe', borderRadius: '4px' }}
+            />
+            <button className="schreibtisch-toolbar-btn" onClick={() => springeZuTreffer(suchIndex - 1)} title="Vorheriger Treffer">{'\u2191'}</button>
+            <button className="schreibtisch-toolbar-btn" onClick={() => springeZuTreffer(suchIndex + 1)} title="Nächster Treffer">{'\u2193'}</button>
+            <button className="schreibtisch-toolbar-btn" onClick={ersetzeAktuellen} disabled={!trefferListe.length}>Ersetzen</button>
+            <button className="schreibtisch-toolbar-btn" onClick={ersetzeAlle} disabled={!trefferListe.length}>Alle ersetzen</button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#666', cursor: 'pointer' }}>
+              <input type="checkbox" checked={suchGrossKlein} onChange={(e) => setSuchGrossKlein(e.target.checked)} />
+              Gross-/Kleinschreibung
+            </label>
+            <span style={{ color: '#888', marginLeft: 'auto' }}>
+              {suchText ? (trefferListe.length ? ((Math.min(suchIndex, trefferListe.length - 1) + 1) + ' von ' + trefferListe.length) : 'keine Treffer') : ''}
+            </span>
+            <button className="schreibtisch-toolbar-btn" onClick={() => setSuchOffen(false)} title="Schliessen">{'\u00D7'}</button>
+          </div>
+        )}
 
         {/* Format-Shortcuts Box — fixed unten rechts */}
         <div className="format-shortcut-box">
@@ -20088,7 +20214,28 @@ function DrameraWerkbank() {
   }, []);
   // Zeitstempel des letzten Datei-/Drive-Backups festhalten (für die Erinnerung)
   useEffect(() => {
-    if (lastFileSaveTime) { try { localStorage.setItem('dramera-last-backup', new Date(lastFileSaveTime).toISOString()); } catch (e) {} setBackupOverdue(false); }
+    if (lastFileSaveTime) {
+      try { localStorage.setItem('dramera-last-backup', new Date(lastFileSaveTime).toISOString()); } catch (e) {}
+      setBackupOverdue(false);
+      // Nach einer erfolgreichen Sicherung darf der Speicher-Alarm nicht stehen bleiben.
+      // Das Projekt liegt jetzt in einer Datei, also ist die lange Versionsgeschichte
+      // im Browser entbehrlich – sie ist der Hauptverbraucher der 5-MB-Quota.
+      try {
+        cleanupDrameraStorage();
+        const vh = localStorage.getItem('nina_version_history');
+        if (vh) {
+          try {
+            const parsed = JSON.parse(vh);
+            if (Array.isArray(parsed) && parsed.length > 3) {
+              localStorage.setItem('nina_version_history', JSON.stringify(parsed.slice(-3)));
+            }
+          } catch (e) { localStorage.removeItem('nina_version_history'); }
+        }
+        window.__ninaStorageFull = false;
+      } catch (e) {}
+      setVersionHistory(prev => (prev.length > 3 ? prev.slice(-3) : prev));
+      setStorageFull(false);
+    }
   }, [lastFileSaveTime]);
   useEffect(() => {
     if (lastGdriveBackupTime) { try { localStorage.setItem('dramera-last-backup', new Date().toISOString()); } catch (e) {} setBackupOverdue(false); }
