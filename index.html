@@ -16925,11 +16925,28 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     ed.setSelection(t.index, t.len, 'silent');
     try {
       const b = ed.getBounds(t.index, t.len);
+      const page = ed.root.closest('.schreibtisch-page');
       const host = ed.root.closest('.schreibtisch-main');
-      const top = ed.root.getBoundingClientRect().top + b.top;
-      if (host && (top < host.getBoundingClientRect().top + 120 || top > host.getBoundingClientRect().bottom - 80)) host.scrollBy({ top: top - host.getBoundingClientRect().top - host.clientHeight / 2, behavior: 'smooth' });
+      const rootRect = ed.root.getBoundingClientRect();
+      // Gelbe Markierung auf dem Blatt (die Textauswahl selbst ist unsichtbar, solange das Suchfeld den Fokus hat)
+      if (page) {
+        let m = page.querySelector('.schreibtisch-suche-marker');
+        if (!m) { m = document.createElement('div'); m.className = 'schreibtisch-suche-marker'; page.appendChild(m); }
+        const pr = page.getBoundingClientRect();
+        m.style.left = (rootRect.left - pr.left + b.left - 2) + 'px';
+        m.style.top = (rootRect.top - pr.top + b.top - 1) + 'px';
+        m.style.width = (b.width + 4) + 'px';
+        m.style.height = (b.height + 2) + 'px';
+      }
+      const top = rootRect.top + b.top;
+      if (host && (top < host.getBoundingClientRect().top + 140 || top > host.getBoundingClientRect().bottom - 80)) host.scrollBy({ top: top - host.getBoundingClientRect().top - host.clientHeight / 2, behavior: 'smooth' });
     } catch (e) {}
   }, []);
+
+  // Markierung entfernen, wenn die Suche zugeht
+  useEffect(() => {
+    if (!suche.offen) document.querySelectorAll('.schreibtisch-suche-marker').forEach(m => m.remove());
+  }, [suche.offen]);
 
   const sucheStarten = useCallback((text, gross, richtung) => {
     const s0 = sucheRef.current;
@@ -17419,7 +17436,6 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
             <button className="schreibtisch-toolbar-btn" onClick={onExportPdf || exportPDF} title="Als PDF drucken">PDF</button>
             <button className="schreibtisch-toolbar-btn" onClick={onExportDocx || exportDOCX} title="Als DOCX exportieren">DOCX</button>
           </div>
-        </div>
 
         {/* Suchen & Ersetzen */}
         {suche.offen && (
@@ -17439,6 +17455,8 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
             <button onClick={() => setSuche(s => ({ ...s, offen: false }))} title="Schliessen (Esc)">✕</button>
           </div>
         )}
+
+        </div>
 
         {/* Format-Shortcuts Box — fixed unten rechts */}
         <div className="format-shortcut-box">
@@ -34295,11 +34313,12 @@ STIL:
 
         /* Suchen & Ersetzen im Schreibtisch */
         .schreibtisch-suche {
-          position: sticky; top: 0; z-index: 11; width: 100%; max-width: 21cm; flex-shrink: 0;
+          flex-basis: 100%; width: 100%;
           display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-          background: #fff; border: 1px solid #d1cdc6; border-radius: 0.5rem;
-          padding: 6px 10px; margin: -0.5rem 0 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); font-size: 0.8rem;
+          background: #fff; border: 1px solid #d1cdc6; border-radius: 0.4rem;
+          padding: 5px 8px; margin-top: 4px; font-size: 0.8rem;
         }
+        .schreibtisch-suche-marker { position: absolute; background: rgba(250, 204, 21, 0.45); border-radius: 2px; pointer-events: none; z-index: 5; }
         .schreibtisch-suche input[type="text"] { flex: 1; min-width: 140px; padding: 4px 8px; border: 1px solid #c8c3bb; border-radius: 4px; font-size: 0.8rem; }
         .schreibtisch-suche button { padding: 3px 8px; border: 1px solid #c8c3bb; border-radius: 4px; background: #f5f0eb; cursor: pointer; font-size: 0.8rem; }
         .schreibtisch-suche button:disabled { opacity: 0.5; cursor: default; }
