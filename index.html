@@ -16879,8 +16879,191 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const handleContextMenu = useCallback((e, sceneId, elementType) => {
     e.preventDefault();
     setActiveSceneId(sceneId);
-    setContextMenu({ x: e.clientX, y: e.clientY, sceneId, elementType });
+    // Welche Absätze sind unter dem Rechtsklick bzw. markiert? (für «Im Wörterbuch prüfen»)
+    let bereich = null;
+    const ed = quillEditors.current[sceneId];
+    if (ed) {
+      try {
+        const alle = ed.getLines(0, ed.getLength());
+        let range = ed.getSelection();
+        if (!range) {
+          // Kein Cursor im Editor: Absatz unter der Maus suchen
+          const blot = window.Quill && window.Quill.find ? window.Quill.find(e.target, true) : null;
+          if (blot && blot.offset) range = { index: ed.getIndex ? ed.getIndex(blot) : blot.offset(ed.scroll), length: 0 };
+        }
+        if (range) {
+          const lines = ed.getLines(range.index, Math.max(range.length, 1));
+          const von = alle.indexOf(lines[0]), bis = alle.indexOf(lines[lines.length - 1]);
+          if (von >= 0 && bis >= 0) bereich = { von, bis, auswahl: range.length > 0, anzahl: alle.length };
+        }
+      } catch (err) { /* ohne Bereich geht es mit «ganze Szene» weiter */ }
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY, sceneId, elementType, bereich });
   }, []);
+
+  // ===== SUCHEN & ERSETZEN (über alle Szenen des Schreibtischs) =====
+  const [suche, setSuche] = useState({ offen: false, text: '', ersatz: '', gross: false, treffer: [], akt: -1 });
+  const sucheRef = useRef(suche); sucheRef.current = suche;
+
+  const sucheTreffer = useCallback((text, gross) => {
+    const liste = [];
+    if (!text) return liste;
+    const nadel = gross ? text : text.toLowerCase();
+    sortedFelder.forEach(feld => {
+      const ed = quillEditors.current[feld.id]; if (!ed) return;
+      const heu = gross ? ed.getText() : ed.getText().toLowerCase();
+      let i = heu.indexOf(nadel);
+      while (i >= 0) { liste.push({ sceneId: feld.id, index: i, len: text.length }); i = heu.indexOf(nadel, i + Math.max(1, text.length)); }
+    });
+    return liste;
+  }, [sortedFelder]);
+
+  const sucheZeige = useCallback((t) => {
+    if (!t) return;
+    const ed = quillEditors.current[t.sceneId]; if (!ed) return;
+    setActiveSceneId(t.sceneId);
+    ed.setSelection(t.index, t.len, 'silent');
+    try {
+      const b = ed.getBounds(t.index, t.len);
+      const host = ed.root.closest('.schreibtisch-main');
+      const top = ed.root.getBoundingClientRect().top + b.top;
+      if (host && (top < host.getBoundingClientRect().top + 120 || top > host.getBoundingClientRect().bottom - 80)) host.scrollBy({ top: top - host.getBoundingClientRect().top - host.clientHeight / 2, behavior: 'smooth' });
+    } catch (e) {}
+  }, []);
+
+  const sucheStarten = useCallback((text, gross, richtung) => {
+    const s0 = sucheRef.current;
+    const t = text != null ? text : s0.text, g = gross != null ? gross : s0.gross;
+    const treffer = sucheTreffer(t, g);
+    let akt = treffer.length ? 0 : -1;
+    if (treffer.length && s0.treffer.length && s0.akt >= 0) {
+      const a = s0.treffer[s0.akt];
+      let n = treffer.findIndex(x => x.sceneId === a.sceneId && x.index >= a.index);
+      if (n < 0) n = 0;
+      akt = richtung === -1 ? (n - 1 + treffer.length) % treffer.length : (richtung === 1 && treffer[n].index === a.index && treffer[n].sceneId === a.sceneId ? (n + 1) % treffer.length : n);
+    }
+    setSuche(s => ({ ...s, text: t, gross: g, treffer, akt }));
+    if (akt >= 0) sucheZeige(treffer[akt]);
+  }, [sucheTreffer, sucheZeige]);
+
+  const sucheErsetzen = useCallback((alle) => {
+    const s0 = sucheRef.current;
+    if (!s0.text) return;
+    const treffer = sucheTreffer(s0.text, s0.gross);
+    if (!treffer.length) { window.__showFormatToast('Nichts gefunden'); return; }
+    const ziel = alle ? treffer : [treffer[Math.max(0, s0.akt)]];
+    // Von hinten nach vorn ersetzen, damit die Positionen stimmen
+    const sortiert = ziel.slice().sort((a, b) => a.sceneId === b.sceneId ? b.index - a.index : 0);
+    let n = 0;
+    sortiert.forEach(t => {
+      const ed = quillEditors.current[t.sceneId]; if (!ed) return;
+      ed.deleteText(t.index, t.len, 'user');
+      if (s0.ersatz) ed.insertText(t.index, s0.ersatz, 'user');
+      n++;
+    });
+    window.__showFormatToast(n + '× ersetzt');
+    setTimeout(() => sucheStarten(null, null, 0), 50);
+  }, [sucheTreffer, sucheStarten]);
+
+  // ⌘F / Ctrl+F öffnet die Suche im Schreibtisch
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        setSuche(s => ({ ...s, offen: true }));
+        setTimeout(() => { const el = document.getElementById('schreibtisch-suche-text'); if (el) { el.focus(); el.select(); } }, 30);
+      }
+      if (e.key === 'Escape' && sucheRef.current.offen && document.activeElement && document.activeElement.id && document.activeElement.id.indexOf('schreibtisch-suche') === 0) {
+        setSuche(s => ({ ...s, offen: false }));
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // ===== KOPPLUNG MIT DEM MUNDART-WÖRTERBUCH =====
+  // Ein Bereich (Auswahl, Absatz, Szene) geht per Fenster-Nachricht ins Wörterbuch (mundart-woerterbuch.ch),
+  // wird dort geprüft und kommt mit derselben Formatstruktur zurück – ohne Kopieren.
+  const WB_URL = 'https://mundart-woerterbuch.ch/';
+  const WB_ORIGIN = 'https://mundart-woerterbuch.ch';
+  const wbFenster = useRef(null);
+  const wbWartend = useRef(null);
+  const wbOffen = useRef({});   // szeneId → {von, bis, htmlAlt}
+
+  const wbBloecke = useCallback((fmtHtml) => {
+    const doc = new DOMParser().parseFromString('<div id="w">' + (fmtHtml || '') + '</div>', 'text/html');
+    return Array.from(doc.getElementById('w').children).map(el => el.outerHTML);
+  }, []);
+
+  const wbSenden = useCallback((sceneId, von, bis) => {
+    const feld = data.felder.find(f => f.id === sceneId);
+    if (!feld) return;
+    const ed = quillEditors.current[sceneId];
+    const fmtHtml = ed ? convertFormatToFmt(ed.getHTML()) : (feld.inhalt || '');
+    const bloecke = wbBloecke(fmtHtml);
+    if (!bloecke.length) { window.__showFormatToast('Kein Text in dieser Szene'); return; }
+    if (von == null) { von = 0; bis = bloecke.length - 1; }
+    von = Math.max(0, von); bis = Math.min(bloecke.length - 1, bis == null ? von : bis);
+    // Vorangehenden Figurennamen mitnehmen, damit das Wörterbuch weiss, wer spricht
+    let sprecher = '';
+    for (let i = von - 1; i >= 0; i--) {
+      const m = /class="fmt-figurenname"[^>]*>([\s\S]*?)<\//.exec(bloecke[i]);
+      if (m) { sprecher = m[1].replace(/<[^>]+>/g, '').trim(); break; }
+      if (/fmt-(szenen-titel|akt-titel|regie)/.test(bloecke[i])) break;
+    }
+    const html = bloecke.slice(von, bis + 1).join('');
+    const nachricht = { typ: 'nina-pruefung', v: 1, quelle: 'dramera', projekt: data.projektName || '', szeneId: sceneId,
+      szeneTitel: feld.titel || '', von, bis, sprecher, html };
+    wbOffen.current[sceneId] = { von, bis, htmlAlt: html };
+    const w = wbFenster.current;
+    if (w && !w.closed) {
+      w.postMessage(nachricht, WB_ORIGIN);
+      w.focus();
+    } else {
+      wbWartend.current = nachricht;
+      wbFenster.current = window.open(WB_URL + '#pruefung', 'mundart-woerterbuch');
+    }
+    window.__showFormatToast('Ans Wörterbuch geschickt – dort prüfen und «zurück an Dramera» drücken');
+  }, [data.felder, data.projektName, convertFormatToFmt, wbBloecke]);
+
+  // Nachrichten vom Wörterbuch: «bereit» (dann Wartendes schicken) und «ergebnis» (Text einsetzen)
+  useEffect(() => {
+    const onMsg = (ev) => {
+      if (ev.origin !== WB_ORIGIN || !ev.data || typeof ev.data !== 'object') return;
+      const d = ev.data;
+      if (d.typ === 'nina-bereit') {
+        wbFenster.current = ev.source;
+        if (wbWartend.current) { ev.source.postMessage(wbWartend.current, WB_ORIGIN); wbWartend.current = null; }
+        return;
+      }
+      if (d.typ === 'nina-pruefung-ergebnis' && d.szeneId) {
+        const feld = data.felder.find(f => f.id === d.szeneId);
+        if (!feld) { window.__showFormatToast('Szene nicht mehr gefunden'); return; }
+        const ed = quillEditors.current[d.szeneId];
+        const fmtHtml = ed ? convertFormatToFmt(ed.getHTML()) : (feld.inhalt || '');
+        const bloecke = wbBloecke(fmtHtml);
+        let von = d.von, bis = d.bis;
+        const aktuell = bloecke.slice(von, bis + 1).join('');
+        if (aktuell !== d.htmlAlt) {
+          // Der Text hat sich inzwischen verschoben – den ursprünglichen Block-Ausschnitt suchen
+          const altBl = wbBloecke(d.htmlAlt);
+          let gefunden = -1;
+          for (let i = 0; i + altBl.length <= bloecke.length; i++) {
+            if (bloecke.slice(i, i + altBl.length).join('') === d.htmlAlt) { gefunden = i; break; }
+          }
+          if (gefunden < 0) {
+            if (!confirm('Der Abschnitt hat sich in Dramera seit dem Senden verändert. Trotzdem an der ursprünglichen Stelle ersetzen?')) return;
+          } else { von = gefunden; bis = gefunden + altBl.length - 1; }
+        }
+        const neu = bloecke.slice(0, von).concat([d.htmlNeu]).concat(bloecke.slice(bis + 1)).join('');
+        updateFeld(d.szeneId, { inhalt: neu });
+        delete wbOffen.current[d.szeneId];
+        window.__showFormatToast('✓ Geprüfter Text aus dem Wörterbuch übernommen');
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [data.felder, convertFormatToFmt, wbBloecke, updateFeld]);
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
@@ -17223,11 +17406,39 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
           <div style={{ flex: 1 }} />
 
           <div className="schreibtisch-toolbar-group">
+            <button className={'schreibtisch-toolbar-btn' + (suche.offen ? ' active' : '')} onClick={() => {
+              setSuche(s => ({ ...s, offen: !s.offen }));
+              setTimeout(() => { const el = document.getElementById('schreibtisch-suche-text'); if (el) el.focus(); }, 30);
+            }} title="Suchen und ersetzen (⌘F)">🔍</button>
+          </div>
+
+          <div className="schreibtisch-toolbar-divider" />
+
+          <div className="schreibtisch-toolbar-group">
             {/* Beide Buttons nutzen den zentralen Stücktext-Export (gleiche Formatvorlagen für PDF und DOCX) */}
             <button className="schreibtisch-toolbar-btn" onClick={onExportPdf || exportPDF} title="Als PDF drucken">PDF</button>
             <button className="schreibtisch-toolbar-btn" onClick={onExportDocx || exportDOCX} title="Als DOCX exportieren">DOCX</button>
           </div>
         </div>
+
+        {/* Suchen & Ersetzen */}
+        {suche.offen && (
+          <div className="schreibtisch-suche">
+            <input id="schreibtisch-suche-text" type="text" placeholder="Suchen…" value={suche.text}
+              onChange={(e) => { const v = e.target.value; setSuche(s => ({ ...s, text: v })); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sucheStarten(null, null, e.shiftKey ? -1 : 1); } }} />
+            <input id="schreibtisch-suche-ersatz" type="text" placeholder="Ersetzen durch…" value={suche.ersatz}
+              onChange={(e) => { const v = e.target.value; setSuche(s => ({ ...s, ersatz: v })); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sucheErsetzen(false); } }} />
+            <label title="Gross-/Kleinschreibung beachten"><input type="checkbox" checked={suche.gross} onChange={(e) => sucheStarten(null, e.target.checked, 0)} /> Aa</label>
+            <button onClick={() => sucheStarten(null, null, -1)} title="Vorheriger Treffer (Shift+Enter)">‹</button>
+            <span className="schreibtisch-suche-stand">{suche.treffer.length ? (suche.akt + 1) + ' / ' + suche.treffer.length : (suche.text ? '0 Treffer' : '')}</span>
+            <button onClick={() => sucheStarten(null, null, 1)} title="Nächster Treffer (Enter)">›</button>
+            <button onClick={() => sucheErsetzen(false)} disabled={!suche.treffer.length}>Ersetzen</button>
+            <button onClick={() => { if (suche.treffer.length && confirm(suche.treffer.length + ' Stellen ersetzen?')) sucheErsetzen(true); }} disabled={!suche.treffer.length}>Alle ersetzen</button>
+            <button onClick={() => setSuche(s => ({ ...s, offen: false }))} title="Schliessen (Esc)">✕</button>
+          </div>
+        )}
 
         {/* Format-Shortcuts Box — fixed unten rechts */}
         <div className="format-shortcut-box">
@@ -17356,6 +17567,25 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
               {v.shortcut && <span className="schreibtisch-toolbar-shortcut">Esc → {v.shortcut}</span>}
             </div>
           ))}
+
+          <div className="schreibtisch-context-menu-sep" />
+
+          {contextMenu.bereich && contextMenu.bereich.auswahl && (
+            <div className="schreibtisch-context-menu-item" onClick={() => {
+              wbSenden(contextMenu.sceneId, contextMenu.bereich.von, contextMenu.bereich.bis);
+              closeContextMenu();
+            }}>📚 Auswahl im Wörterbuch prüfen</div>
+          )}
+          {contextMenu.bereich && !contextMenu.bereich.auswahl && (
+            <div className="schreibtisch-context-menu-item" onClick={() => {
+              wbSenden(contextMenu.sceneId, contextMenu.bereich.von, contextMenu.bereich.von);
+              closeContextMenu();
+            }}>📚 Absatz im Wörterbuch prüfen</div>
+          )}
+          <div className="schreibtisch-context-menu-item" onClick={() => {
+            wbSenden(contextMenu.sceneId, null, null);
+            closeContextMenu();
+          }}>📚 Szene im Wörterbuch prüfen</div>
 
           <div className="schreibtisch-context-menu-sep" />
 
@@ -34063,6 +34293,19 @@ STIL:
           padding: 2rem 1rem;
         }
 
+        /* Suchen & Ersetzen im Schreibtisch */
+        .schreibtisch-suche {
+          position: sticky; top: 0; z-index: 11; width: 100%; max-width: 21cm; flex-shrink: 0;
+          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+          background: #fff; border: 1px solid #d1cdc6; border-radius: 0.5rem;
+          padding: 6px 10px; margin: -0.5rem 0 1rem; box-shadow: 0 2px 8px rgba(0,0,0,0.08); font-size: 0.8rem;
+        }
+        .schreibtisch-suche input[type="text"] { flex: 1; min-width: 140px; padding: 4px 8px; border: 1px solid #c8c3bb; border-radius: 4px; font-size: 0.8rem; }
+        .schreibtisch-suche button { padding: 3px 8px; border: 1px solid #c8c3bb; border-radius: 4px; background: #f5f0eb; cursor: pointer; font-size: 0.8rem; }
+        .schreibtisch-suche button:disabled { opacity: 0.5; cursor: default; }
+        .schreibtisch-suche label { display: flex; align-items: center; gap: 3px; color: #6b6560; }
+        .schreibtisch-suche-stand { min-width: 60px; text-align: center; color: #6b6560; }
+        .schreibtisch-toolbar-btn.active { background: #6b4423; color: #fff; }
         /* Kopfzeile */
         .schreibtisch-topbar {
           position: sticky;
