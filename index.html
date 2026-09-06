@@ -117,19 +117,40 @@
     window.__leaderTimer = null;
     window.__leaderContext = null; // gespeicherter Editor-Kontext bei Esc
 
-    // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname)
-    var LEADER_QUILL_MAP = {
-      'f': 'figurenname', 'd': 'dialog', 'r': 'regieanweisung',
-      't': 'szeneTitel', 'a': 'aktTitel', 'l': 'lied',
-      'v': 'vers', 'p': 'pause', 'n': 'standard'
-    };
+    // Eine Quelle für alle Absatztypen: Kürzel, Name, Quill-Schlüssel und fmt-Klasse (Ordnen/Speicherformat).
+    // Popup, Toast-Namen, Ordnen-Zuordnung und die Format-Kopieren-Tabellen werden daraus abgeleitet.
+    // B (Nebentext) und O (Notiz) als Zweitbuchstaben, weil N (Standard) und E (Einfügen) belegt sind.
+    var SZENE_ABSATZ_TYPEN = [
+      { key: 'figurenname',    taste: 'f', name: 'Figurenname',    fmt: 'fmt-figurenname' },
+      { key: 'dialog',         taste: 'd', name: 'Dialog',         fmt: 'fmt-dialog' },
+      { key: 'regieanweisung', taste: 'r', name: 'Regieanweisung', fmt: 'fmt-regie' },
+      { key: 'szeneTitel',     taste: 't', name: 'Szenen-Titel',   fmt: 'fmt-szenen-titel' },
+      { key: 'aktTitel',       taste: 'a', name: 'Akt-Titel',      fmt: 'fmt-akt-titel' },
+      { key: 'lied',           taste: 'l', name: 'Lied',           fmt: 'fmt-lied' },
+      { key: 'vers',           taste: 'v', name: 'Versmaß',        fmt: 'fmt-vers' },
+      { key: 'pause',          taste: 'p', name: 'Pause',          fmt: 'fmt-pause' },
+      { key: 'nebentext',      taste: 'b', name: 'Nebentext',      fmt: 'fmt-nebentext' },
+      { key: 'musik',          taste: 'm', name: 'Musik',          fmt: 'fmt-musik' },
+      { key: 'sound',          taste: 's', name: 'Sound',          fmt: 'fmt-sound' },
+      { key: 'notiz',          taste: 'o', name: 'Notiz',          fmt: 'fmt-notiz' },
+      { key: 'standard',       taste: 'n', name: 'Standard',       fmt: null }
+    ];
+    window.SZENE_ABSATZ_TYPEN = SZENE_ABSATZ_TYPEN;
 
-    // Formatvorlagen-Namen für Toast
-    var FORMAT_NAMEN = {
-      figurenname: 'Figurenname', dialog: 'Dialog', regieanweisung: 'Regieanweisung',
-      szeneTitel: 'Szenen-Titel', aktTitel: 'Akt-Titel', lied: 'Lied',
-      vers: 'Vers', pause: 'Pause', standard: 'Standard'
-    };
+    // Leader-Key Zuordnungen (Buchstabe → Quill-Formatname) – abgeleitet
+    var LEADER_QUILL_MAP = {};
+    // Formatvorlagen-Namen für Toast – abgeleitet
+    var FORMAT_NAMEN = {};
+    // Ordnen-Zuordnung (Buchstabe → fmt-Klasse) und Übersetzungen fmt ↔ Quill – abgeleitet
+    var LEADER_FMT_MAP = {};
+    var FMT_ZU_QUILL = {};
+    var QUILL_ZU_FMT = {};
+    SZENE_ABSATZ_TYPEN.forEach(function(t) {
+      LEADER_QUILL_MAP[t.taste] = t.key;
+      FORMAT_NAMEN[t.key] = t.name;
+      LEADER_FMT_MAP[t.taste] = t.fmt;
+      if (t.fmt) { FMT_ZU_QUILL[t.fmt] = t.key; QUILL_ZU_FMT[t.key] = t.fmt; }
+    });
 
     // Toast-Meldung (app-weit)
     window.__showFormatToast = function(text) {
@@ -152,11 +173,8 @@
       popup.id = 'leader-popup';
       popup.innerHTML = '<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#9ca3af;margin-bottom:4px;">Format wählen…</div>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px 12px;">'
-        + '<span><b>F</b> Figurenname</span><span><b>D</b> Dialog</span>'
-        + '<span><b>R</b> Regieanweisung</span><span><b>T</b> Szenen-Titel</span>'
-        + '<span><b>A</b> Akt-Titel</span><span><b>L</b> Lied</span>'
-        + '<span><b>V</b> Versmaß</span><span><b>P</b> Pause</span>'
-        + '<span><b>N</b> Standard</span><span style="color:#9ca3af;">───</span>'
+        + SZENE_ABSATZ_TYPEN.map(function(t) { return '<span><b>' + t.taste.toUpperCase() + '</b> ' + t.name + '</span>'; }).join('')
+        + '<span style="color:#9ca3af;">───</span>'
         + '<span><b>K</b> Kopieren</span><span><b>E</b> Einfügen</span>'
         + '</div>';
       popup.style.cssText = 'position:fixed;bottom:80px;right:16px;background:rgba(20,20,20,0.95);color:#e5e7eb;padding:10px 14px;border-radius:8px;font-size:11px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;z-index:10001;box-shadow:0 4px 20px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.15);pointer-events:none;';
@@ -255,13 +273,8 @@
             setBlockFormat(ctxQuill, LEADER_QUILL_MAP[lkey]);
           } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
             // Ordnen mode: use saved node (Chrome clears selection on Esc blur)
-            var ordnenMap = {
-              'f': 'fmt-figurenname', 'd': 'fmt-dialog', 'r': 'fmt-regie',
-              't': 'fmt-szenen-titel', 'a': 'fmt-akt-titel', 'l': 'fmt-lied',
-              'v': 'fmt-vers', 'p': 'fmt-pause', 'n': null
-            };
             Array.from(ctxNode.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { ctxNode.classList.remove(c); });
-            if (ordnenMap[lkey]) ctxNode.classList.add(ordnenMap[lkey]);
+            if (LEADER_FMT_MAP[lkey]) ctxNode.classList.add(LEADER_FMT_MAP[lkey]);
           }
           window.__showFormatToast(FORMAT_NAMEN[LEADER_QUILL_MAP[lkey]] || lkey);
           return;
@@ -287,15 +300,13 @@
           if (ctxInQuill && ctxQuill) {
             var fmt = window.__copiedFormat.format;
             if (window.__copiedFormat.type === 'ordnen') {
-              var convertMap = { 'fmt-dialog': 'dialog', 'fmt-regie': 'regieanweisung', 'fmt-szenen-titel': 'szeneTitel', 'fmt-akt-titel': 'aktTitel', 'fmt-lied': 'lied', 'fmt-vers': 'vers', 'fmt-pause': 'pause', 'fmt-figurenname': 'figurenname' };
-              fmt = convertMap[fmt] || 'standard';
+              fmt = FMT_ZU_QUILL[fmt] || 'standard';
             }
             setBlockFormat(ctxQuill, fmt);
           } else if (ctxInOrdnen && ctxNode && ctxNode.classList) {
             var cls = window.__copiedFormat.format;
             if (window.__copiedFormat.type === 'quill') {
-              var convertMap2 = { dialog: 'fmt-dialog', regieanweisung: 'fmt-regie', szeneTitel: 'fmt-szenen-titel', aktTitel: 'fmt-akt-titel', lied: 'fmt-lied', vers: 'fmt-vers', pause: 'fmt-pause', figurenname: 'fmt-figurenname' };
-              cls = convertMap2[cls] || null;
+              cls = QUILL_ZU_FMT[cls] || null;
             }
             Array.from(ctxNode.classList).filter(function(c) { return c.startsWith('fmt-'); }).forEach(function(c) { ctxNode.classList.remove(c); });
             if (cls) ctxNode.classList.add(cls);
@@ -1470,6 +1481,15 @@ EXPORTIEREN
 TASTENKÜRZEL
 
 • Cmd/Ctrl + S: Öffnet den Speichern-Dialog
+• Cmd/Ctrl + F: Suchen und Ersetzen im Schreibtisch (über alle Szenen)
+
+Formatvorlagen im Schreibtisch (und beim Ordnen) werden mit einer Leader-Taste gesetzt: Zuerst Esc drücken, dann innerhalb von 1,5 Sekunden den Buchstaben. Ein kleines Fenster unten rechts zeigt die Auswahl.
+
+• Esc F: Figurenname · Esc D: Dialog · Esc R: Regieanweisung
+• Esc T: Szenen-Titel · Esc A: Akt-Titel · Esc L: Lied · Esc V: Versmass · Esc P: Pause
+• Esc B: Nebentext · Esc M: Musik · Esc S: Sound · Esc O: Notiz · Esc N: Standard
+• Esc K: Format des aktuellen Absatzes kopieren · Esc E: kopiertes Format einfügen
+• Esc noch einmal: Abbrechen
 
 DAS WIKI
 
@@ -16602,20 +16622,22 @@ const normalizeProjektData = (d) => {
 // SCHREIBTISCH-VIEW – Textverarbeitungs-Modus
 // =====================================================
 const SCHREIBTISCH_FORMATVORLAGEN = {
-  standard: { name: 'Standard', class: 'format-standard', description: 'Normaler Text', icon: '¶', shortcut: 'N' },
-  figurenname: { name: 'Figurenname', class: 'format-figurenname', description: 'FIGUR:', icon: '👤', shortcut: 'F' },
-  dialog: { name: 'Dialog', class: 'format-dialog', description: 'Sprechtext', icon: '💬', shortcut: 'D' },
-  regieanweisung: { name: 'Regieanweisung', class: 'format-regieanweisung', description: '(Handlungsanweisung)', icon: '🎬', shortcut: 'R' },
-  szeneTitel: { name: 'Szenen-Titel', class: 'format-szene-titel', description: 'Überschrift', icon: '🔍', shortcut: 'T' },
-  aktTitel: { name: 'Akt-Titel', class: 'format-akt-titel', description: 'ERSTER AKT', icon: '🏛️', shortcut: 'A' },
-  vers: { name: 'Versmaß', class: 'format-vers', description: 'Gebundene Sprache', icon: '📜', shortcut: 'V' },
-  lied: { name: 'Lied', class: 'format-lied', description: 'Gesungener Text', icon: '🎵', shortcut: 'L' },
-  pause: { name: 'Pause', class: 'format-pause', description: '— PAUSE —', icon: '⏸️', shortcut: 'P' },
+  standard: { name: 'Standard', class: 'format-standard', description: 'Normaler Text', icon: '¶' },
+  figurenname: { name: 'Figurenname', class: 'format-figurenname', description: 'FIGUR:', icon: '👤' },
+  dialog: { name: 'Dialog', class: 'format-dialog', description: 'Sprechtext', icon: '💬' },
+  regieanweisung: { name: 'Regieanweisung', class: 'format-regieanweisung', description: '(Handlungsanweisung)', icon: '🎬' },
+  szeneTitel: { name: 'Szenen-Titel', class: 'format-szene-titel', description: 'Überschrift', icon: '🔍' },
+  aktTitel: { name: 'Akt-Titel', class: 'format-akt-titel', description: 'ERSTER AKT', icon: '🏛️' },
+  vers: { name: 'Versmaß', class: 'format-vers', description: 'Gebundene Sprache', icon: '📜' },
+  lied: { name: 'Lied', class: 'format-lied', description: 'Gesungener Text', icon: '🎵' },
+  pause: { name: 'Pause', class: 'format-pause', description: '— PAUSE —', icon: '⏸️' },
   musik: { name: 'Musik', class: 'format-musik', description: 'Musik-Einsatz', icon: '🎼' },
   sound: { name: 'Sound', class: 'format-sound', description: 'Sound-Effekt', icon: '🔊' },
   notiz: { name: 'Notiz', class: 'format-notiz', description: 'Regie-Notiz (nicht drucken)', icon: '📝' },
   nebentext: { name: 'Nebentext', class: 'format-nebentext', description: 'Erläuternder Text', icon: '📄' }
 };
+// Kürzel (Esc → Buchstabe) aus der zentralen Liste der Absatztypen ableiten – nicht doppelt führen
+(window.SZENE_ABSATZ_TYPEN || []).forEach(t => { if (SCHREIBTISCH_FORMATVORLAGEN[t.key]) SCHREIBTISCH_FORMATVORLAGEN[t.key].shortcut = t.taste.toUpperCase(); });
 
 const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparringWithAI, projectMenu, onExportPdf, onExportDocx }) => {
   const [activeSceneId, setActiveSceneId] = useState(null);
@@ -17618,7 +17640,7 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
         <div className="schreibtisch-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={(e) => e.stopPropagation()}>
 
-          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).slice(0, 8).map(([key, v]) => (
+          {Object.entries(SCHREIBTISCH_FORMATVORLAGEN).map(([key, v]) => (
             <div key={key} className="schreibtisch-context-menu-item" onClick={() => {
               applyFormat(key);
               closeContextMenu();
