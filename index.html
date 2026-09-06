@@ -335,8 +335,13 @@
       var editorDiv = document.createElement('div');
       element.appendChild(editorDiv);
 
+      // Der Schreibtisch scrollt in .schreibtisch-main, nicht im Editor selbst. Quill muss das wissen,
+      // sonst springt die Ansicht beim Einfügen (Paste) an eine andere Stelle, weil Quill den Scrollstand
+      // des falschen Elements sichert und wiederherstellt.
+      var scrollHost = element.closest ? element.closest('.schreibtisch-main') : null;
       var quill = new Quill(editorDiv, {
         theme: null,
+        scrollingContainer: scrollHost || null,
         modules: {
           toolbar: false,
           keyboard: { bindings: formatBindings },
@@ -16571,6 +16576,14 @@ const stripLeadingSzenenTitelBlock = (inhalt, titel) => {
   return inhalt;
 };
 
+// Figurenbeschrieb für Exporte: Kurzangaben (Alter, Beruf) und die Kurzcharakteristik der Figur
+const figurenBeschrieb = (f) => {
+  if (!f) return { kurz: '', text: '' };
+  const kurz = [f.alter, f.beruf].map(x => (x || '').trim()).filter(Boolean).join(', ');
+  const text = (f.charakteristik || f.beschreibung || f.wesen || '').trim();
+  return { kurz, text };
+};
+
 const normalizeProjektData = (d) => {
   if (!d || !Array.isArray(d.felder)) return d;
   let changed = false;
@@ -16905,15 +16918,35 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
   const [suche, setSuche] = useState({ offen: false, text: '', ersatz: '', gross: false, treffer: [], akt: -1 });
   const sucheRef = useRef(suche); sucheRef.current = suche;
 
+  // Text eines Editors mit Quill-Positionen: Bilder und andere Einbettungen zählen als ein Zeichen,
+  // getText() lässt sie weg – dann stimmen die Positionen nach einem Bild nicht mehr.
+  const sucheEditorText = (ed) => {
+    try {
+      return ed.getContents().ops.map(op => typeof op.insert === 'string' ? op.insert : '\uFFFC').join('');
+    } catch (e) { return ed.getText(); }
+  };
+  const sucheTrefferInEditor = (ed, sceneId, text, gross) => {
+    const liste = [];
+    if (!text || !ed) return liste;
+    const nadel = gross ? text : text.toLowerCase();
+    const roh = sucheEditorText(ed);
+    const heu = gross ? roh : roh.toLowerCase();
+    if (heu.length !== roh.length) {
+      // Kleinschreibung hat die Länge verändert (exotische Zeichen) – auf exakte Suche ausweichen
+      let j = roh.indexOf(text);
+      while (j >= 0) { liste.push({ sceneId, index: j, len: text.length }); j = roh.indexOf(text, j + Math.max(1, text.length)); }
+      return liste;
+    }
+    let i = heu.indexOf(nadel);
+    while (i >= 0) { liste.push({ sceneId, index: i, len: text.length }); i = heu.indexOf(nadel, i + Math.max(1, text.length)); }
+    return liste;
+  };
   const sucheTreffer = useCallback((text, gross) => {
     const liste = [];
     if (!text) return liste;
-    const nadel = gross ? text : text.toLowerCase();
     sortedFelder.forEach(feld => {
       const ed = quillEditors.current[feld.id]; if (!ed) return;
-      const heu = gross ? ed.getText() : ed.getText().toLowerCase();
-      let i = heu.indexOf(nadel);
-      while (i >= 0) { liste.push({ sceneId: feld.id, index: i, len: text.length }); i = heu.indexOf(nadel, i + Math.max(1, text.length)); }
+      liste.push(...sucheTrefferInEditor(ed, feld.id, text, gross));
     });
     return liste;
   }, [sortedFelder]);
@@ -16968,16 +17001,25 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     if (!s0.text) return;
     const treffer = sucheTreffer(s0.text, s0.gross);
     if (!treffer.length) { window.__showFormatToast('Nichts gefunden'); return; }
-    const ziel = alle ? treffer : [treffer[Math.max(0, s0.akt)]];
-    // Von hinten nach vorn ersetzen, damit die Positionen stimmen
-    const sortiert = ziel.slice().sort((a, b) => a.sceneId === b.sceneId ? b.index - a.index : 0);
     let n = 0;
-    sortiert.forEach(t => {
-      const ed = quillEditors.current[t.sceneId]; if (!ed) return;
+    const ersetzeIm = (ed, t) => {
       ed.deleteText(t.index, t.len, 'user');
       if (s0.ersatz) ed.insertText(t.index, s0.ersatz, 'user');
       n++;
-    });
+    };
+    if (!alle) {
+      const t = treffer[Math.min(Math.max(0, s0.akt), treffer.length - 1)];
+      const ed = quillEditors.current[t.sceneId];
+      if (ed) ersetzeIm(ed, t);
+    } else {
+      // Szene für Szene: Treffer frisch bestimmen und von hinten nach vorn ersetzen, damit die Positionen stimmen
+      const szenen = Array.from(new Set(treffer.map(t => t.sceneId)));
+      szenen.forEach(sceneId => {
+        const ed = quillEditors.current[sceneId]; if (!ed) return;
+        const liste = sucheTrefferInEditor(ed, sceneId, s0.text, s0.gross).sort((a, b) => b.index - a.index);
+        liste.forEach(t => ersetzeIm(ed, t));
+      });
+    }
     window.__showFormatToast(n + '× ersetzt');
     setTimeout(() => sucheStarten(null, null, 0), 50);
   }, [sucheTreffer, sucheStarten]);
@@ -22682,7 +22724,7 @@ WICHTIGE REGELN:
         .szenen-start { page-break-before: always; }
         /* Text */
         .akt-titel { ${fmtCss(F.aktTitel)} }
-        .szenen-titel { ${fmtCss(F.szeneTitel)} margin-top: 18pt; margin-bottom: 4pt; page-break-after: avoid; }
+        .szenen-titel { ${fmtCss(F.szeneTitel)} margin-top: 40pt; margin-bottom: 6pt; page-break-after: avoid; }
         .ort-zeit { font-family: 'Trebuchet MS', sans-serif; font-size: 9pt; font-weight: bold; font-style: italic; color: #757575; text-align: center; margin: 0 0 10pt 0; padding-bottom: 4pt; border-bottom: 0.5pt solid #ccc; page-break-after: avoid; }
         .figurenname { ${fmtCss(F.figurenname)} page-break-after: avoid; }
         .dialog { ${fmtCss(F.dialog)} }
@@ -22761,7 +22803,8 @@ WICHTIGE REGELN:
       lines.push(isHtml ? '<div class="figuren"><h2>Personen</h2>' : '\n\nDIE FIGUREN\n');
       data.figuren.forEach(figur => {
         const name = (figur.name || 'Unbenannt').toUpperCase();
-        const beschreibung = figur.beschreibung || figur.wesen || '';
+        const fb = figurenBeschrieb(figur);
+        const beschreibung = [fb.kurz, fb.text].filter(Boolean).join(' – ');
         if (isHtml) {
           lines.push(`<p class="figur-eintrag"><span class="figur-name">${name}</span></p>`);
           if (beschreibung) lines.push(`<p class="figur-beschreibung">${beschreibung}</p>`);
@@ -23167,11 +23210,13 @@ WICHTIGE REGELN:
             if (data.figuren?.length > 0) {
               dc.push(new Paragraph({ children: [new TextRun({ text: 'PERSONEN', bold: true, size: 22, font: 'Trebuchet MS', allCaps: true, characterSpacing: 24, color: '212121' })], alignment: AlignmentType.CENTER, spacing: { before: 200, after: 200 } }));
               data.figuren.forEach(f => {
+                const fb = figurenBeschrieb(f);
                 dc.push(new Paragraph({ spacing: { before: 120, after: 20 }, children: [
-                  new TextRun({ text: f.name.toUpperCase(), bold: true, size: 20, font: 'Trebuchet MS', color: '212121' })
+                  new TextRun({ text: (f.name || 'Unbenannt').toUpperCase(), bold: true, size: 20, font: 'Trebuchet MS', color: '212121' }),
+                  ...(fb.kurz ? [new TextRun({ text: '  ' + fb.kurz, size: 18, font: 'Trebuchet MS', color: '757575' })] : [])
                 ]}));
-                if (f.beschreibung) dc.push(new Paragraph({ spacing: { after: 80 }, indent: { left: 280 }, children: [
-                  new TextRun({ text: f.beschreibung, size: 20, font: 'Georgia', italics: true, color: '555555' })
+                if (fb.text) dc.push(new Paragraph({ spacing: { after: 80 }, indent: { left: 280 }, children: [
+                  new TextRun({ text: fb.text, size: 20, font: 'Georgia', italics: true, color: '555555' })
                 ]}));
               });
               dc.push(new Paragraph({ spacing: { before: 300 }, children: [] }));
@@ -23206,8 +23251,6 @@ WICHTIGE REGELN:
                     alignment: AlignmentType.CENTER, style: 'OrtZeit'
                   }));
                 }
-
-                dc.push(new Paragraph({ spacing: { before: 80 }, children: [] }));
 
                 // Inhalt parsen
                 const inhalt = feld.inhalt || '';
@@ -23320,10 +23363,10 @@ WICHTIGE REGELN:
                   paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 600, after: 240 } } },
                 { id: 'SzenenTitel', name: 'Szenen-Titel', basedOn: 'Normal', next: 'Normal',
                   run: { font: 'Georgia', bold: true, size: 24, color: '212121' },
-                  paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 360, after: 360 } } },
+                  paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 800, after: 120 }, keepNext: true } },
                 { id: 'OrtZeit', name: 'Ort-Zeit', basedOn: 'Normal', next: 'Normal',
                   run: { font: 'Trebuchet MS', bold: true, italics: true, size: 18, color: '757575' },
-                  paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 80, after: 200 },
+                  paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 0, after: 120 }, keepNext: true,
                     border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CCCCCC', space: 4 } } } },
                 { id: 'Pause', name: 'Pause', basedOn: 'Normal', next: 'Normal',
                   run: { font: 'Trebuchet MS', bold: true, size: 24, color: '888888' },
