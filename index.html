@@ -26854,48 +26854,6 @@ STIL:
           {/* ===== PROJEKT ===== */}
           <div className="sidebar-menu-section">📁 PROJEKT</div>
           <button className="sidebar-menu-item" onClick={() => { newProject(); setShowMenu(false); }}>📄 Neu...</button>
-          <button className="sidebar-menu-item" onClick={() => {
-            openFromFile();
-            setShowMenu(false);
-          }}>{'\ud83d\udcc2'} Öffnen...</button>
-          <button className="sidebar-menu-item" onClick={() => { loadDemo(); setShowMenu(false); }}>🎭 Demo: Romeo & Julia</button>
-          <button className="sidebar-menu-item" onClick={() => { saveToFile(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318'}S</span></button>
-          <button className="sidebar-menu-item" onClick={() => { saveToFileAs(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern unter... <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318\u21e7'}S</span></button>
-        
-          <div className="sidebar-menu-divider" />
-        
-          {/* Import / Export → öffnet Modal */}
-          <button className="sidebar-menu-item" onClick={() => { setShowImportExportModal(true); setShowMenu(false); }}>🔄 Import / Export...</button>
-        
-          <div className="sidebar-menu-divider" />
-          <button className="sidebar-menu-item" onClick={() => { setShowSettings(true); setShowMenu(false); }}>⚙️ Einstellungen...</button>
-        
-          {/* ===== DOKUMENTE ===== */}
-          <div className="sidebar-menu-divider" style={{marginTop: '0.75rem'}} />
-          <div className="sidebar-menu-section">📄 DOKUMENTE</div>
-          <button className="sidebar-menu-item" onClick={() => { openExportDialog('stuecktext'); setShowMenu(false); }}>📝 Stücktext</button>
-          <button className="sidebar-menu-item" onClick={() => { openExportDialog('treatment'); setShowMenu(false); }}>📋 Treatment</button>
-          <button className="sidebar-menu-item" onClick={() => { openExportDialog('materialien'); setShowMenu(false); }}>📚 Recherche-Material</button>
-          <button className="sidebar-menu-item" onClick={() => { setShowDossierAssistent(true); setShowMenu(false); }}>📑 Förderdossier</button>
-        </div>
-      )}
-    </div>
-  );
-
-  // Projekt-Menü (Öffnen, Sichern, Einstellungen, Dokumente …)
-  // Wird in der Material-Sidebar UND im Schreibtisch angezeigt.
-  const renderProjectMenu = () => (
-    <div className="sidebar-project-menu">
-      <button className="project-dropdown-btn" onClick={() => setShowMenu(!showMenu)}>
-        <span className="project-icon">📁</span>
-        <span className="project-name-sidebar">{data.projektName || 'Neues Projekt'}</span>
-        <span className="dropdown-arrow">▼</span>
-      </button>
-      {showMenu && (
-        <div className="sidebar-menu-dropdown">
-          {/* ===== PROJEKT ===== */}
-          <div className="sidebar-menu-section">📁 PROJEKT</div>
-          <button className="sidebar-menu-item" onClick={() => { newProject(); setShowMenu(false); }}>📄 Neu...</button>
           <button className="sidebar-menu-item" onClick={() => { loadDemo(); setShowMenu(false); }}>🎭 Demo: Romeo & Julia</button>
           <button className="sidebar-menu-item" onClick={() => { saveToFile(); setShowMenu(false); }}>{'\ud83d\udcbe'} Sichern <span style={{float:'right',color:'#999',fontSize:'0.8em'}}>{'\u2318'}S</span></button>
 
