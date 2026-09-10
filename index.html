@@ -18146,7 +18146,10 @@ const SchreibtischView = ({ data, setData, updateFeld, addFeld, apiKey, sparring
     temp.querySelectorAll('.format-dialog').forEach(el => {
       if (!el.querySelector('.figur-name, .figur')) {
         const text = el.textContent;
-        const m = text.match(/^([A-ZÄÖÜa-zäöü][A-ZÄÖÜa-zäöüß\s\d.]*?):\s*([\s\S]*)$/);
+        // Nur Namen in GROSSBUCHSTABEN («HUTTER: …») abspalten. Früher griff jede
+        // Wortfolge vor einem Doppelpunkt – eine Dialog-Fortsetzung wie «Fazit: Ich
+        // war …» wurde beim Speichern zur Figur FAZIT (Fehler vom 10.09.2026).
+        const m = text.match(/^([A-ZÄÖÜ][A-ZÄÖÜ\s\d.\-]*?):\s*([\s\S]*)$/);
         if (m) {
           // SICHERHEIT (XSS): Textinhalt vor dem Wieder-Einsetzen als HTML escapen
           const escD = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -22702,7 +22705,8 @@ WICHTIGE REGELN:
       
       if (formatClass === 'fmt-dialog') {
         // Dialog-Format: Wenn Text mit "Name:" beginnt, extrahiere den Namen
-        const colonMatch = text.match(/^([^:]+):\s*/);
+        // Nur Namen in GROSSBUCHSTABEN, sonst würde «Fazit: …» zum Figurennamen
+        const colonMatch = text.match(/^([A-ZÄÖÜ][A-ZÄÖÜ\s\d.\-]*?):\s*/);
         if (colonMatch) {
           const figurName = colonMatch[1].trim();
           const dialogText = text.slice(colonMatch[0].length);
