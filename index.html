@@ -36183,7 +36183,10 @@ STIL:
           display: flex;
           flex-direction: column;
           align-items: center;
-          padding: 2rem 1rem;
+          /* Kein Innenabstand oben: sonst klebt die Werkzeugleiste (sticky)
+             2rem unter dem Rand, und darüber scrollt der Text sichtbar durch.
+             Der Abstand oben kommt stattdessen als margin-top der Leiste. */
+          padding: 0 1rem 2rem;
         }
 
         /* Suchen & Ersetzen: gelbe Markierung des aktuellen Treffers auf dem Blatt */
@@ -36632,6 +36635,7 @@ STIL:
           border: 1px solid #e2e8f0;
           border-radius: 0.5rem;
           padding: 0.35rem 0.75rem;
+          margin-top: 2rem;
           margin-bottom: 1rem;
           display: flex;
           align-items: center;
